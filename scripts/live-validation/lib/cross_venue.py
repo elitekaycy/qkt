@@ -96,11 +96,12 @@ def parse_fills(text):
 
 
 def journal_fills(lines):
-    """The `filled` entries of a strategy's order journal (JSON lines), in order: the fills with their epoch ms."""
+    """The fill entries of a strategy's order journal (JSON lines), in order, with their epoch ms: every
+    `partially-filled` slice and each order's final `filled` slice (journals before #1646 hold only `filled`)."""
     fills = []
     for line in lines:
         entry = json.loads(line) if line.strip() else {}
-        if entry.get("kind") == "filled":
+        if entry.get("kind") in ("filled", "partially-filled"):
             fills.append({"ts": entry["ts"], "orderId": entry["id"], "symbol": entry["symbol"], "side": entry["side"],
                           "qty": entry["qty"], "price": entry["price"], "venue": venue_of(entry["symbol"])})
     return fills
