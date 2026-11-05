@@ -106,13 +106,15 @@ class StrategyPositionTracker private constructor(
      * Result of applying one execution slice: the realized PnL plus, when the slice was
      * leg-routed, which leg it touched and how. [unbooked] means nothing was booked — a
      * re-report of an execution the book already holds, or a close naming a leg the book does
-     * not hold — and the caller must not account it.
+     * not hold — and the caller must not account it. [orphanClose] marks that second case: the venue
+     * executed a close of a position the strategy no longer holds, which may have opened one (#1638).
      */
     data class FillApplication(
         val realized: BigDecimal,
         val legId: String? = null,
         val legAction: LegAction = LegAction.NETTED,
         val unbooked: Boolean = false,
+        val orphanClose: Boolean = false,
     )
 
     /** Apply an execution slice under [intent]; see [applyFillDetailed]. */

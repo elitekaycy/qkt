@@ -31,8 +31,9 @@ internal class TimeExits(
     private val closeTicketFor: ((String, String) -> String?)? = null,
     private val openLegQuantity: ((String, String) -> BigDecimal?)? = null,
     private val strategyNetQty: ((String, String) -> BigDecimal)? = null,
+    closeGuard: LegCloseGuard? = null,
 ) {
-    private val closer = TimedLegCloser(book, clock, ops, closeTicketFor, openLegQuantity, strategyNetQty)
+    private val closer = TimedLegCloser(book, clock, ops, closeTicketFor, openLegQuantity, strategyNetQty, closeGuard)
 
     /** Resends and alerts for fired exits; told of each venue refusal ([TimedCloseRetries.refused]). */
     val retries = TimedCloseRetries(book, closer, ops, log, armed)

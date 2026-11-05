@@ -42,6 +42,10 @@ internal class OrderOutcomeWiring(
     private val repeats = RepeatedExecutions(orderManager::getOrder)
     private val unfilledExits = UnfilledExitAlerts(onProtectionFailure)
 
+    init {
+        booker.onOrphanClose = onProtectionFailure
+    }
+
     /** Register every order-outcome handler on the bus, in dispatch order. */
     fun subscribe() {
         // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
