@@ -33,7 +33,6 @@ internal class FakeGateway(
     val bars = HashMap<Pair<String, Long>, List<WireBar>>()
     var barsPage = 2
 
-    /** The quotes socket. */
     val quotes = FakeQuotes()
 
     /** The venue; change it through [act] so events stay in order. */
@@ -53,11 +52,12 @@ internal class FakeGateway(
     /** Funding rates by venue code, served by `GET /v1/funding-rates` [barsPage] at a time. */
     val rates = HashMap<String, List<WireFundingRate>>()
 
-    /** The capabilities `/v1/health` reports; none, as a gateway from before capabilities. */
+    /** What `/v1/health` reports: no capabilities (a gateway from before them), the adapter, its version, the login. */
     @Volatile var capabilities: List<String> = emptyList()
 
-    /** The adapter, and below it the account login, `/v1/health` reports. */
     @Volatile var adapter = "fake"
+
+    @Volatile var adapterVersion = "1"
 
     @Volatile var login = "7"
 
@@ -212,7 +212,7 @@ internal class FakeGateway(
         sockets.forEach { it.send(event) }
     }
 
-    private fun health() = FakeWire.health(login, killed, log.size, capabilities, adapter)
+    private fun health() = FakeWire.health(login, killed, log.size, capabilities, adapter, adapterVersion)
 
     companion object {
         const val TIME = 1_790_835_377_133L
