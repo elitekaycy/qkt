@@ -9,7 +9,8 @@ import com.qkt.strategy.targetSymbol
 
 /**
  * Every order-lifecycle event lands in the append-only journal, in bus order, e.g. a filled
- * market buy writes `submit` (with `"approved":"true"`), `accepted`, then `filled`.
+ * market buy writes `submit` (with `"approved":"true"`), `accepted`, then `filled`. An order the venue fills
+ * in slices writes one `partially-filled` line (with `cumulative`) per slice before its final `filled`.
  *
  * An [com.qkt.events.OrderEvent] only exists because risk approved the request, so the
  * submit path writes ONE `"submit"` line with `"approved":"true"` instead of separate
@@ -60,6 +61,24 @@ internal class OrderJournalWiring(
                     "side" to e.side.name,
                     "price" to e.price.toPlainString(),
                     "qty" to e.quantity.toPlainString(),
+                    "venueCosts" to e.venueCosts.toPlainString(),
+                ),
+            )
+        }
+        // Every slice before an order's last lands here, so the journal's fills add up to what the venue
+        // executed (#1646); readers that only know `filled` still see each order's final slice.
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+            journal.append(
+                e.strategyId,
+                "partially-filled",
+                mapOf(
+                    "id" to e.clientOrderId,
+                    "broker" to e.brokerOrderId,
+                    "symbol" to e.symbol,
+                    "side" to e.side.name,
+                    "price" to e.price.toPlainString(),
+                    "qty" to e.quantity.toPlainString(),
+                    "cumulative" to e.cumulativeFilled.toPlainString(),
                     "venueCosts" to e.venueCosts.toPlainString(),
                 ),
             )
