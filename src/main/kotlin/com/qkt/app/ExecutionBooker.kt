@@ -54,6 +54,9 @@ internal class ExecutionBooker(
             positionMode = positionMode,
         )
 
+    /** Raises the operator alert for a close fill naming a position the strategy no longer holds (#1638). */
+    var onOrphanClose: (strategyId: String, message: String) -> Unit = { _, _ -> }
+
     /**
      * Book one execution slice into the ledger and price it. Returns null when the ledger booked
      * nothing (a replayed or unattributable slice) — then nothing is accounted or published.
@@ -68,7 +71,10 @@ internal class ExecutionBooker(
         val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
         val application =
             strategyPositions.applyFillDetailed(e, legIntentResolver.resolve(e).intent, cumulativeFilled)
-        if (application.unbooked) return null
+        if (application.unbooked) {
+            if (application.orphanClose) alertOrphanClose(e)
+            return null
+        }
         val contractSize = instruments.lookup(e.symbol)?.contractSize
         val cs = contractSize ?: BigDecimal.ONE
         // Commission is a per-fill cash charge (#335); venue-reported costs (MT5 deal
@@ -149,6 +155,15 @@ internal class ExecutionBooker(
                 )
             }.setScale(Money.SCALE, Money.ROUNDING)
     }
+
+    // The venue executed it all the same: on a netting venue it opened a position no strategy owns.
+    private fun alertOrphanClose(e: BrokerEvent.OrderFilled) =
+        onOrphanClose(
+            e.strategyId,
+            "UNBOOKED CLOSE: ${e.strategyId} close ${e.clientOrderId} filled ${e.side} ${e.quantity.toPlainString()} " +
+                "${e.symbol} for a position the strategy no longer holds; nothing was booked, and the venue may " +
+                "now hold a position no strategy owns. Verify the venue and reconcile.",
+        )
 }
 
 private fun closesExposure(

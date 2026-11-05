@@ -87,6 +87,7 @@ internal class OrderWorkflows(
             s.engineHeldSubmissionBlockReason,
             log,
         )
+    private val closeGuard = LegCloseGuard(book, s.positionMode, s.strategyNetQty, s.openLegQuantity, log)
     val timeExits =
         TimeExits(
             book,
@@ -98,6 +99,7 @@ internal class OrderWorkflows(
             closeTicketFor = s.closeTicketFor,
             openLegQuantity = s.openLegQuantity,
             strategyNetQty = s.strategyNetQty,
+            closeGuard = closeGuard,
         ).also { exits -> s.bus.subscribe<BrokerEvent.OrderFilled> { e -> exits.onFilled(e.clientOrderId) } }
     val cancellation: OrderCancellation =
         OrderCancellation(
@@ -146,7 +148,8 @@ internal class OrderWorkflows(
             clock = clock,
             ops = ops,
             positionMode = s.positionMode,
-        )
+            closeGuard = closeGuard,
+        ).also { LegCloseRelease(closeGuard, ops).subscribe(s.bus) }
     private val reclamation = OrderReclamation(store, ocoGuard, siblingCancels, timeExits)
 
     override fun submit(request: OrderRequest): SubmitAck = router.submit(request)
