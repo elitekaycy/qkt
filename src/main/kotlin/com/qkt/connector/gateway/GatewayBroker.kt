@@ -73,7 +73,7 @@ class GatewayBroker internal constructor(
 
     override val supportsAccountEquity: Boolean get() = true
 
-    override val marginFloorGap: String? = marginFloorGap(session.venue.adapter)
+    override val marginFloorGap: String? by lazy { session.marginFloorGap() }
 
     override val supportsMarginLevel: Boolean get() = marginFloorGap == null
 

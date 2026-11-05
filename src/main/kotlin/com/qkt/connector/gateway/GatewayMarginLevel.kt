@@ -18,15 +18,43 @@ internal fun WireAccount.marginLevel(): BigDecimal? {
  * Why adapter [adapter]'s account figures cannot drive a margin floor, or null when they can. The adapter's id is
  * checked against the gateway's health before anything trades, so it tells a venue that never states margin from a
  * real one that is simply flat. An adapter of any other id is trusted, so one always stating no margin goes unnoticed.
+ * [version] reads the adapter's version from the gateway's health, only for an adapter whose older versions are out.
  */
-internal fun marginFloorGap(adapter: String): String? =
+internal fun marginFloorGap(
+    adapter: String,
+    version: () -> String = { "" },
+): String? =
     when (adapter) {
         "paper" -> "its gateway adapter (paper) always states no margin in use, so the floor can never bind"
         "bybit" ->
-            "its gateway adapter (bybit) divides one coin's equity by the account's pooled margin, so qkt does not " +
-                "use that level (elitekaycy/qkt-venue-gateway#109)"
+            if (atLeast(runCatching(version).getOrDefault(""), BYBIT_POOLED_ACCOUNT)) {
+                null
+            } else {
+                "its gateway adapter (bybit) before ${BYBIT_POOLED_ACCOUNT.joinToString(".")} divides one coin's " +
+                    "equity by the account's pooled margin, so qkt does not use that level " +
+                    "(elitekaycy/qkt-venue-gateway#109)"
+            }
         else -> null
     }
+
+/** [marginFloorGap] for this session's gateway, asking its health for the adapter version only when that matters. */
+internal fun GatewaySession.marginFloorGap(): String? = marginFloorGap(venue.adapter) { client.health().adapterVersion }
+
+/** qkt-venue-gateway 0.3.2 states the Bybit account as the pooled USD figures, so equity / margin used is its level. */
+private val BYBIT_POOLED_ACCOUNT = listOf(0, 3, 2)
+
+/** Whether dotted [version] is [minimum] or later; a version that does not parse is not. */
+private fun atLeast(
+    version: String,
+    minimum: List<Int>,
+): Boolean {
+    val parts = version.removePrefix("v").split(".").map { it.toIntOrNull() ?: return false }
+    for (i in minimum.indices) {
+        val part = parts.getOrElse(i) { 0 }
+        if (part != minimum[i]) return part > minimum[i]
+    }
+    return true
+}
 
 /**
  * The margin level of one gateway account for the margin floor, from what `GET /v1/account` states. A background
