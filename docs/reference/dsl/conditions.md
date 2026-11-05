@@ -209,7 +209,7 @@ These functions/properties act like read-only stream-field accesses:
 | `POSITION.<stream>` | Net position quantity (positive=long, negative=short, 0=flat) |
 | `POSITION.<stream>.pnl` | Strategy P&L for the stream |
 | `POSITION.<stream>.entry_price` | Average entry price, or `null` while flat |
-| `POSITION.<stream>.holding_duration` | How long the position has been open (seconds) |
+| `POSITION.<stream>.holding_duration` | How long the position has been open (seconds), from the open of its entry bar |
 | `OPEN_ORDERS.<stream>` | Active risk-increasing entry-order count for this strategy and stream |
 
 ```qkt
@@ -226,7 +226,11 @@ THEN CLOSE btc                                                -- time-stop on a 
 
 ### Fixed elapsed-horizon exits
 
-`POSITION.<stream>.holding_duration` uses the injected engine clock, so the same elapsed-time exit works in replay and live execution. Like every `WHEN` rule, though, it is evaluated only when the rule's stream closes a bar. The close therefore lands on the first bar close at or after the horizon, up to one bar late. Entries also fire at bar close, so a position is a few hundred milliseconds short of an exact multiple of the bar when that bar closes: a `holding_duration >= 4 * 60` exit on a 5-minute stream closes at about 5 minutes, and on a 1-minute stream at about 5 minutes too, not 4. When the exit time itself matters, use [`EXIT AFTER`](exit-after.md), which is checked on every tick and timed from the fill.
+`POSITION.<stream>.holding_duration` is measured on the bar clock: from the open of the bar the position opened in, on the finest timeframe the strategy declares for that symbol, to the engine clock's evaluation time. Like every `WHEN` rule, it is evaluated only when the rule's stream closes a bar, so the close lands on the first bar close at or after the horizon, up to one bar late when the horizon is not a whole number of bars.
+
+The bar clock is what makes the exit bar identical in a bar backtest, a tick replay and live. A market entry from a bar-close signal fills on the first executable price after that close: on the boundary in a bar backtest, a moment later on ticks, and 1-60 s later at a live venue. Each of those fills counts as opened at the boundary, so a `holding_duration >= 4 * 60` exit on a 1-minute stream closes at the fourth bar close after entry in all three, and a 6-day hold on 4-hour bars filled at 04:00:01 closes on the 04:00 bar six days later, not at 08:00. The leg's recorded open time stays the real fill time; only this measurement is anchored.
+
+Two consequences follow. A pending (stop or limit) entry that fills inside a bar counts from that bar's open, so it can read up to one bar longer than the wall-clock time since its fill. Elapsed market closures still count, so a hold across a weekend is not a bar counter. When the exit time itself matters, use [`EXIT AFTER`](exit-after.md), which is checked on every tick and timed from the fill.
 
 A fixed 8 × 4-hour horizon is:
 
@@ -236,9 +240,9 @@ WHEN POSITION.gold != 0
 THEN CLOSE gold
 ```
 
-This measures 32 elapsed hours from the executable fill. It does not grant a completed signal bar's close as an entry fill: a close-derived signal is only known after that bar closes, and the order fills on the next executable quote. It also counts elapsed market closures, so it is not an eight-observed-bar counter across a weekend. Research built from `close.shift(-8)` must disclose both differences when it is translated to exact-tick execution; a loss of expectancy under those executable semantics is not an indicator gap.
+This measures 32 elapsed hours from the open of the bar the entry filled in, so a market entry from a bar-close signal exits at the eighth 4-hour close after it. It does not grant a completed signal bar's close as an entry fill: a close-derived signal is only known after that bar closes, and the order fills on the next executable quote. It also counts elapsed market closures, so it is not an eight-observed-bar counter across a weekend. Research built from `close.shift(-8)` must disclose both differences when it is translated to exact-tick execution; a loss of expectancy under those executable semantics is not an indicator gap.
 
-The same pattern on a 30-minute stream holds for about two bars, not one: at the first bar close after entry the position is just short of 30 minutes old, so the rule closes it at the second.
+The same pattern on a 30-minute stream holds for one bar: a market entry filled just after a bar close counts from that close, so at the next close it is 30 minutes old and the rule closes it.
 
 ```qkt
 WHEN POSITION.gold != 0
@@ -246,7 +250,7 @@ WHEN POSITION.gold != 0
 THEN CLOSE gold
 ```
 
-For an exact 30-minute hold, write the exit on the entry instead: `BUY gold SIZING 0.1 EXIT AFTER 30m`.
+For an exact 30-minute hold from the fill, write the exit on the entry instead: `BUY gold SIZING 0.1 EXIT AFTER 30m`.
 
 ## Position-state guards
 
