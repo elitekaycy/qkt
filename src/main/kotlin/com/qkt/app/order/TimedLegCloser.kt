@@ -23,7 +23,16 @@ internal class TimedLegCloser(
     private val closeTicketFor: ((String, String) -> String?)?,
     private val openLegQuantity: ((String, String) -> BigDecimal?)?,
     private val strategyNetQty: ((String, String) -> BigDecimal)?,
+    private val closeGuard: LegCloseGuard? = null,
 ) {
+    /** True while a working close, from any source, already closes [exit]'s leg (#1638). */
+    fun covered(exit: PersistedTimeExit): Boolean {
+        val guard = closeGuard ?: return false
+        val intent = if (exit.legId != null || exit.ticket != null) LegIntent.Close(exit.legId, exit.ticket) else null
+        val closingSide = if (exit.side == Side.BUY) Side.SELL else Side.BUY
+        return guard.coveringClose(exit.strategyId, exit.symbol, closingSide, intent) != null
+    }
+
     // Closes only what is still open of the leg, and stands its protective exits down first so a
     // resting TP/SL cannot fire against a position that is already gone.
     // [id] names the close order; false when nothing of the leg is open, so nothing was sent.

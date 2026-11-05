@@ -37,6 +37,8 @@ internal class TimedCloseRetries(
         exit: PersistedTimeExit,
         now: Long,
     ): PersistedTimeExit? {
+        // A close still working for the leg (this exit's own, a flatten's, a CLOSE) is waited for (#1638).
+        if (closer.covered(exit)) return exit.copy(deadlineMs = now + RETRY_MS)
         val last = exit.closeId?.let { book[it] }
         var failures = exit.failures
         if (last != null) {

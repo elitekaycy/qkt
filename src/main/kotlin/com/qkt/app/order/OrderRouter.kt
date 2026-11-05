@@ -38,6 +38,7 @@ internal class OrderRouter(
     private val clock: Clock,
     private val ops: OrderOps,
     private val positionMode: (symbol: String) -> PositionAccountingMode,
+    private val closeGuard: LegCloseGuard? = null,
 ) {
     /** Plans [request]'s leg intent, then validates, tracks and dispatches it. */
     fun submit(request: OrderRequest): SubmitAck =
@@ -51,6 +52,8 @@ internal class OrderRouter(
                 accepted = true,
             )
         }
+        // A close of a leg another close is already closing is held, not sent (#1638).
+        closeGuard?.hold(request)?.let { return it }
         val now = clock.now()
         ops.track(
             ManagedOrder(

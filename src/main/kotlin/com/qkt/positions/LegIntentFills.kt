@@ -156,7 +156,9 @@ internal class LegIntentFills(
                 intent.legId,
                 intent.ticket,
             )
-            return FillApplication(Money.ZERO, unbooked = true)
+            // A ticket-only close of a venue position the ledger never held (a flatten's venue sweep) is
+            // expected here; one naming a qkt leg the book no longer holds may have opened a position.
+            return FillApplication(Money.ZERO, unbooked = true, orphanClose = intent.legId != null)
         }
         val closed = book.close(leg.legId) ?: return FillApplication(Money.ZERO, unbooked = true)
         val closingQty = closed.quantity.min(event.quantity)
