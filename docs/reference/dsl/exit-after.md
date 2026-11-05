@@ -61,9 +61,10 @@ fill, unless its take-profit fills first.
 ## EXIT AFTER versus `holding_duration`
 
 A rule such as `WHEN POSITION.gold.holding_duration >= 240 THEN CLOSE gold` is evaluated only
-when the stream's bar closes, like every `WHEN` rule. On a 5-minute stream it can close up to one
-bar late, and because entries also fire at bar close, a 4-minute hold on 5-minute bars closes at
-about 5 minutes. Use `EXIT AFTER` when the exit time itself matters.
+when the stream's bar closes, like every `WHEN` rule, and measures the hold from the open of the bar
+the position opened in. On a 5-minute stream a 4-minute hold closes at the first close after entry,
+5 minutes in; a pending entry filled late in a bar can close at the next close, moments after its
+fill. Use `EXIT AFTER` when the exit time itself matters: it is timed from the fill.
 
 ## Not supported
 
