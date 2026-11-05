@@ -18,10 +18,10 @@ import org.slf4j.LoggerFactory
  * [ContinuousMarketSource] maps stored ticks, and re-stamped with the stream's symbol. It reads the
  * followed contract and the next one ([ticks]), so the next is flowing when the stream switches; the
  * next contract's ticks never reach the strategy. When a tick shows a roll the [chain] has no
- * measurement for (a roll now, or one that fell in a downtime), the roll is measured ([measure]),
- * again every [retryMs] while its minute has not closed at the venue, the chain is rebuilt and the new
- * pair read; the ticks seen meanwhile are stale and not served. The outages of the account feed it
- * reads now are passed on, and its failure is this feed's [terminalFailureReason]. A roll the history
+ * measurement for (a roll now, or one that fell in a downtime), the roll is measured ([measure]), every
+ * missed one oldest first when a downtime spans several, again every [retryMs] while its minute has not
+ * closed at the venue, the chain is rebuilt and the new pair read; the ticks seen meanwhile are stale and
+ * not served. The outages of the account feed it reads now are passed on, and its failure is this feed's [terminalFailureReason]. A roll the history
  * cannot take, or one still unpriced [measureForMs] after it, ends the feed with that reason: the live
  * session stops, fail-closed, until the roll is measured (`qkt fetch <ROOT> --rolls`). While the stream's
  * lane holds an old contract on [taps] (a roll leg on it due or out, also after a restart past the roll),
@@ -107,19 +107,33 @@ class ContinuousLiveFeed(
         return next
     }
 
-    /** Measures the last roll at or before [atMs]; true once the chain covers it and the new pair is read. */
+    /**
+     * Measures, oldest first, every roll at or before [atMs] the chain lacks (more than one after a downtime or a
+     * history fetched a roll early, qkt#1637); true once the chain covers [atMs] and the new pair is read.
+     */
     private fun rollInto(atMs: Long): Boolean {
-        val roll = current.schedule.transitions.last { it.atMs <= atMs }
+        while (true) {
+            val index = checkNotNull(current.indexAt(atMs))
+            if (current.covers(index)) {
+                follow(index)
+                return true
+            }
+            if (!measureNext(atMs)) return false
+        }
+    }
+
+    /** Measures the first roll at or before [atMs] into a contract past the measured history; true once measured. */
+    private fun measureNext(atMs: Long): Boolean {
+        val due = current.schedule.transitions.filter { it.atMs <= atMs }
+        val roll = due.firstOrNull(::leadsPastHistory) ?: due.last()
         val deadline = roll.atMs + measureForMs
         while (true) {
             when (val result = measure(roll)) {
                 is LiveRoll.Measured -> {
                     current = chain()
-                    val index = checkNotNull(current.indexAt(atMs))
-                    check(current.covers(index)) {
+                    check(current.indexAt(roll.atMs)?.let(current::covers) == true) {
                         "${current.symbol}: the roll at ${roll.atMs} was measured but the chain does not cover it"
                     }
-                    follow(index)
                     return true
                 }
                 is LiveRoll.NotNext -> return stop("${current.symbol} cannot roll at ${roll.atMs}: ${result.reason}")
@@ -133,6 +147,12 @@ class ContinuousLiveFeed(
                 }
             }
         }
+    }
+
+    /** Whether [roll] enters a contract after the chain's measured history, so it still has to be measured. */
+    private fun leadsPastHistory(roll: RollTransition): Boolean {
+        val index = current.indexAt(roll.atMs) ?: return false
+        return index > current.firstIndex && !current.covers(index)
     }
 
     private fun stop(reason: String): Boolean {
