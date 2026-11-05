@@ -1,5 +1,7 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
+import com.qkt.broker.BrokerDeal
 import com.qkt.cli.MarketSourceFactory
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
@@ -19,6 +21,7 @@ import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import java.nio.file.Path
 import java.time.Duration
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * A Deribit perpetual on a [FakeGateway] account, quoted at [price] every 100 ms, and live sessions of
@@ -26,10 +29,11 @@ import java.time.Duration
  * restarted process. The strategy enters [entry] once, when flat with no entry open.
  */
 internal class LiveGatewayRestartFixture(
+    private val instrument: WireInstrument = PERPETUAL,
     private val entry: (symbol: String) -> OrderRequest,
 ) : AutoCloseable {
-    val code = "BTC_USDC-PERPETUAL"
-    val symbol = "DERIBIT:BTC_USDC_PERPETUAL"
+    val code = instrument.code
+    val symbol = "DERIBIT:" + code.replace('-', '_')
     val fake = FakeGateway(listOf(code))
 
     @Volatile var price = "70000"
@@ -43,7 +47,7 @@ internal class LiveGatewayRestartFixture(
         }.apply { isDaemon = true }
 
     init {
-        fake.instruments[code] = WireInstrument(code, "perpetual", "USDC", "1", "0.5", "0.001", "0.001")
+        fake.instruments[code] = instrument
         fake.capabilities = listOf("funding")
     }
 
@@ -71,7 +75,11 @@ internal class LiveGatewayRestartFixture(
         val handle: LiveSessionHandle,
         private val accounts: AccountDirectory,
         val strategy: LiveGatewayRestartFixture.Guard,
+        private val brokers: List<Broker>,
     ) {
+        /** The account's deals, as the venue-state poller reads them from the session's broker. */
+        fun deals(): List<BrokerDeal> = brokers.flatMap { it.deals(0, Long.MAX_VALUE) }
+
         /** Stops the session and closes its accounts, as a process ending does. */
         fun stop() {
             handle.stop()
@@ -101,6 +109,7 @@ internal class LiveGatewayRestartFixture(
                 ConnectorContext(null, mapOf("GW_KEY" to "secret"), SystemClock()),
             )
         val strategy = Guard()
+        val brokers = CopyOnWriteArrayList<Broker>()
         val handle =
             LiveSession(
                 strategies = listOf("guard" to strategy),
@@ -108,14 +117,19 @@ internal class LiveGatewayRestartFixture(
                 symbols = listOf(symbol),
                 clock = SystemClock(),
                 calendar = TradingCalendar.crypto(),
-                brokerFactories = accounts.orderEntry(),
+                brokerFactories =
+                    accounts.orderEntry().mapValues { (_, factory) ->
+                        { bus, clock, prices, positions, strategyId ->
+                            factory(bus, clock, prices, positions, strategyId).also(brokers::add)
+                        }
+                    },
                 persistor = FileStatePersistor(state),
             ).start()
         if (!quoting.isAlive) {
             await { fake.quotes.open > 0 }
             quoting.start()
         }
-        return Running(handle, accounts, strategy)
+        return Running(handle, accounts, strategy, brokers)
     }
 
     /** The gateway id of the entry the strategy sent as engine order [engineId]. */
@@ -133,5 +147,9 @@ internal class LiveGatewayRestartFixture(
     override fun close() {
         quoting.interrupt()
         fake.shutdown()
+    }
+
+    private companion object {
+        val PERPETUAL = WireInstrument("BTC_USDC-PERPETUAL", "perpetual", "USDC", "1", "0.5", "0.001", "0.001")
     }
 }

@@ -288,7 +288,7 @@ Controls engine state persistence.
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
 | `state.enabled` | boolean | `true` | daemon and live sessions | `false` disables restart recovery and fails production preflight. |
-| `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. |
+| `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. With `false` every write is synchronous except the excursion marks (MFE/MAE), the one state written from ticks: a writer thread writes the latest of each leg's behind the engine, and a restart extends them again from the downtime bars. |
 | `state.journal_retention_days` | integer | `14` | daemon | Day-files of the engine audit journal and MT5 transport journal (plain or gzipped) older than this many UTC days are deleted at daemon start and once a day. `0` keeps everything. |
 | `state.journal_compress_after_days` | integer | `1` | daemon | Closed `.jsonl` journal day-files older than this many UTC days are gzipped in place (~10x smaller); today's and yesterday's files stay plain with the default. Golden capture and retention read both forms. `0` disables compression. |
 | `state.disk_free_alert_gb` | integer | `10` | daemon and preflight | Below this much free space on the state volume the daemon logs an error and raises a `disk_space_low` alert (once per crossing; re-arms at 110% of the floor). Preflight fails production below the floor. `0` disables. |
@@ -301,11 +301,12 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 
 | Key | Default | Used by | Notes |
 |---|---|---|---|
-| `max_daily_loss` | `1000` | backtest halt rules and daemon | Set `0` to disable the global daily-loss rule. Production preflight requires an explicit risk block. |
+| `max_daily_loss` | `1000` | backtest halt rules and daemon | Set `0` to disable the global daily-loss rule. Production preflight requires an explicit risk block. A live run that leaves it unset logs a startup warning naming the default. |
+| `hard_daily_loss` | off | `qkt daemon` only | Decimal > 0, and >= `max_daily_loss` when both are set, or the config fails to load. Realized plus open loss across the daemon; crossing it flattens everything the daemon runs and halts until the next UTC day. See [the daemon's daily limits](#the-daemons-daily-limits). |
 | `max_order_qty` | `PreTradeControls.DEFAULT_MAX_ORDER_QTY` | daemon pre-trade controls | Hard per-order quantity cap. |
 | `max_order_notional` | `PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL` | daemon pre-trade controls | Account-currency notional cap. |
 | `price_collar_pct` | `PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC` as percent | daemon pre-trade controls | Percent distance from last market price for explicit-price orders. |
-| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when the margin level of the account the order is routed to is below this floor. A venue that reports no margin level (paper, and gateway venues today) has no floor, and startup warns once per venue where that is so; a strategy across venues judges each entry on its own account. `0` disables. |
+| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when the margin level of the account the order is routed to is below this floor. A venue gateway's level is `equity / margin_used x 100` from its `/v1/account`, polled in the background every 5 seconds so an entry never waits on the gateway; an account using no margin passes. A level not yet read, or older than 15 seconds, is a missing read: a strategy's first two approve, the third and later reject until a reading returns. A venue that reports no margin level (paper, and a gateway on the `paper` or `bybit` adapter) has no floor, and startup warns once per venue where that is so, however many strategies trade it; a strategy across venues judges each entry on its own account. `0` disables. |
 | `measured_usage_hours` | `24` | daemon pre-trade controls | New deployments can only trade up to `measured_usage_max_qty` during this window. `0` disables. |
 | `measured_usage_max_qty` | `0.01` | daemon pre-trade controls | Max entry quantity during measured usage. |
 | `max_round_trips_10m` | `10` | daemon, foreground run, and backtest disclosure | Per-strategy closing-fill threshold in 10 minutes. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
@@ -331,9 +332,31 @@ set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.loss_streak_halt` | unset | halt rules | Halts the strategy once consecutive losing closes reach N. |
 | `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
 
-Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy. A `PORTFOLIO` applies the same limits to its own children instead (its book), not to the daemon's other deployments.
+Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy.
 
-**Limit: a portfolio does not share the daemon's budget.** Book and standalone losses are not added together, and neither side's breach halts the other. With `max_daily_loss: 8`, a portfolio beside standalone strategies can lose 8 on its book and the standalone strategies another 8 between them, 16 for the day; two portfolios get 8 each. A book breach also flattens its children, while a standalone breach only blocks new exposure. Size the limit for this when mixing them, or run the portfolio in its own daemon.
+### The daemon's daily limits
+
+What `max_daily_loss` means depends on what the daemon runs:
+
+| The daemon runs | `max_daily_loss` is | Crossing it |
+|---|---|---|
+| Standalone strategies only | One realized total across them | Blocks new entries in all of them. Exits pass; positions and their stops stay. |
+| One `PORTFOLIO` only | That book's own realized limit | Flattens and halts that book. |
+| Two or more `PORTFOLIO`s, no standalone | Each book's own limit: two books get 8 each, 16 for the day | Flattens and halts that book only. |
+| Standalones and `PORTFOLIO`(s), any number | One realized total across all of them | Blocks new entries everywhere. Exits pass; positions and their stops stay; no book is flattened by it. |
+
+A mixed daemon stays mixed for the rest of the UTC day: undeploying the last standalone neither turns the limit back into a book's flatten rule nor forgets what that standalone lost. `--load-dir` is read before anything deploys, so a book that comes up first knows it is mixed, and the daemon keeps its total under the state owner `__daemon__`, so a restart reads the whole total before all its sessions are back. Every daily halt resumes at the next UTC day, and a `qkt resume` while the limit is crossed halts again and sends no entry.
+
+**A book's own limits in a mixed daemon** are `max_drawdown_pct`, `max_daily_drawdown_pct` (on the book's capital), the `book_risk` block, and `risk.per_strategy` entries for its children. A breach of the drawdown limits flattens and halts that book and touches nothing else. `max_daily_loss` is not one of them there: a mixed daemon has no book-only daily dollar limit. `book_risk` holds exposure caps, a de-risk ladder and allocation, and no daily loss: `book_risk.max_daily_loss` is not a key qkt reads. Writing one warns at load, enforces nothing and stays out of the shared total, which counts a book through its children's realized P&L.
+
+**`hard_daily_loss`** adds open P&L, marked at the closing side, to the realized total across everything the daemon runs, however it is mixed. Crossing it (strictly) halts every session, flattens each of them, books included, and blocks entries until the next UTC day. It is off when absent and leaves the table above as it is: in a daemon with one portfolio, `max_daily_loss` still flattens that book.
+
+- It is checked once a second, off the trading path, so a breach is seen within about a second. A breach resting on open P&L must hold for two checks in a row; realized loss alone past the limit trips on the first.
+- A symbol counts only with a fresh, valid mark. One with no price, a non-positive price (except an option's zero, the mark of a worthless contract, which counts as the loss it is), no live tick since its session started, or a stale or out-of-session feed counts as nothing, and a warning names it. This fails towards not flattening: a real loss on such a symbol cannot trigger the flatten until a fresh price arrives. The other symbols still count.
+- It flattens each session once. A session whose ledger still holds legs with no close working is flattened again 30 seconds later, three times at most, then an error asks the operator to close them at the venue.
+- It survives a restart within the day: the halt is recorded before the flatten, and after a restart each session gets its one flatten, which sends nothing when flat. A resume halts again. To trade before midnight, take `hard_daily_loss` out of the config, restart, and `qkt resume`.
+- Open P&L is what a position shows now, not its change today, so a position carried over midnight brings its open loss into the new day.
+- Backtests ignore it, and a backtest has one session, so nothing here changes what a backtest does. `qkt bot session` runs alone and warns that it does not apply it.
 
 A halt blocks new exposure only: exits still go out. The other strategies see the breach on their next tick or fill. An engine fault or an operator halt stays on its strategy.
 
@@ -343,7 +366,7 @@ A halt blocks new exposure only: exits still go out. The other strategies see th
 |---|---|---|---|---|
 | `account.currency` | ISO currency string | `USD` | accounting engine, reports, risk notional | Normalized to uppercase. |
 | `fx_conversion.source` | string | `market` | accounting evidence | Descriptive source label for FX conversion. |
-| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. |
+| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. A venue fee is never rejected, because the fill already happened: it is priced from the fill's pair when it can be (an ETH fee on `ETHUSDT`), else kept in its own currency, counted as 0 in account currency, and warned about once. |
 | `fx_conversion.symbols.<PAIR>` | qkt symbol | empty | backtest/accounting | Maps an FX pair such as `USDJPY` to a qkt symbol used to source conversion marks. |
 
 CLI overrides are available for backtests: `--account-currency`, `--fx-source`, `--fx-missing-policy`, and repeated `--fx-symbol PAIR=QKT_SYMBOL`.
@@ -821,7 +844,7 @@ portfolio child, a restart. Beside its deploy metadata (`deployName`, `dslVersio
   | `accounts[]` | Only those a stream of this strategy names: `name`, `type` (an installed connector), `connector`, `adapter`, `environment`, `tickPollIntervalMs` (the feed's polling interval; none when it does not poll) |
   | `startingBalance` | `starting_balance` (not on a portfolio child, which has `book`) |
   | `book` | A portfolio child's `name`, `capital` (`book_risk.capital`, else `CAPITAL`), `weight`, `allocatedCapital`, `maxGrossExposure`, `maxNetExposure`, `maxSymbolConcentration` (multiples of capital), `allocationMethod`, `targetVol`, `deRiskSteps[]` (`drawdown`, `factor`, `cooldownBars`). A strategy deployed alone has none: `book_risk` does not bound it |
-  | `risk` | `appliesTo` (`strategy`, or `book` for a portfolio child, whose halts watch the book), `maxDailyLoss`, `maxDrawdownFraction`, `totalDdBasis`, `maxDailyDrawdownFraction`, `dailyDdBasis`, `liveEquityBasis` |
+  | `risk` | `appliesTo` (`strategy`, or `book` for a portfolio child, whose halts watch the book), `maxDailyLoss`, `maxDailyLossAppliesTo` (`daemon` when it is one total across the daemon's sessions; `book` for a child whose book owns it, at the strategy's start), `hardDailyLoss`, `maxDrawdownFraction`, `totalDdBasis`, `maxDailyDrawdownFraction`, `dailyDdBasis`, `liveEquityBasis` |
   | `strategyRisk` | This strategy's `risk.per_strategy` entry, only what it sets: `maxDailyLoss`, `maxPositionSize`, `maxOpenPositions`, `maxDrawdownFraction`, `maxDailyDrawdownFraction`, `maxTradesPerDay`, `cooldownAfterLossMs`, `cooldownAfterLosses`, `lossStreakHalt`, `lossStreakHaltScope` |
   | `orders` | `maxOrderQty`, `maxOrderNotional`, `priceCollarFraction`, `marginFloorPct`, `measuredUsageHours`, `measuredUsageMaxQty`, `runawayMaxRoundTrips10m`, `runawayMaxBrokerRejections1m` |
   | `marketData` | `candleCloseGraceMs`, `staleAgeMultiple`, `minStaleAgeMs`, `outlierSigma`, `maxClockSkewMs`, `quietAlertAfterMs` (`configured` when it differs from the default) |
@@ -878,6 +901,8 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 > not bounded by these limits — `BookRiskController` is built by the portfolio deployer alone. The
 > daemon warns at start when the block is present, and total notional is otherwise unbounded for a
 > standalone strategy. See parity catalog row A23.
+
+`book_risk` has no daily loss limit. `book_risk.max_daily_loss` is not read: it warns at load and stays out of the daemon's shared `risk.max_daily_loss` total ([the daemon's daily limits](#the-daemons-daily-limits)).
 | `book_risk.limits.max_gross_exposure` | decimal | unset | Gross exposure cap as a **multiple of `capital`** (`3.0` = 3x). Not an amount of money: values above 100 are refused at load. |
 | `book_risk.limits.max_net_exposure` | decimal | unset | Net exposure cap as a multiple of `capital`. |
 | `book_risk.limits.max_symbol_concentration` | decimal | unset | Single-symbol net exposure cap as a multiple of `capital` (`0.35` = 35%). |

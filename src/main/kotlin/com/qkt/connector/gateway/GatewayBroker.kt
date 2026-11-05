@@ -1,11 +1,14 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.BookedDeals
+import com.qkt.broker.BookedDealsVenue
 import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.BrokerPendingOrder
 import com.qkt.broker.BrokerPositionTicket
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SettledClose
@@ -20,6 +23,7 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.TickSteps
+import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
@@ -33,7 +37,7 @@ import java.math.BigDecimal
  * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
  * strategy is ready ([GatewaySession.ready]). [optionGrid] is an option contract's declared price grid.
  * Its venue truth (account, positions, working orders, deals) is read through [GatewayVenueReads], the
- * same reads an MT5 broker answers, under the account's label ([GatewaySession.label]).
+ * same reads an MT5 broker answers. A market entry on a thin contract is collared by [prices] ([GatewayMarketCollar]).
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -41,22 +45,15 @@ class GatewayBroker internal constructor(
     private val clock: Clock,
     private val positions: PositionProvider,
     strategy: String?,
+    prices: MarketPriceProvider? = null,
     private val optionGrid: (String) -> TickSteps? = { null },
 ) : Broker,
+    BookedDealsVenue,
+    MarginLevelProvider,
     VenueDescribed {
-    private val attachment = session.attach(strategy, positions, bus::publish)
-    private val venueReads =
-        GatewayVenueReads(
-            session.venue,
-            GatewayDirectReads(session.label, session.client),
-            session.client,
-            session.symbols,
-            session.legs,
-            positions,
-            strategy,
-            session.ledger::ownerOf,
-            session.routing::soleHolder,
-        )
+    private val collar = session.marketCollar(prices, clock, positions, { place(it) }, bus::publish)
+    private val attachment = session.attach(strategy, positions, collar::heard)
+    private val venueReads = session.venueReads(positions, strategy)
 
     init {
         // The account's deals carry none of qkt's accounting; it is kept as this session books each fill.
@@ -76,6 +73,16 @@ class GatewayBroker internal constructor(
 
     override val supportsAccountEquity: Boolean get() = true
 
+    override val marginFloorGap: String? = marginFloorGap(session.venue.adapter)
+
+    override val supportsMarginLevel: Boolean get() = marginFloorGap == null
+
+    override fun marginLevel(): BigDecimal? = if (supportsMarginLevel) session.margin.read() else null
+
+    override fun warmMarginLevel() {
+        if (supportsMarginLevel) session.margin.start()
+    }
+
     override fun supports(symbol: String): Boolean = session.symbols.venue(symbol) != null
 
     override fun submit(request: OrderRequest): SubmitAck {
@@ -84,6 +91,12 @@ class GatewayBroker internal constructor(
             session.refreshListing()
             return refuse(request, "${request.symbol} is not in the gateway's listing (refreshing it)")
         }
+        collar.refusal(request)?.let { return refuse(request, it) }
+        return place(collar.first(request))
+    }
+
+    private fun place(request: OrderRequest): SubmitAck {
+        val code = requireNotNull(session.symbols.venue(request.symbol))
         // An option's grid steps up with its price, which the listing's one tick cannot say.
         val grid = optionGrid(request.symbol) ?: session.symbols.tick(request.symbol)?.let(::TickSteps)
         val body =
@@ -95,7 +108,9 @@ class GatewayBroker internal constructor(
         return SubmitAck(request.id, brokerOrderId = null, accepted = true)
     }
 
-    override fun cancel(orderId: String) = session.cancel(orderId)
+    override fun cancel(orderId: String) {
+        if (!collar.cancelled(orderId)) session.cancel(orderId)
+    }
 
     override fun recoverPendingOrders(
         orders: List<ManagedOrder>,
@@ -155,6 +170,10 @@ class GatewayBroker internal constructor(
 
     override fun restoreSettledCloses(closes: List<SettledClose>) = session.legs.restore(closes)
 
+    override fun bookedDeals(): BookedDeals = session.legs.booked()
+
+    override fun restoreBookedDeals(saved: BookedDeals) = session.legs.restore(saved)
+
     override fun venueIdentity(): VenueIdentity = session.venue
 
     override fun instrument(qktSymbol: String): VenueInstrument? = session.symbols.instrument(qktSymbol)
@@ -166,7 +185,10 @@ class GatewayBroker internal constructor(
     private fun reject(
         request: OrderRequest,
         reason: String,
-    ) = bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
+    ) {
+        if (collar.refused(request.id, reason)) return
+        bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
+    }
 
     private fun refuse(
         request: OrderRequest,

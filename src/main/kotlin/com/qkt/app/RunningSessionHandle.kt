@@ -3,8 +3,6 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.common.Clock
 import com.qkt.dsl.compile.DslCompiledStrategy
-import com.qkt.execution.LegIntent
-import com.qkt.execution.OrderRequest
 import com.qkt.execution.Trade
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
@@ -71,6 +69,8 @@ internal class RunningSessionHandle(
                 pipeline.droppedLateTicks()
 
     override fun inboundQueueDepth(): Int = control.size + tickQueue.size
+
+    override fun engineStalls(): EngineStalls = mailbox.stalls.snapshot()
 
     override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
@@ -159,6 +159,13 @@ internal class RunningSessionHandle(
 
     override fun streamStops() = strategies.flatMap { (id, _) -> broker.streamStops(id) }
 
+    override fun limitReading(): DailyLimitReading =
+        engineSnapshot {
+            val ids = strategies.map { it.first }
+            SessionLimitMarks(strategyPositions, strategyPnL, priceTracker, marketDataGate, instruments)
+                .read(ids, riskState.dailyPnLTracker.globalRealizedToday(), stopBook(ids, pipeline, strategyPositions))
+        }
+
     override fun flattenAndVerify(timeout: Duration): FlattenResult =
         VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 
@@ -171,26 +178,14 @@ internal class RunningSessionHandle(
         return StopFlatten(
             requestFlatten = mailbox::requestFlatten,
             flattenRunning = { mailbox.pendingFlattens.get() > 0 },
-            book = { engineSnapshot { stopBook(ids) } },
+            book = { engineSnapshot { stopBook(ids, pipeline, strategyPositions) } },
             venueHeld = { VerifiedFlatten(broker, ticketAttribution, clock, ids, {}).venueTickets() },
             venueNamesPositions = broker.supportsPositionTickets,
             // An operator's wait in real time, whatever clock the session trades on.
             nowMs = { System.nanoTime() / 1_000_000L },
             sleep = Thread::sleep,
             timeoutMs = STOP_FLATTEN_VERIFY_MS,
+            streamStops = { streamStops() },
         ).run()
-    }
-
-    /** The legs [ids] still hold, and whether a close of one is still working (engine thread). */
-    private fun stopBook(ids: List<String>): StopFlatten.Book {
-        val closing =
-            pipeline.orderManager.activeOrders().any { o ->
-                val r = o.request
-                r.strategyId in ids &&
-                    r is OrderRequest.Market &&
-                    (r.closesTicket != null || r.legIntent is LegIntent.Close)
-            }
-        val legs = ids.flatMap { id -> strategyPositions.allLegsFor(id).map { "${it.legId} (${it.symbol})" } }
-        return StopFlatten.Book(legs, closing)
     }
 }

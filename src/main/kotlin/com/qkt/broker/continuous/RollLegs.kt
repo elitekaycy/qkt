@@ -1,31 +1,13 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.isVenuePriceLimit
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
-/** How one market leg of a roll ended. */
-internal sealed interface LegOutcome {
-    /** The leg filled whole: [fill] is every slice of it, at their quantity-weighted price. */
-    data class Filled(
-        val fill: BrokerEvent.OrderFilled,
-    ) : LegOutcome
-
-    /** The venue refused or cancelled the leg before anything filled. */
-    data class Rejected(
-        val reason: String,
-    ) : LegOutcome
-
-    /** The venue ended the leg (cancel or refusal) after filling only [fill] of it. */
-    data class Partial(
-        val fill: BrokerEvent.OrderFilled,
-        val reason: String,
-    ) : LegOutcome
-}
-
 /**
- * The venue orders a roll places or cancels, which the engine must never see: the market legs,
+ * The venue orders a roll places or cancels, which the engine must never see: the legs,
  * captured as they end, and the resting orders being cancelled before their re-placement. A live venue
  * may fill a leg in slices (each an [BrokerEvent.OrderPartiallyFilled], the last an
  * [BrokerEvent.OrderFilled] of that slice only), so a leg's slices are summed into one fill at their
@@ -38,14 +20,30 @@ internal class RollLegs {
     private val ended = HashMap<String, LegOutcome>()
     private val waiting = HashMap<String, (LegOutcome) -> Unit>()
     private val cancelling = LinkedHashMap<String, ContinuousOrder>()
+    private var justEnded: LegInFlight? = null
+
+    /** What waits to be sent again. */
+    val retries = RollLegRetries()
 
     /** Expect [leg], of which [slices] already filled (a leg recovered after a restart). */
     fun expect(
-        leg: OrderRequest.Market,
+        leg: OrderRequest,
         slices: List<BrokerEvent.OrderFilled> = emptyList(),
+        earlier: List<BrokerEvent.OrderFilled> = emptyList(),
     ) {
-        pending[leg.id] = LegInFlight(leg, slices)
+        pending[leg.id] = LegInFlight(leg, slices, earlier)
     }
+
+    /** Puts the leg that just ended back as out while its retry waits, so a restart asks the venue again; returns it. */
+    fun park(): LegInFlight = requireNotNull(justEnded).also { pending[it.leg.id] = it }
+
+    /** Stops expecting [venueId]: a parked leg whose next attempt goes now. */
+    fun drop(venueId: String) {
+        pending -= venueId
+    }
+
+    /** The venue answered that it never received the leg under [venueId], so it can go again under a new id. */
+    fun neverPlaced(venueId: String): Boolean = stopped(venueId, "it never reached the venue", retryable = true)
 
     /** Expect the cancel of the resting [order], under the venue id it works under. */
     fun cancelling(order: ContinuousOrder) {
@@ -74,6 +72,9 @@ internal class RollLegs {
     /** The awaited cancel of [venueId] is confirmed; returns whether one was awaited. */
     fun cancelConfirmed(venueId: String): Boolean = cancelling.remove(venueId) != null
 
+    /** Whether any leg is still out at the venue. */
+    val anyOut: Boolean get() = pending.isNotEmpty()
+
     /** The legs still out at the venue, in the order they were sent. */
     val inFlight: List<LegInFlight> get() = pending.values.toList()
 
@@ -90,15 +91,16 @@ internal class RollLegs {
     /** End the leg [e] completes; returns whether it was a leg. */
     fun onFilled(e: BrokerEvent.OrderFilled): Boolean {
         val leg = pending[e.clientOrderId] ?: return false
-        return end(e.clientOrderId, LegOutcome.Filled(filled(leg.slices, e)))
+        return end(e.clientOrderId, LegOutcome.Filled(filled(leg.earlier + leg.slices, e)))
     }
 
     /** End the leg [e] refuses; returns whether it was a leg. */
-    fun onRejected(e: BrokerEvent.OrderRejected): Boolean = stopped(e.clientOrderId, e.reason)
+    fun onRejected(e: BrokerEvent.OrderRejected): Boolean =
+        stopped(e.clientOrderId, e.reason, retryable = isVenuePriceLimit(e.reason))
 
     /** End the leg [e] cancels; returns whether it was a leg. */
     fun onCancelled(e: BrokerEvent.OrderCancelled): Boolean =
-        stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}")
+        stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}", retryable = true)
 
     /** Hands the outcome of the leg under [venueId] to [then]: now if it has ended, else once it does. */
     fun whenEnded(
@@ -110,22 +112,21 @@ internal class RollLegs {
             waiting[venueId] = then
             return
         }
-        pending -= venueId
+        justEnded = pending.remove(venueId)
         then(outcome)
     }
 
     private fun stopped(
         venueId: String,
         reason: String,
+        retryable: Boolean = false,
     ): Boolean {
         val leg = pending[venueId] ?: return false
         val outcome =
-            if (leg.slices.isEmpty()) {
-                LegOutcome.Rejected(
-                    reason,
-                )
+            if (leg.slices.isEmpty() && leg.earlier.isEmpty()) {
+                LegOutcome.Rejected(reason, retryable)
             } else {
-                LegOutcome.Partial(filled(leg.slices, null), reason)
+                LegOutcome.Partial(filled(leg.earlier + leg.slices, null), reason, retryable)
             }
         return end(venueId, outcome)
     }
@@ -138,7 +139,7 @@ internal class RollLegs {
         if (then == null) {
             ended[venueId] = outcome
         } else {
-            pending -= venueId
+            justEnded = pending.remove(venueId)
             then(outcome)
         }
         return true
@@ -161,36 +162,3 @@ internal class RollLegs {
         )
     }
 }
-
-/** A roll's market [leg] out at the venue, with the [slices] of it filled so far, oldest first. */
-internal data class LegInFlight(
-    val leg: OrderRequest.Market,
-    val slices: List<BrokerEvent.OrderFilled>,
-)
-
-/** This slice as a fill of its own quantity, for books that take fills. */
-internal fun BrokerEvent.OrderPartiallyFilled.asFill() =
-    BrokerEvent.OrderFilled(
-        clientOrderId,
-        brokerOrderId,
-        symbol,
-        side,
-        price,
-        quantity,
-        strategyId,
-        timestamp,
-        sequenceId,
-        updatesOrderExecution = false,
-        venueCosts = venueCosts,
-        typedVenueCosts = typedVenueCosts,
-        exitReason = exitReason,
-    )
-
-/** The fees the venue reported on this fill, all of which must be in [currency]. */
-internal fun BrokerEvent.OrderFilled.venueFeesIn(currency: String): BigDecimal =
-    typedVenueCosts.fold(BigDecimal.ZERO) { total, cost ->
-        require(cost.amount.normalizedCurrency == currency.uppercase()) {
-            "fee on $symbol is in ${cost.amount.currency}, not $currency"
-        }
-        total.add(cost.amount.amount)
-    }

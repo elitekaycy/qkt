@@ -14,8 +14,11 @@ git fetch "$remote" dev testing
 
 remote_dev="$(git rev-parse "refs/remotes/$remote/dev")"
 if [[ "$dev_sha" != "$remote_dev" ]]; then
-    echo "error: green dev SHA $dev_sha is stale; current dev is $remote_dev" >&2
-    exit 1
+    # Never promote an untested SHA, and never fail for it either: dev runs are
+    # not cancelled (check.yml concurrency), so the run for the newer dev head
+    # promotes once it is green. Failing here only made a burst look broken.
+    echo "::notice::green dev SHA $dev_sha is stale; current dev is $remote_dev; skipping, its own check run promotes it"
+    exit 0
 fi
 
 git config user.name "qkt promotion"

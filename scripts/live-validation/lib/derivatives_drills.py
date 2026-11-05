@@ -6,6 +6,7 @@ A case declares them in `case.yaml`, timed from its first fill (from its `after_
     drills:
     - {at_s: 60, kind: qkt_restart, down_s: 20}      # `qkt daemon stop`, wait, start on the same state dir
     - {at_s: 60, kind: gateway_outage, seconds: 90}  # the daemon's gateway unreachable, then back
+    - {at_s: 0, before_roll_s: 5, kind: gateway_outage, seconds: 0, restart_after_s: 15}  # restarts with a roll's leg out
     - {at_s: 60, kind: kill_switch, hold_s: 30}      # the guardian engages the kill switch, then releases it
 
 `gateway_outage` points the daemon at a loopback TCP proxy the runner owns ([TcpProxy]) and stops it
@@ -157,7 +158,9 @@ class Drills:
             self.fill_seen_at.setdefault(count, time.time())
         while self.pending:
             anchored = self.fill_seen_at.get(int(self.pending[0].get("after_fills", 1)))
-            if anchored is None or time.time() < anchored + self.pending[0]["at_s"]:
+            # `before_roll_s`: timed from the case's roll (`fire_at`, set when it is planned), once the fill has come.
+            due = self.pending[0].get("fire_at") or (anchored or 0) + self.pending[0]["at_s"]
+            if anchored is None or time.time() < due:
                 return
             self.fire(self.pending.pop(0))
 
@@ -187,6 +190,8 @@ class Drills:
         if not stopped:
             line.problem("the daemon did not stop within 60 s of `qkt daemon stop`")
         time.sleep(int(drill.get("down_s", 15)))
+        if drill.get("config"):  # the restart comes back with these settings: a limit that binds only from here
+            self.run.merge_config(drill["config"])
         line.mark("daemon start")
         self.run.start_daemon(time.time() + 150)
         line.mark("daemon ready")
@@ -196,8 +201,19 @@ class Drills:
         began = line.mark("outage begins", seconds=int(drill.get("seconds", 90)))
         proxy.down()
         time.sleep(int(drill.get("seconds", 90)))
-        proxy.up()
-        ended = line.mark("outage ends")
+        if "restart_after_s" in drill:  # a restart while the outage holds a roll's leg out: the link returns as it stops
+            time.sleep(int(drill["restart_after_s"]))
+            line.mark("daemon stop")
+            if not self.run.stop_daemon():
+                line.problem("the daemon did not stop within 60 s of `qkt daemon stop`")
+            time.sleep(int(drill.get("down_s", 15)))
+            proxy.up()
+            ended = line.mark("outage ends")
+            self.run.start_daemon(time.time() + 150)
+            line.mark("daemon ready")
+        else:
+            proxy.up()
+            ended = line.mark("outage ends")
         down = up = None
         deadline = time.time() + RECONNECT_WAIT_S
         while time.time() < deadline:
@@ -234,27 +250,33 @@ class Drills:
             return line.problem("QKT_DERIV_GUARDIAN_KEY is not set: the drill needs the gateway's guardian token")
         try:
             self.engaged = True  # set first: a failure mid-request may still have engaged it
-            state = self.guardian_post("/v1/kill", {"scope": "all"})
+            symbols = drill.get("symbols")
+            self.scope = {"scope": "symbols", "symbols": symbols} if symbols else {"scope": "all"}
+            state = self.guardian_post("/v1/kill", self.scope)
             line.mark("kill engaged", kill_switch=state)
-            if not state.get("all"):
+            if not (set(symbols) <= set(state.get("symbols", [])) if symbols else state.get("all")):
                 line.problem(f"the kill switch did not engage: {state}")
-            if held:
-                self.probe(line, held[0])
+            if held:  # on what the switch covers: a scoped switch leaves the held contract free
+                self.probe(line, dict(held[0], symbol=symbols[0]) if symbols else held[0])
             time.sleep(int(drill.get("hold_s", 30)))
         finally:
             self.release(line)
         # The gateway sends each change of the switch on the stream (qkt-venue-gateway#55); the daemon logs it.
         deadline = time.time() + 15
-        while time.time() < deadline and not self.heard_flip(self.heard_kill()):
+        symbols = drill.get("symbols")
+        while time.time() < deadline and not self.heard_flip(self.heard_kill(), symbols):
             time.sleep(1)
         heard = self.heard_kill()
         line.mark("qkt heard", kill_events=heard)
-        if not self.heard_flip(heard):
+        if not self.heard_flip(heard, symbols):
             line.problem(f"the daemon did not log the switch engaging then releasing from its stream: {heard}")
 
     @staticmethod
-    def heard_flip(heard):
-        """Whether [heard] holds the switch on for every symbol, then off again."""
+    def heard_flip(heard, symbols=None):
+        """Whether [heard] holds the switch on for every symbol (or for [symbols]), then off again."""
+        if symbols:
+            on = next((i for i, state in enumerate(heard) if symbols[0] in state), None)
+            return on is not None and any(symbols[0] not in state for state in heard[on + 1:])
         on = next((i for i, state in enumerate(heard) if '"all":true' in state.replace(" ", "")), None)
         return on is not None and any('"all":false' in state.replace(" ", "") for state in heard[on + 1:])
 
@@ -283,7 +305,7 @@ class Drills:
         """Releases the kill switch this drill engaged; a no-op once released."""
         if not self.engaged:
             return
-        state = self.guardian_post("/v1/kill/release", {"scope": "all"})
+        state = self.guardian_post("/v1/kill/release", getattr(self, "scope", {"scope": "all"}))
         self.engaged = False
         if line is not None:
             line.mark("kill released", kill_switch=state)

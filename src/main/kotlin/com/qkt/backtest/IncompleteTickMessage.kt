@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.marketdata.store.CompletenessReport
 import com.qkt.marketdata.store.DayCompleteness
 import com.qkt.marketdata.store.DefaultDataStore
+import com.qkt.marketdata.store.TickStoreKeys
 import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import java.time.LocalDate
 
@@ -28,8 +29,9 @@ internal class IncompleteTickMessage(
             val symbol = stream.bareSymbol
             val kind = if (covered == 0) "no" else "incomplete"
             append("$kind $symbol tick data for $from to $to ($covered of $requested trading days).")
-            append("\n  Looked in: ${store.root.resolve("symbols").resolve(symbol)}")
-            val span = heldSpanOf(symbol)
+            val key = TickStoreKeys.forSymbol(store.root, "${stream.broker}:$symbol")
+            append("\n  Looked in: ${TickStoreKeys.dir(store.root, key)}")
+            val span = heldSpanOf(key)
             if (span == null) append(" (empty — no tick days stored)") else append(" (day files for $span)")
             val missing = report.holes.filter { it.status == DayCompleteness.Status.MISSING }
             val incomplete = report.holes.filter { it.status == DayCompleteness.Status.INCOMPLETE }

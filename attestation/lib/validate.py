@@ -16,6 +16,7 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/live-validation/lib"))
 import cross_venue  # noqa: E402
+import derivatives_roll  # noqa: E402
 
 REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "assertions")
 STATUSES = {"ready", "planned", "scheduled"}
@@ -62,6 +63,9 @@ def main():
             if doc.get("status") not in STATUSES:
                 errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
             # A case run at a set time: across an expiry (venue-gateway lanes), or at a session edge (a lane bound to a session).
+            # A release never waits for one, so it must name what proves the same thing instead.
+            if doc.get("status") == "scheduled" and not str(doc.get("release_proof") or "").strip():
+                errors.append(f"{where}: a scheduled case must name its release_proof")
             if doc.get("status") == "scheduled" and not (lanes[lane].get("venue_gateway") or lanes[lane].get("session")):
                 errors.append(f"{where}: only a venue-gateway or session-bound lane's case is scheduled")
             if len(str(doc.get("why", "")).split()) < 12:
@@ -94,6 +98,10 @@ def main():
                 if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \
                         or not isinstance(drill.get("flat", False), bool):
                     errors.append(f"{where}: drill {drill}: after_fills is a fill count from 1, flat true or false")
+            if doc.get("continuous_roll"):
+                if not lanes[lane].get("venue_gateway"):
+                    errors.append(f"{where}: continuous_roll runs in a venue-gateway lane only")
+                errors += [f"{where}: {problem}" for problem in derivatives_roll.check(doc["continuous_roll"])]
             if lane == "cross":
                 errors += [f"{where}: {problem}" for problem in cross_venue.check_venues(doc)]
                 if doc.get("replay", "by-venue") not in ("by-venue", "none"):

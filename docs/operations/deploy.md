@@ -189,6 +189,17 @@ them; they vary by account tier and jurisdiction. A 200% floor keeps roughly 2x
 coverage — the practitioner norm. Weekend/news exposure reduction is tracked in
 #398 and not yet automated: reduce manually before weekends until it ships.
 
+**Behaviour change: gateway venues now enforce the floor.** Entries on a `type: gateway` venue used to pass
+whatever the account's margin, and now reject below the floor, including the default of 200. Set
+`risk.margin_floor_pct: 0` to restore the old behaviour.
+
+A gateway's level is `equity / margin_used x 100` from its `/v1/account`, as the gateway adapter states those
+figures. Two adapters are not judged, and startup warns once per venue for each: `paper` always states no margin
+in use, and `bybit` divides one coin's equity by the account's pooled margin
+([qkt-venue-gateway#109](https://github.com/elitekaycy/qkt-venue-gateway/issues/109)). A background poller
+reads it every 5 seconds, so a hung gateway cannot delay an entry. A level not yet read or older than 15 seconds
+counts as missing: each strategy's first two missing reads approve, later ones reject until a reading returns.
+
 ## Required: external deadman watchdog
 
 The daemon cannot report its own death — a host reboot or OOM on a Friday evening

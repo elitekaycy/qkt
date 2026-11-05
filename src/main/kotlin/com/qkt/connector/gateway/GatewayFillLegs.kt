@@ -1,5 +1,7 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.BookedDeals
+import com.qkt.broker.BookedFill
 import com.qkt.broker.SettledClose
 import com.qkt.broker.VenueLeg
 import com.qkt.broker.settledClose
@@ -20,10 +22,12 @@ internal data class GatewayLegFact(
  * A deal is matched by the venue's `fill_id` and its order: the ledger notes each fill it books, in order
  * ([booked]), and the n-th execution qkt accounts for an order ([record], engine threads) is that order's
  * n-th booked fill. Never by time: a gateway may stamp a fill in its deal list apart from the time its
- * `fill` event carried (the paper gateway, 26 ms earlier). The oldest of [capacity] orders are forgotten.
+ * `fill` event carried (the paper gateway, 26 ms earlier). The oldest of [capacity] orders are forgotten. What a
+ * restart must take back ([booked], [restore]) is the newest [keptFills] fills and the settlement closes.
  */
 internal class GatewayFillLegs(
     private val capacity: Int = 20_000,
+    private val keptFills: Int = 1_000,
 ) {
     private class OrderFills {
         val fillIds = mutableListOf<String>()
@@ -36,6 +40,8 @@ internal class GatewayFillLegs(
         }
     private val open = HashMap<String, OpenPosition>()
     private val settled = HashMap<String, MutableList<SettledClose>>()
+    private val kept = ArrayDeque<BookedFill>()
+    private val restored = HashMap<Pair<String, String>, GatewayLegFact>()
 
     /** The open position of one symbol as qkt last booked it: its id, the strategies that hold it, its open time. */
     data class OpenPosition(
@@ -66,7 +72,11 @@ internal class GatewayFillLegs(
         }
         if (e.kind != FillAccountingKind.EXECUTION) return
         val fact = GatewayLegFact(VenueLeg.of(e.accountPositionBefore, after), e.grossAccountRealized, e.strategyId)
-        orders.getOrPut(e.orderId) { OrderFills() }.facts += fact
+        val order = orders.getOrPut(e.orderId) { OrderFills() }
+        order.facts += fact
+        order.fillIds.getOrNull(order.facts.lastIndex)?.let { fillId ->
+            keep(BookedFill(e.orderId, fillId, fact.leg, fact.grossRealized, fact.strategyId, e.executedAt))
+        }
         e.settledClose()?.let { settled.getOrPut(it.contract) { mutableListOf() } += it }
     }
 
@@ -79,6 +89,25 @@ internal class GatewayFillLegs(
         }
     }
 
+    /** Takes back the fills and closes qkt booked before a restart. */
+    @Synchronized
+    fun restore(saved: BookedDeals) {
+        restore(saved.settledCloses)
+        for (fill in saved.fills) {
+            restored[fill.orderId to fill.fillId] = GatewayLegFact(fill.leg, fill.grossRealized, fill.strategyId)
+            keep(fill)
+        }
+    }
+
+    /** What a restart must take back, oldest first. */
+    @Synchronized
+    fun booked(): BookedDeals = BookedDeals(kept.toList(), settled.values.flatten())
+
+    private fun keep(fill: BookedFill) {
+        kept.addLast(fill)
+        if (kept.size > keptFills) kept.removeFirst()
+    }
+
     /** The closes qkt booked when contract [symbol] settled (one per strategy that held it), empty before. */
     @Synchronized
     fun settledCloses(symbol: String): List<SettledClose> = settled[symbol].orEmpty().toList()
@@ -89,9 +118,8 @@ internal class GatewayFillLegs(
         fillId: String,
         engineOrderId: String,
     ): GatewayLegFact? {
-        val order = orders[engineOrderId] ?: return null
-        val index = order.fillIds.indexOf(fillId).takeIf { it >= 0 } ?: return null
-        return order.facts.getOrNull(index)
+        val live = orders[engineOrderId]?.let { order -> order.facts.getOrNull(order.fillIds.indexOf(fillId)) }
+        return live ?: restored[engineOrderId to fillId]
     }
 
     /** [symbol]'s open position as qkt last booked it, or null when flat or never booked here. */

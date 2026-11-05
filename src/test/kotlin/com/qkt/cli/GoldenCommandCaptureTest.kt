@@ -105,9 +105,9 @@ class GoldenCommandCaptureTest {
 
         assertThat(materializeCode).isEqualTo(ExitCodes.SUCCESS)
         assertThat(Files.readString(replayRoot.resolve("symbols/XAUUSD/1970-01-01.csv")))
-            .startsWith("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n")
-            .contains("900,XAUUSD,1998,,1997,1999,,")
-            .contains("1000,XAUUSD,2000,,1999,2001,,")
+            .startsWith("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume,receivedMs\n")
+            .contains("900,XAUUSD,1998,,1997,1999,,,\n")
+            .contains("1000,XAUUSD,2000,,1999,2001,,,1000\n")
         assertThat(replayRoot.resolve("symbols/XAUUSD/manifest.json")).exists()
         assertThat(Files.readString(replayRoot.resolve("bars/EXNESS/XAUUSD/1s/1970-01-01.csv")))
             .contains("0,1990,2005,1985,2000,10")

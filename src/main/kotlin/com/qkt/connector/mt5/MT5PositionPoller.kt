@@ -110,14 +110,10 @@ class MT5PositionPoller(
     private var consecutiveFailures: Int = 0
 
     /**
-     * Tickets for which a close has already been published, mapped to the time it was
-     * observed. MT5 never reuses a ticket number across positions, so once a ticket is
-     * gone it cannot legitimately re-open — any later re-appearance in `/positions` is a
-     * snapshot flicker. Ignoring these tickets stops the poller from re-diffing a flicker
-     * into a phantom re-open and a duplicate close (which, after the meta was consumed,
-     * surfaced as a blank-strategy "opened outside this session" event). Reaped after
-     * [CLOSED_TICKET_RETENTION_MULTIPLIER] × [MT5BrokerProfile.pollIntervalMs] purely for
-     * memory hygiene — far longer than any plausible snapshot hiccup.
+     * Tickets whose close was already published, with the time it was observed. MT5 never reuses a
+     * ticket, so a later re-appearance in `/positions` is a snapshot flicker that must not be re-diffed
+     * into a phantom re-open and a blank-strategy duplicate close. Reaped after
+     * [CLOSED_TICKET_RETENTION_MULTIPLIER] × [MT5BrokerProfile.pollIntervalMs] for memory hygiene.
      */
     private val closedTickets: MutableMap<Long, Long> = ConcurrentHashMap()
 
@@ -164,6 +160,9 @@ class MT5PositionPoller(
         thread?.join(5000)
         thread = null
     }
+
+    /** [ticket] is another strategy's on the shared magic, e.g. a sibling's position held across a restart. */
+    internal fun markForeign(ticket: Long) = foreignRuntimeTickets.add(ticket)
 
     /** True after this poller has already emitted the ticket's venue-close fill. */
     internal fun hasPublishedClose(ticket: Long): Boolean = ticket in closedTickets

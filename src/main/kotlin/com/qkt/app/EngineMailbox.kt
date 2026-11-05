@@ -33,6 +33,9 @@ internal class EngineMailbox {
         java.util.concurrent.atomic
             .AtomicLong(0)
 
+    /** What has held the engine thread long enough to put a read through [EngineSnapshot] at risk. */
+    val stalls = EngineStallWatch()
+
     /** Flattens queued or running on the engine thread; a stop waits for them rather than interrupt one. */
     val pendingFlattens = AtomicInteger(0)
 

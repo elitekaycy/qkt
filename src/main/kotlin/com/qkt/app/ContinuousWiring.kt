@@ -4,6 +4,7 @@ import com.qkt.broker.continuous.LaneStateStore
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LiveContinuousStreams
@@ -23,8 +24,11 @@ internal interface ContinuousRouting {
     /** Where the session's lanes keep their state across restarts; null keeps none. */
     val laneStore: LaneStateStore?
 
-    /** How far from its measured roll price a quote a roll's leg would hit may lie, a fraction; null judges none. */
+    /** How far from its measured roll price a roll's leg may fill, a fraction; null: market legs, nothing judged. */
     val rollPriceBand: BigDecimal? get() = null
+
+    /** How each lane hears the old contract of its roll once its stream serves the next; null: it does not. */
+    val rollQuoteTaps: RollQuoteTaps? get() = null
 
     /** Binds a lane's private [bus] to the session's engine loop, before the lane's venue is built. */
     fun bindLane(bus: EventBus)
@@ -52,6 +56,11 @@ internal class ContinuousWiring(
 
     /** The default price collar's width: far beyond any real book, so a normal one rolls as before. */
     override val rollPriceBand: BigDecimal = PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC
+
+    @Volatile private var mailbox: EngineMailbox? = null
+
+    /** The streams' feeds hand the old contracts' quotes to the lanes on the engine loop, once it is bound. */
+    override val rollQuoteTaps = RollQuoteTaps { action -> mailbox?.postOnEngine(action) }
     val source: MarketSource
     private var lanes: LaneBuses? = null
 
@@ -74,13 +83,22 @@ internal class ContinuousWiring(
                     source,
                     candidates,
                     registry,
-                    LiveContinuousStreams(candidates, directory, store, source, clock),
+                    LiveContinuousStreams(
+                        candidates,
+                        directory,
+                        store,
+                        source,
+                        clock,
+                        streams.mapNotNull(directory::rootOfContinuous).toSet(),
+                        rollQuoteTaps,
+                    ),
                 )
         }
     }
 
     /** Queues lane buses on [mailbox] from now on. */
     fun bindMailbox(mailbox: EngineMailbox) {
+        this.mailbox = mailbox
         lanes = LaneBuses(mailbox)
     }
 

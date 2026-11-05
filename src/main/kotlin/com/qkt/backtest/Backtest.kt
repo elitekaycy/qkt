@@ -407,7 +407,7 @@ class Backtest(
                     forceBars,
                     positionSign,
                     tickFills,
-                    executionConfig.brokerKind,
+                    mt5SimSymbols(executionConfig.brokerKind, inputs.instruments, request.symbols),
                 )
             return Backtest(
                 strategies = strategies,

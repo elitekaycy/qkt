@@ -28,4 +28,6 @@ data class PersistedRiskState(
     val monthKey: Long? = null,
     val realizedMonth: java.math.BigDecimal? = null,
     val perStrategyRealizedMonth: Map<String, java.math.BigDecimal> = emptyMap(),
+    /** Only in a daemon's own record: the UTC day it last mixed standalones and portfolios. */
+    val daemonMixedEpochDay: Long? = null,
 )

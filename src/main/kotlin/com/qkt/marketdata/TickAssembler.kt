@@ -19,7 +19,8 @@ class CrossedQuoteException(
  *      Tick(price = mid = 1711.753, bid = 1711.504, ask = 1712.002, ...)
  *
  * [location] is a lazy supplier of a human-readable origin (e.g. "file.csv:42"), invoked only when a
- * validation check fails — so the hot path never builds the string for the valid-data case.
+ * validation check fails — so the hot path never builds the string for the valid-data case. [receivedMs]
+ * is the live arrival time a golden capture recorded, carried through unchecked; null for any other data.
  */
 object TickAssembler {
     // Mid-price divisor, hoisted: every quote-only tick (all of dukascopy) derives a mid, and
@@ -36,6 +37,7 @@ object TickAssembler {
         bidVolume: BigDecimal?,
         askVolume: BigDecimal?,
         location: () -> String,
+        receivedMs: Long? = null,
     ): Tick {
         check(symbol.isNotEmpty()) { "${location()}: empty symbol" }
         check(price != null || (bid != null && ask != null)) {
@@ -80,6 +82,7 @@ object TickAssembler {
             ask = ask,
             bidVolume = bidVolume,
             askVolume = askVolume,
+            receivedMs = receivedMs,
         )
     }
 }

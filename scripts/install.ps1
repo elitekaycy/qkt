@@ -80,6 +80,11 @@ $env:Path = "$env:Path;$Prefix"
 # --- verify ---
 $ver = & $exe --version 2>&1 | Select-Object -First 1
 Ok "Installed: $ver"
+# --- editors (best-effort: an editor problem must not fail the install; QKT_NO_EDITOR=1 skips it) ---
+if (-not $env:QKT_NO_EDITOR) {
+    try { $null | & $exe editor install all } catch { Write-Host "Editor setup did not finish; re-run: qkt editor install all" }
+}
+
 Write-Host ''
 Ok 'qkt installed. Open a NEW terminal, then try:'
 Write-Host '    qkt --version'

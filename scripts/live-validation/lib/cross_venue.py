@@ -5,7 +5,7 @@ strategy trades through) and is judged venue by venue: the fills each venue made
 qkt's realized on that venue's symbols equals that venue's own deals net, and whether a replay made the same fills on
 each venue. Everything here is pure: the runner reads the venues and the daemon, these functions decide.
 """
-import json, re
+import json, os, re
 from collections import Counter
 from decimal import Decimal
 
@@ -73,7 +73,7 @@ def daemon_config(venues, out, risk, case_config=None):
             brokers[v["label"].lower()] = {
                 "type": "gateway", "gateway_url": v["url"], "api_key": f"env:{v['key_env']}",
                 "expected_adapter": v["adapter"], "expected_account_login": str(v["login"]),
-                "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
+                "expected_trade_mode": "demo", "chain_snapshot_seconds": 60, "shared_account": True}
     config = {"source": "local", "data_root": f"{out}/data", "log_level": "info", "runtime": {"mode": "dev"},
               "account": {"currency": "USD"}, "starting_balance": 100000, "brokers": brokers, "risk": dict(risk),
               "state": {"enabled": True, "async": True}, "insights": {"enabled": False}}
@@ -223,3 +223,40 @@ def judge_replay_by_venue(live, replayed, labels):
             problems.append(f"replay-same-fills-by-venue: {label} live {shape(ours)} != replay {shape(theirs)}")
         drift[label] = [str(Decimal(t["price"]) - Decimal(o["price"])) for o, t in zip(ours, theirs)]
     return problems, drift
+
+
+def captured_ticks(data, symbol):
+    """Whether a materialized golden capture under [data] holds [symbol]'s ticks: its venue's own store
+    (`ticks/<LABEL>/<SYMBOL>`), or the bare-symbol store a capture writes when only one venue quotes the name."""
+    label, bare = venue_of(symbol), symbol.split(":", 1)[-1]
+    return os.path.isdir(os.path.join(data, "ticks", label, bare)) or os.path.isdir(os.path.join(data, "symbols", bare))
+
+
+def venue_fee_rates(orders, roots):
+    """The taker fee rate each futures root's venue actually charged in the live session: the costs every fill of its
+    perpetual booked over that fill's notional, when every fill implies the same rate (to the millionth); roots whose
+    fills disagree, or that never filled, are left out. [orders] is causal_trace.live_chains' orders."""
+    rates = {}
+    for root in roots:
+        if not root.get("perpetual"):
+            continue
+        symbol = f"{root['root'].split(':', 1)[0]}:{root['perpetual']}"
+        multiplier = Decimal(str(root.get("multiplier", 1)))
+        implied = set()
+        for chain in orders.values():
+            for fill, accounted in zip(chain.get("fills", []), chain.get("accounted", [])):
+                if fill.get("symbol") != symbol:
+                    continue
+                notional = Decimal(fill["price"]) * Decimal(fill["quantity"]) * multiplier
+                rate = Decimal(accounted.get("totalCostsAccount") or 0) / notional
+                implied.add(rate.quantize(Decimal("0.000001")))
+        if len(implied) == 1:
+            rates[root["root"]] = str(implied.pop().normalize())
+    return rates
+
+
+def judge_trace(trace):
+    """replay-causal-trace: every engine order's causal chain, live against replay, agrees step by step; a difference
+    only a recorded cause explains (lib/causal_trace.py) is listed in the trace, not a problem."""
+    return [f"replay-causal-trace: {m['orderId']} {m['step']}" + (f"[{m['index']}]" if m.get("index") is not None else "")
+            + " differs between live and replay" for m in trace["mismatches"]]

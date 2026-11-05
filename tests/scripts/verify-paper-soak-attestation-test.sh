@@ -17,12 +17,30 @@ printf '%s\n' '{"clean":true}' > "$tmp_dir/reconcile.json"
 printf '%s\n' '{"coverage":true}' > "$tmp_dir/coverage.json"
 printf '%s\n' '{"parity":true}' > "$tmp_dir/parity.json"
 printf '%s\n' '{"insights":true}' > "$tmp_dir/insights.json"
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":0,"cases":{}}' > "$tmp_dir/trace.json"
 health_sha="$(sha256sum "$tmp_dir/health.jsonl" | cut -d' ' -f1)"
 journal_sha="$(sha256sum "$tmp_dir/golden.zip" | cut -d' ' -f1)"
 reconcile_sha="$(sha256sum "$tmp_dir/reconcile.json" | cut -d' ' -f1)"
 coverage_sha="$(sha256sum "$tmp_dir/coverage.json" | cut -d' ' -f1)"
 parity_sha="$(sha256sum "$tmp_dir/parity.json" | cut -d' ' -f1)"
 insights_sha="$(sha256sum "$tmp_dir/insights.json" | cut -d' ' -f1)"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
+# The catalog evidence's own rules are tested in scripts/live-validation/tests/test_attest_resume.py; a minimal valid one here.
+python3 - "$tmp_dir/catalog.json" "$sha" <<'PY'
+import hashlib, json, sys
+path, sha = sys.argv[1:3]
+binding = {"testingSha": sha, "cliVersion": f"qkt 1.0 ({sha})"}
+hashed = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+at = "2026-08-05T00:00:00Z"
+stage = {"status": "passed", "completedAtUtc": at}
+json.dump({"schema": "qkt-attestation-catalog-evidence-v1", "testingSha": sha, "binding": binding, "bindingSha256": hashed,
+           "waveRunId": "parity-test-20260805-0001", "assembledAtUtc": at, "maxEvidenceAgeHours": 24,
+           "stages": {"proofs": stage, "wave": stage, "insights": stage},
+           "lanes": ["orders", "risk", "book", "engine", "daemon", "stress"],
+           "cases": [{"name": "orders-a", "status": "passed", "bindingSha256": hashed, "passedAtUtc": at, "flaky": False,
+                      "resultSha256": "0" * 64, "attempts": [{"status": "passed"}]}]}, open(path, "w"))
+PY
+catalog_sha="$(sha256sum "$tmp_dir/catalog.json" | cut -d' ' -f1)"
 
 write_attestation() {
     local completed_at="$1"
@@ -55,7 +73,9 @@ write_attestation() {
     "reconciliation": "reconcile.json",
     "coverage": "coverage.json",
     "parity": "parity.json",
-    "insights": "insights.json"
+    "insights": "insights.json",
+    "catalog": "catalog.json",
+    "trace": "trace.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
@@ -63,7 +83,9 @@ write_attestation() {
     "reconciliation": "$reconcile_sha",
     "coverage": "$coverage_sha",
     "parity": "$parity_sha",
-    "insights": "$insights_sha"
+    "insights": "$insights_sha",
+    "catalog": "$catalog_sha",
+    "trace": "$trace_sha"
   }
 }
 JSON
@@ -79,6 +101,17 @@ write_attestation "2026-08-05T00:00:00Z" 0
 verify | grep -q 'paper-soak attestation valid'
 
 verify | grep -q 'live-parity'
+
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":2,"cases":{}}' > "$tmp_dir/trace.json"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
+write_attestation "2026-08-05T00:00:00Z" 0
+if verify > "$tmp_dir/trace.out" 2>&1; then
+    echo "a trace counting mismatches the parity does not must fail closed" >&2
+    exit 1
+fi
+grep -q 'trace artifact counts 2 parity mismatches' "$tmp_dir/trace.out"
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":0,"cases":{}}' > "$tmp_dir/trace.json"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
 
 write_attestation "2026-08-05T00:00:00Z" 1
 if verify > "$tmp_dir/reconcile.out" 2>&1; then

@@ -112,6 +112,20 @@ jobs:
             -c 'if g:ft !~# "filetype=qkt" | echoerr "expected filetype=qkt, got" g:ft | cquit | endif' \
             -c 'qall!'
 
+  jetbrains-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the plugin against the IDE
+        run: ./gradlew --no-daemon -p editor/jetbrains buildPlugin
+      - name: The plugin carries the TextMate bundle
+        run: unzip -l editor/jetbrains/build/distributions/qkt-jetbrains-*.zip | grep -q 'bundle/syntaxes/qkt.tmLanguage.json'
+
   vscode-e2e:
     # Starts a real VS Code with the extension against a real `qkt lsp` and checks
     # diagnostics, completion and hover arrive through the bundled language client.
@@ -133,6 +147,10 @@ jobs:
             || { echo "::error::bin/qkt does not start qkt lsp in the small JVM"; exit 1; }
           grep -q 'if "%~1"=="lsp" set DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt.bat \
             || { echo "::error::bin/qkt.bat does not start qkt lsp in the small JVM"; exit 1; }
+      - name: The launcher skips a JAVA_HOME it cannot use
+        run: |
+          real="$JAVA_HOME"
+          JAVA_HOME=/nonexistent QKT_JAVA_HOME="$real" build/install/qkt/bin/qkt --version
       - name: Install the extension's dependencies
         working-directory: editor/vscode
         run: npm ci --no-audit --no-fund

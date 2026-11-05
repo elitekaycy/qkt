@@ -18,3 +18,9 @@ internal fun ContinuousChain.untradeableRoll(
     if (nowMs < expiry) return null
     return "${contractSymbol(fromIndex)} expired at ${Instant.ofEpochMilli(expiry)} before the stream traded again"
 }
+
+/** Whether a retry at [nowMs] of a roll out of contract [fromIndex] would end well before that contract's expiry. */
+internal fun ContinuousChain.clearForRetry(
+    fromIndex: Int,
+    nowMs: Long,
+): Boolean = nowMs + RollLegIds.RETRY_EXPIRY_MARGIN_MS < schedule.contracts[fromIndex].expiryMs

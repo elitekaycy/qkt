@@ -85,4 +85,20 @@ class StrategyHandleJsonTest {
         assertThat(snap.persistence.queueSize).isEqualTo(7)
         assertThat(snap.persistence.callerRunsTotal).isEqualTo(3L)
     }
+
+    @Test
+    fun `buildSnapshot exposes how often the engine thread was held`() {
+        val snap =
+            buildSnapshot(
+                strategyName = "s",
+                strategyVersion = 1,
+                startMs = 0L,
+                startedAt = "t",
+                trades = emptyList(),
+                engineStalls = com.qkt.app.EngineStalls(3, 5_400, "query"),
+            )
+
+        assertThat(snap.engineStalls).isEqualTo(3L)
+        assertThat(snap.engineWorstHoldMs).isEqualTo(5_400L)
+    }
 }

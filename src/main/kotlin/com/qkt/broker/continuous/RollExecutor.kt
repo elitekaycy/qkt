@@ -25,10 +25,9 @@ import org.slf4j.LoggerFactory
  * gets a venue close ([ExitReason.ROLL_FAILED]) at the old leg's fill, its resting orders are
  * cancelled rather than carried, and the strategy is stopped on the stream. A roll that cannot be
  * traded — the stream skipped a whole contract, or the old contract expired before the stream traded
- * again — stops every holder the same way; the exchange then settles the expired contract. A refused
- * closing leg is a configuration fault and fails loudly. A strategy already stopped is never a holder: what it
- * has stays on its contract until settled. One [refusals] refuses stops with no leg sent. The closes and costs are
- * handed to the roll's completion, not published, so the lane records the stops before any engine handler can react to them.
+ * again — stops every holder the same way; the exchange then settles the expired contract. A refused closing leg moves
+ * nothing and stops the strategy; one already stopped is never a holder, what it has stays until settled. One [refusals]
+ * refuses stops with no leg sent. The closes and costs go to the roll's completion unpublished, so the lane records the stops first.
  */
 internal class RollExecutor(
     bus: EventBus,
@@ -42,23 +41,26 @@ internal class RollExecutor(
     fills: ContractFillLog,
     private val stops: Map<String, String>,
     private val refusals: RollRefusals,
+    hearsOldContract: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
-    private val carrying = RollCarry(clock, chainOf, venue, legs, fills, ::whenReady)
+    private val quoteWait = RollQuoteWait(clock, chainOf, refusals, legs.retries, hearsOldContract)
+    private val carrying = RollCarry(clock, chainOf, venue, legs, fills, refusals.priceBand, ::whenReady)
 
-    /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     /** The roll whose legs are still out at the venue (a live venue answers after submit returns), or null. */
     var run: RollRun? = null
         private set
 
-    /** Whether a roll is in flight. */
     val inFlight: Boolean get() = run != null
 
     /** What a restored roll does next, held until the venue is [ready]; null when nothing is held. */
     private var held: MutableList<() -> Unit>? = null
+
+    /** Whether a restored lane still waits for its venue. */
+    val waitingForVenue: Boolean get() = held != null
 
     /**
      * Roll from contract [fromIndex] to [toIndex], carrying [positions] (strategy to signed quantity),
@@ -92,7 +94,7 @@ internal class RollExecutor(
         contractPrices.update(to, measured.prices.toPrice)
         val refused =
             holders
-                .mapValues { (id, q) -> refusals.of(id, q, from, measured, quotes) }
+                .mapValues { (id, q) -> refusals.of(id, q, from, measured) }
                 .filterValues { it != null }
         val carried = holders.filterKeys { it !in refused }
         val run = RollRun(fromIndex, toIndex, measured, stopped, resting, carried.entries.toList())
@@ -100,20 +102,19 @@ internal class RollExecutor(
             log.error("{} not carried for {}: {}", chain.symbol, id, why)
             run.steps[id] = CarryStep.Stopped(id, holders.getValue(id), why.orEmpty(), null)
         }
+        run.quotes = quotes
         this.run = run
         restingOrders.pull(resting)
         carryFrom(run, 0, done)
     }
 
     /**
-     * Restores the roll [run] saved mid-flight (null when none was) and the unwinds [unwinds] still out,
-     * after a restart: each restored leg is awaited again at once, so its venue answer cannot be missed,
-     * while every leg the roll sends next, and its finish, wait for [ready]. [done] is the roll's
-     * completion, as for [roll].
+     * Restores the roll [run] saved mid-flight (null when none was) and the [unwinds] still out: each leg is awaited
+     * again at once, so its answer cannot be missed, while what the roll sends next, and its finish, wait for [ready].
      */
     fun restore(
         run: RollRun?,
-        unwinds: List<OrderRequest.Market>,
+        unwinds: List<OrderRequest>,
         done: (RollOutcome) -> Unit,
     ) {
         check(!inFlight) { "${chain.symbol} cannot restore a roll while one is in flight" }
@@ -126,10 +127,7 @@ internal class RollExecutor(
         resumeFrom(run, 0, done)
     }
 
-    /**
-     * The venue confirmed the cancel of the resting order under [venueId], pulled at a roll: while that roll
-     * is in flight its finish settles the order, after it the order is settled now, on contract [index].
-     */
+    /** The cancel of the order under [venueId], pulled at a roll, is confirmed: settled now unless that roll's finish will. */
     fun pulled(
         venueId: String,
         index: Int,
@@ -174,7 +172,9 @@ internal class RollExecutor(
     ) {
         if (i == run.holders.size) return finish(run, done)
         val (strategyId, quantity) = run.holders[i]
-        carrying.start(strategyId, quantity, run) { carryFrom(run, i + 1, done) }
+        quoteWait.look(run, strategyId, quantity, { carrying.start(strategyId, quantity, run, it) }) {
+            carryFrom(run, i + 1, done)
+        }
     }
 
     private fun finish(

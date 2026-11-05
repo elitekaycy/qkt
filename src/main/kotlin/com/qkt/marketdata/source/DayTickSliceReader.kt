@@ -4,6 +4,7 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.DataStore
+import com.qkt.marketdata.store.TickStoreKeys
 import java.time.Instant
 import java.time.LocalDate
 
@@ -19,6 +20,9 @@ internal class DayTickSliceReader(
     // --tick-fills replay does. A null value marks a day with no usable binary file.
     private val sliceFeeds = mutableMapOf<Pair<String, LocalDate>, com.qkt.marketdata.BinaryTickFeed?>()
 
+    // Resolved once per symbol: a --tick-fills replay slices every bar, and the key never changes mid-run.
+    private val storeKeys = HashMap<String, String>()
+
     // The text (csv) days' cursors; only the newest is kept, since a replay moves forward day by day.
     private val textDays =
         object : LinkedHashMap<Pair<String, LocalDate>, CsvDaySlices>(4, 0.75f, true) {
@@ -31,7 +35,7 @@ internal class DayTickSliceReader(
         fromMs: Long,
         toMs: Long,
     ): Sequence<Tick> {
-        val storeKey = symbol.substringAfter(':')
+        val storeKey = storeKeys.getOrPut(symbol) { TickStoreKeys.forSymbol(store.root, symbol) }
         val range = TimeRange(Instant.ofEpochMilli(fromMs), Instant.ofEpochMilli(toMs))
         return sequence {
             for (day in daysCovering(range)) {

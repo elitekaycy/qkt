@@ -7,6 +7,7 @@ import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
@@ -23,8 +24,7 @@ import java.math.BigDecimal
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
  * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
- * clears the stop ([releaseStop]). A live lane with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
- * and a restart restores it from there.
+ * clears the stop ([releaseStop]). A live lane with a [store] saves around every venue call; a restart restores it.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -35,13 +35,14 @@ internal class StreamLane(
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
     private val store: LaneStateStore? = null,
     private val rollPriceBand: BigDecimal? = null,
+    private val rollQuoteTaps: RollQuoteTaps? = null,
 ) {
     private val chain: ContinuousChain get() = chainOf()
 
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val contractPrices = MarketPriceTracker()
 
-    /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
+    /** The stream's contract positions as its venue account holds them, roll legs too. */
     private val book = StrategyPositionTracker(clock = clock::now)
     private val venue =
         venueFactory(venueBus, contractPrices, StreamContractPositions(chainOf().symbol, book.account))
@@ -63,14 +64,19 @@ internal class StreamLane(
             fills,
             stops,
             RollRefusals(book, rollPriceBand),
+            hearsOldContract = rollQuoteTaps != null,
         )
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
-    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
+    private val collared = rollPriceBand != null
+    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space, collared)
     private var current: Int? = null
-    private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
+    private val quotes = LaneQuotes(chainOf, ::space, collared)
+    private val tap = LaneRollTap(rollQuoteTaps, chainOf, rolls, quotes)
+    private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
+    private val submissions = LaneSubmissions(bus, chainOf, venue, orders, stops, ::space)
 
     init {
         LaneVenueEvents(
@@ -92,8 +98,9 @@ internal class StreamLane(
         store?.load(chain.symbol)?.let { saved ->
             val restored = state.restore(saved, clock.now())
             current = restored.contractIndex
-            rolls.restore(restored.run, restored.unwinds, ::applyRoll)
+            rolls.restore(restored.run?.hearing(quotes), restored.unwinds, ::applyRoll)
         }
+        tap.sync(current, clock.now())
     }
 
     /** Has the venue take back the lane's orders after a restart, beside the engine's [engineOrders]; see [LaneRecovery]. */
@@ -111,23 +118,7 @@ internal class StreamLane(
     fun submit(request: OrderRequest): SubmitAck {
         val now = clock.now()
         chain.orderRefusal(now, rolls.inFlight)?.let { return bus.refuse(request, it, now) }
-        val index = requireNotNull(catchUp(now))
-        stops[request.strategyId]?.let { return bus.refuse(request, it, now) }
-        val space =
-            try {
-                space(index)
-            } catch (e: IllegalArgumentException) {
-                return bus.refuse(request, e.message ?: "${chain.symbol} cannot price contract $index", now)
-            }
-        val translated =
-            toContract(request, request.id, chain.contractSymbol(index), space)
-                ?: return bus.refuse(
-                    request,
-                    "${chain.symbol} does not accept ${request::class.simpleName} orders",
-                    now,
-                )
-        orders.add(ContinuousOrder(request, request.id, index))
-        return venue.broker.submit(translated)
+        return submissions.submit(request, requireNotNull(catchUp(now)), now)
     }
 
     /** An operator's resume: clears [strategyId]'s stop here if it is safe ([LaneStopRelease]); null when it has none. */
@@ -150,15 +141,15 @@ internal class StreamLane(
         (venue.broker as? LiquidatingVenue)?.liquidate(chain.contractSymbol(index))
     }
 
-    /** Stops the stream's venue. */
     fun shutdown() = venue.broker.shutdown()
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
-        val index = catchUp(tick.timestamp, tick) ?: return
+        val index = catchUp(tick.timestamp, tick) ?: return legDeadline.onTick(tick.timestamp)
         val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
         venue.onTick(contractTick)
+        legDeadline.onTick(tick.timestamp)
     }
 
     /** The contract followed at [nowMs], after rolling onto it if the lane was still on an earlier one. */
@@ -177,11 +168,13 @@ internal class StreamLane(
             return index
         }
         rolls.roll(previous, index, positions, quotes.forRoll(previous, index, tick), ::applyRoll)
+        tap.sync(current, nowMs)
         return index
     }
 
     /** Applies what a roll left behind, then tells the engine of the closes and costs. */
     private fun applyRoll(outcome: RollOutcome) {
+        tap.sync(current, clock.now())
         stops.putAll(outcome.stopped)
         outcome.closes.forEach { positions.merge(it.strategyId, it.signedQuantity(), BigDecimal::add) }
         // Saved before the engine hears of it: a crash in between cannot publish the roll's closes twice.
@@ -195,6 +188,5 @@ internal class StreamLane(
         store?.save(state.snapshot(current))
     }
 
-    /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
 }

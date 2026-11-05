@@ -1,0 +1,42 @@
+id: halt-closes-late-entry
+title: A book halts while a sibling's entry is in flight, and the late fill is closed
+why: 'A book halting sends one close per child; an entry already in flight filled after it and stayed open until an
+  operator closed it (soak_k27, 0.4156 ALPACA:ETHUSD, #1608). Two children enter on one bar close under a drawdown limit
+  the spread alone breaches, so the book halts on the first fill. Whatever fills after the close must be closed by the
+  book without doubling a close, and the account must end flat with no operator command. The race is not forced: a run
+  where both fills beat the halt still proves the halt closes both.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:book-halt
+- behaviour:book-halt-closes-late-fill
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: a portfolio with two children entering on the same bar close
+- run: qkt list --state-dir {state}
+  wait_log: 'portfolio book halted'
+  wait_seconds: 150
+  note: the first fill's spread breaches the book's 0.01% drawdown (a 0.01 BTC spread of ~$18 is ~0.018% of the $1000 book)
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 90
+  reject_log: 'still held after .* closes'
+  note: every leg is closed by the book, a fill after the halt's close included
+- run: qkt list --state-dir {state}
+  settle_seconds: 75
+  expect_positions: 0
+  expect_pending: 0
+  note: and nothing re-enters while the book is halted
+assertions:
+- flat-by-magic
+budget_seconds: 420
+config:
+  risk:
+    max_drawdown_pct: '0.01'
+  book_risk:
+    capital: 1000

@@ -276,15 +276,14 @@ data class Config(
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
      * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
-     *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor] (synchronous).
+     *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor], marks written behind.
      *   - `state.enabled = true`, `async = true`  → [com.qkt.persistence.AsyncStatePersistor] wrapping [com.qkt.persistence.FileStatePersistor].
      *
      * @param stateRoot directory the file persistor writes under (`<stateRoot>/<strategyId>/...`).
      */
     fun statePersistor(stateRoot: Path): com.qkt.persistence.StatePersistor {
         if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
-        val file = com.qkt.persistence.FileStatePersistor(stateRoot)
-        return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
+        return com.qkt.persistence.fileStatePersistor(stateRoot, stateAsync)
     }
 
     /**
@@ -372,6 +371,7 @@ data class Config(
                     .loadFromString(expanded) as? Map<String, Any?>
                     ?: return defaults()
             validateRiskKeys(map["risk"])
+            validateHardDailyLoss(map["risk"] as? Map<*, *>)
             return Config(
                 source = (map["source"] as? String) ?: "tv",
                 dataRoot = (map["data_root"] as? String) ?: "./data",
@@ -402,7 +402,7 @@ data class Config(
                 insights =
                     com.qkt.observe.insights.InsightsConfig
                         .parse(map["insights"]),
-                bookRisk = parseBookRisk(map["book_risk"]),
+                bookRisk = parseBookRisk(map["book_risk"].also(::warnBookRiskDailyLoss)),
                 marketData =
                     com.qkt.marketdata.MarketDataGateConfig
                         .parse(map["market_data"]),
@@ -456,6 +456,7 @@ data class Config(
         private val RISK_KEYS =
             setOf(
                 "max_daily_loss",
+                "hard_daily_loss",
                 "max_order_qty",
                 "max_order_notional",
                 "price_collar_pct",
@@ -703,25 +704,6 @@ data class Config(
                 val name = m.groupValues[1]
                 val default = m.groups[2]?.value
                 System.getenv(name) ?: System.getProperty(name) ?: default ?: m.value
-            }
-    }
-}
-
-enum class RuntimeMode {
-    DEV,
-    PAPER,
-    PRODUCTION,
-    ;
-
-    val production: Boolean get() = this == PRODUCTION
-
-    companion object {
-        fun fromConfig(raw: String?): RuntimeMode =
-            when (raw?.trim()?.lowercase()) {
-                null, "", "dev" -> DEV
-                "paper" -> PAPER
-                "production" -> PRODUCTION
-                else -> error("runtime.mode must be one of: dev, paper, production (got '$raw')")
             }
     }
 }

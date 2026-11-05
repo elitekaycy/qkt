@@ -7,13 +7,15 @@ import com.qkt.risk.HaltScope
 import com.qkt.risk.RiskState
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.atomic.AtomicReference
 import org.slf4j.LoggerFactory
 
 /** A child the book can act on when the account-level limit trips. */
 interface ChildRiskTarget {
     /** Closes the child's open exposure. */
     fun flatten()
+
+    /** Legs the child holds with no close working. Blocks on its engine; throws when it does not answer. */
+    fun unclosedLegs(): Int
 
     /** Applies a halt with the book rule's [scope]. */
     fun halt(
@@ -37,7 +39,8 @@ interface ChildRiskTarget {
 /**
  * Account-level drawdown halt for a portfolio book. Refreshes a book [RiskState] (fed by summed
  * child PnL) and runs the existing drawdown halt rules; on a breach it flattens then halts every
- * child. A DAILY breach (daily-loss / daily-drawdown) auto-resumes only children whose halt still
+ * child. That close covers what each child holds when its engine reaches it; an entry already in
+ * flight that fills after it is closed by [LateFillCloser]. A DAILY breach (daily-loss / daily-drawdown) auto-resumes only children whose halt still
  * matches that book breach at the next UTC midnight; a PERSISTENT breach (total / trailing
  * drawdown), or an unrelated child halt, stays latched across process restarts.
  */
@@ -60,6 +63,7 @@ class PortfolioRiskAggregator(
     private val bookHaltedChildren = mutableSetOf<ChildRiskTarget>()
     private var childHaltReason: String? = null
     private var childHaltScope: HaltScope? = null
+    private val lateFills = LateFillCloser(clock)
 
     /** Queue one child fill for the book's single risk-heartbeat writer. */
     fun recordRealized(
@@ -86,6 +90,8 @@ class PortfolioRiskAggregator(
                     bookRiskState.haltReason ?: "restored portfolio book halt",
                     bookRiskState.globalHaltScope() ?: HaltScope.PERSISTENT,
                 )
+            } else {
+                lateFills.sweep(children)
             }
             return
         }
@@ -124,10 +130,16 @@ class PortfolioRiskAggregator(
         childrenHalted = true
         childHaltReason = reason
         childHaltScope = scope
-        log.warn("portfolio book drawdown breached: {} — flattening and halting all children", reason)
+        log.warn(
+            "portfolio book halted: {} — closing open positions and refusing new entries on all children; " +
+                "an entry already in flight that fills after this is closed too",
+            reason,
+        )
         for (c in children) {
             runCatching { c.flatten() }.onFailure { log.warn("child flatten failed: {}", it.message) }
-            if (!c.isHalted()) {
+            lateFills.closed(c)
+            // A child held only until midnight by the daemon's total must carry a persistent book breach past it.
+            if (!c.isHalted() || (scope == HaltScope.PERSISTENT && c.haltScope() == HaltScope.DAILY)) {
                 runCatching { c.halt(reason, scope) }.onFailure { log.warn("child halt failed: {}", it.message) }
             }
             if (c.isHalted() && c.haltReason() == reason && c.haltScope() == scope) {
@@ -138,6 +150,7 @@ class PortfolioRiskAggregator(
 
     private fun resumeBookHaltedChildren() {
         childrenHalted = false
+        lateFills.clear()
         val reason = childHaltReason
         val scope = childHaltScope
         for (child in bookHaltedChildren) {
@@ -148,41 +161,5 @@ class PortfolioRiskAggregator(
         bookHaltedChildren.clear()
         childHaltReason = null
         childHaltScope = null
-    }
-}
-
-/** Buffers child fills until the book risk state is constructed, then forwards directly. */
-internal class PortfolioRiskFillBuffer {
-    private data class Fill(
-        val strategyId: String,
-        val realized: BigDecimal,
-    )
-
-    private val pending = ConcurrentLinkedQueue<Fill>()
-    private val target = AtomicReference<PortfolioRiskAggregator?>()
-
-    fun record(
-        strategyId: String,
-        realized: BigDecimal,
-    ) {
-        val bound = target.get()
-        if (bound != null) {
-            bound.recordRealized(strategyId, realized)
-            return
-        }
-        pending.add(Fill(strategyId, realized))
-        target.get()?.let(::drain)
-    }
-
-    fun bind(aggregator: PortfolioRiskAggregator) {
-        check(target.compareAndSet(null, aggregator)) { "portfolio risk fill buffer already bound" }
-        drain(aggregator)
-    }
-
-    private fun drain(aggregator: PortfolioRiskAggregator) {
-        while (true) {
-            val fill = pending.poll() ?: return
-            aggregator.recordRealized(fill.strategyId, fill.realized)
-        }
     }
 }

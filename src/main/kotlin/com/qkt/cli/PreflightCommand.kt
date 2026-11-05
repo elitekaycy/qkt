@@ -272,7 +272,7 @@ object ProductionPreflight {
     private fun recentJournalDailyBytes(stateRoot: Path): Long {
         val datePattern = Regex("""-(\d{4}-\d{2}-\d{2})\.jsonl(\.gz)?$""")
         val byDay = sortedMapOf<String, Long>()
-        for (dirName in listOf("audit-journal", "mt5-transport-journal")) {
+        for (dirName in com.qkt.observe.JournalRetention.STATE_JOURNAL_DIRS) {
             val dir = stateRoot.resolve(dirName)
             if (!Files.isDirectory(dir)) continue
             Files.walk(dir, 2).use { stream ->

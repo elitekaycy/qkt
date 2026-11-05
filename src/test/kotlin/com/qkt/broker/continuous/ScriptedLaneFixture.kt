@@ -6,6 +6,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
@@ -35,8 +36,9 @@ import java.time.LocalTime
 internal class ScriptedLaneFixture(
     val persistor: StatePersistor = NoopStatePersistor(),
     startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
-    rollPriceBand: BigDecimal? = null,
+    private val rollPriceBand: BigDecimal? = null,
     laneVenue: ((EventBus, FixedClock, PositionProvider) -> Broker)? = null,
+    val taps: RollQuoteTaps? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
@@ -46,6 +48,7 @@ internal class ScriptedLaneFixture(
     val mar = "BINANCE_UM:BTCUSDT_250328"
     val roll = ms("2024-09-19T08:00:00Z")
     val nextRoll = ms("2024-12-19T08:00:00Z")
+    val expirySep = ms("2024-09-27T08:00:00Z")
     private val root =
         FuturesRoot(
             "BINANCE_UM:BTCUSDT",
@@ -113,6 +116,7 @@ internal class ScriptedLaneFixture(
             ContractFillLog(),
             LaneStateStore(persistor, "owner"),
             rollPriceBand,
+            rollQuoteTaps = taps,
         ) { b, _, p ->
             venueBus = b
             lanePositions = p
@@ -127,10 +131,8 @@ internal class ScriptedLaneFixture(
         tick("63010")
     }
 
-    /** Ticks the stream at [price] now. */
     fun tick(price: String) = bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
 
-    /** Ticks the stream at [price] now, with the book's [bid] and [ask]. */
     fun quote(
         price: String,
         bid: String?,
@@ -141,8 +143,11 @@ internal class ScriptedLaneFixture(
         ),
     )
 
-    /** This lane after a restart at [atMs]: a new session on what this one saved. */
-    fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs)
+    /** This lane after a restart at [atMs]: a new session on what this one saved, its old contracts heard by [taps]. */
+    fun restart(
+        atMs: Long = clock.time,
+        taps: RollQuoteTaps? = null,
+    ) = ScriptedLaneFixture(persistor, atMs, rollPriceBand, taps = taps)
 
     fun slice(
         id: String,

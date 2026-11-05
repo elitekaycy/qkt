@@ -46,8 +46,8 @@ class PortfolioDeployer(
     private val ringSize: Int = 1000,
     private val bind: String = "127.0.0.1",
     /**
-     * Daily-loss cap each portfolio's book applies to its own children, apart from the daemon's other deployments.
-     * Set to `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
+     * `risk.max_daily_loss`: each portfolio's own book limit, unless the daemon mixes standalones and portfolios,
+     * when it is one total across the daemon ([daemonRisk]) that blocks entries and flattens no book. Set to `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
     /**
@@ -110,6 +110,8 @@ class PortfolioDeployer(
         com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
     /** States what each child runs on, on `strategy.started`; null states nothing. */
     private val effectiveConfig: com.qkt.cli.EffectiveConfigFacts? = null,
+    /** What the daemon's sessions share; the same instance its standalone factory holds. */
+    private val daemonRisk: com.qkt.risk.DaemonRiskScope = com.qkt.risk.DaemonRiskScope(),
 ) {
     /**
      * Deploy a compiled portfolio and start its supervisor. Throws if any child
@@ -121,6 +123,7 @@ class PortfolioDeployer(
         /** `--reconcile=ignore-mismatches`: every child adopts unmatched venue positions instead of refusing to start. */
         ignoreMismatches: Boolean = false,
     ): PortfolioRecord {
+        daemonRisk.noteBook()
         val children = mutableListOf<StrategyHandle>()
         val childWrappers = mutableListOf<ChildHandle>()
         try {
@@ -303,25 +306,7 @@ class PortfolioDeployer(
             compiled.children.zip(wrappers).map { (child, w) ->
                 { w.handle.live.pnlSnapshot(child.strategyId) }
             }
-        val targets: List<ChildRiskTarget> =
-            wrappers.map { w ->
-                object : ChildRiskTarget {
-                    override fun flatten() = w.handle.live.flatten()
-
-                    override fun halt(
-                        reason: String,
-                        scope: com.qkt.risk.HaltScope,
-                    ) = w.handle.live.halt(reason, scope)
-
-                    override fun resume() = w.handle.live.resume()
-
-                    override fun isHalted(): Boolean = w.handle.live.isHalted()
-
-                    override fun haltReason(): String? = w.handle.live.haltReason()
-
-                    override fun haltScope(): com.qkt.risk.HaltScope? = w.handle.live.haltScope()
-                }
-            }
+        val targets: List<ChildRiskTarget> = wrappers.map { SessionRiskTarget(it.handle.live) }
         val bookRiskState =
             com.qkt.risk.RiskState(
                 BookPnLProvider(pnlSources),
@@ -338,7 +323,7 @@ class PortfolioDeployer(
         persistor.loadRiskState("$PORTFOLIO_RISK_PREFIX$portfolioName")?.let(bookRiskState::restore)
         val haltRules =
             com.qkt.risk.HaltRules
-                .standard(maxDailyLoss, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, riskCapital)
+                .book(daemonRisk, maxDailyLoss, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, riskCapital)
         val childPairs = compiled.children.zip(wrappers)
         val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
         return PortfolioRiskAggregator(
@@ -504,15 +489,22 @@ class PortfolioDeployer(
                 ?.let { TimeWindow.parse(it) }
         val childCalendar = strategyCalendar(symbols, instrumentRegistry, ::calendarForSymbol)
 
-        // Match the shared-account portfolio backtest: this cap is book-wide, not N
-        // independent child budgets that multiply the configured loss limit.
-        val haltRules: List<com.qkt.risk.HaltRule> = emptyList()
+        // Match the shared-account portfolio backtest: this cap is book-wide, not N independent child
+        // budgets. A child's rules only state its share of the daemon's total and the hard limit.
+        val haltRules =
+            com.qkt.risk.HaltRules
+                .portfolioChild(compiledChild.strategyId, daemonRisk, maxDailyLoss)
         val perStrategyOverride = perStrategyRisk[compiledChild.strategyId]
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
                 strategyCommentNames = mapOf(compiledChild.strategyId to compiledChild.ast.name),
                 ignoreMismatches = ignoreMismatches,
+                rules =
+                    listOf(
+                        com.qkt.risk.rules
+                            .DaemonEntryBlock(maxDailyLoss, daemonRisk),
+                    ),
                 haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,

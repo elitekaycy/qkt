@@ -38,6 +38,7 @@ internal fun sessionStatusSnapshot(
         streamBrokers = session.streamBrokers(),
         pnl = session.pnlSnapshot(strategyId),
         inboundQueueDepth = session.inboundQueueDepth(),
+        engineStalls = session.engineStalls(),
         droppedTicks = session.droppedTicks,
         staleSymbols = session.staleSymbols().keys.sorted(),
         clockSkewedSymbols = session.clockSkewedSymbols(),

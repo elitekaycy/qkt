@@ -37,7 +37,8 @@ internal fun readTick(
     require(sourceTimeframeMs == null || sourceTimeframeMs > 0L) {
         "invalid warmup sourceTimeframeMs at $source:$lineNumber"
     }
-    return RecordedTick(sequence, warmup, sourceTimeframeMs, value)
+    val receivedMs = if (warmup) null else optionalLong(record, "ts", source, lineNumber)
+    return RecordedTick(sequence, warmup, sourceTimeframeMs, value, receivedMs)
 }
 
 /** Parses a gateway stream candle and checks its broker and timeframe agree with the bar itself. */

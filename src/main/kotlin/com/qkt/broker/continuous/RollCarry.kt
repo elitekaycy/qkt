@@ -9,7 +9,7 @@ import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * Carries one strategy's position across a roll with two market legs on [venue] ([CarryLegs]): close on
+ * Carries one strategy's position across a roll with two legs on [venue] ([CarryLegs]): close on
  * the old contract, then open on the new one, each sent once the venue answered the one before, through
  * the explicit [CarryStep]s of the run (each leg held by [gate] while a restarted session is not ready).
  * An opening leg refused or ended leaves the position closed on the venue (any part of it that filled is
@@ -23,12 +23,12 @@ internal class RollCarry(
     venue: ContractVenue,
     legs: RollLegs,
     private val fills: ContractFillLog,
+    priceBand: BigDecimal?,
     gate: (() -> Unit) -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(RollCarry::class.java)
-    private val legOrders = CarryLegs(clock, chainOf, venue, legs, gate)
+    private val legOrders = CarryLegs(clock, chainOf, venue, legs, priceBand, gate)
 
-    /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     /**
@@ -47,10 +47,10 @@ internal class RollCarry(
             CarryStep.Closing(
                 strategyId,
                 quantity,
-                legOrders.market(run, strategyId, "close", run.fromIndex, quantity.negate()),
+                legOrders.closing(run, strategyId, quantity),
             )
         step(run, closing)
-        legOrders.send(closing.leg) { closed(run, closing, it, then) }
+        legOrders.send(run, closing.leg) { closed(run, closing, it, then) }
     }
 
     /** Waits again for the leg [step] waits for (after a restart, the leg restored); calls [then] once its carry ends. */
@@ -59,12 +59,12 @@ internal class RollCarry(
         run: RollRun,
         then: () -> Unit,
     ) = when (step) {
-        is CarryStep.Closing -> legOrders.awaitClosing(step.leg) { closed(run, step, it, then) }
-        is CarryStep.Opening -> legOrders.await(step.leg) { opened(run, step, it, then) }
+        is CarryStep.Closing -> legOrders.awaitClosing(run, step.leg) { closed(run, step, it, then) }
+        is CarryStep.Opening -> legOrders.await(run, step.leg) { opened(run, step, it, then) }
     }
 
     /** Waits again for the unwind [leg] (after a restart, the leg restored), as when it was sent. */
-    fun resumeUnwind(leg: OrderRequest.Market) = legOrders.awaitUnwind(leg)
+    fun resumeUnwind(leg: OrderRequest) = legOrders.awaitUnwind(leg)
 
     private fun closed(
         run: RollRun,
@@ -94,10 +94,10 @@ internal class RollCarry(
                         step.strategyId,
                         step.quantity,
                         outcome.fill,
-                        legOrders.market(run, step.strategyId, "open", run.toIndex, step.quantity),
+                        legOrders.opening(run, step.strategyId, step.quantity),
                     )
                 step(run, opening)
-                legOrders.send(opening.leg) { opened(run, opening, it, then) }
+                legOrders.send(run, opening.leg) { opened(run, opening, it, then) }
             }
         }
     }
@@ -110,9 +110,10 @@ internal class RollCarry(
     ) {
         when (outcome) {
             is LegOutcome.Filled -> {
-                check(outcome.fill.quantity.compareTo(step.leg.quantity) == 0) {
-                    "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.leg.quantity}"
+                check(outcome.fill.quantity.compareTo(step.quantity.abs()) == 0) {
+                    "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.quantity.abs()}"
                 }
+                legOrders.carried(step.strategyId, step.close, outcome.fill)
                 step(run, CarryStep.Carried(step.strategyId, step.quantity, step.close, outcome.fill))
                 then()
             }
@@ -135,8 +136,9 @@ internal class RollCarry(
                     step.strategyId,
                     outcome.reason,
                 )
-                legOrders.unwind(step.leg, outcome.fill.quantity)
-                stop(run, step, outcome.reason, step.close, then)
+                legOrders.unwind(run, step.leg, outcome.fill.quantity)
+                val unwinding = "${outcome.fill.quantity.toPlainString()} opened on ${step.leg.symbol}, unwinding it"
+                stop(run, step, "${outcome.reason}; $unwinding", step.close, then)
             }
         }
     }

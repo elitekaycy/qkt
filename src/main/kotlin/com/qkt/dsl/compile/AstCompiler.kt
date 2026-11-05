@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.DslVocabulary
+import com.qkt.dsl.ast.BASKET_BROKER
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
@@ -41,7 +42,7 @@ class AstCompiler {
         // `BASKET:` identity whose composite candle is written into the hub at sync time.
         val streams: Map<String, HubKey> =
             ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
-                ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) } +
+                ast.baskets.associate { it.alias to HubKey(BASKET_BROKER, it.alias.uppercase(), it.timeframe) } +
                 ast.series.associate { it.alias to HubKey(it.source.broker, it.source.symbol, it.timeframe) }
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
@@ -150,7 +151,8 @@ class AstCompiler {
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
 
-        val perStreamWarmupSpec: Map<WarmupStream, WarmupSpec> = perStreamWarmupSpecs(perStreamWarmup, streams)
+        val perStreamWarmupSpec: Map<WarmupStream, WarmupSpec> =
+            perStreamWarmupSpecs(perStreamWarmup, streams, ast.baskets)
 
         val compiledSchedules: List<CompiledSchedule> =
             ast.schedules.map { decl ->

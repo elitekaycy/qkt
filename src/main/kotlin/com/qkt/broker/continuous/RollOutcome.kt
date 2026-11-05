@@ -30,6 +30,41 @@ internal class RollRun(
     val resting: List<ContinuousOrder>,
     val holders: List<Map.Entry<String, BigDecimal>>,
 ) {
+    /** The contract prices the roll measured. */
+    val fromPrice: BigDecimal get() = measured.prices.fromPrice
+    val toPrice: BigDecimal get() = measured.prices.toPrice
+
+    /** What the roll last heard of both contracts' quotes; a restored roll has heard nothing yet. */
+    var quotes: RollQuotes = RollQuotes.NONE
+
+    /**
+     * What a leg on the old contract going [side] is collared around: its last quote's price. With none heard (the
+     * stream serves only the new contract, as after a restart past the roll instant) the old contract trades near the
+     * new contract's quote, or near that quote less the measured spread; a measured price comes from a thin contract's
+     * last bar and can be percents from the market, so the leg is collared around whichever of the two lets it fill,
+     * the lower to sell and the higher to buy. E.g. measured 77,797.5 -> 75,463.575 with the new contract at 77,927.5,
+     * a SELL goes around 77,927.5, not the 80,261.425 the measured spread puts the old contract at. With no quote at
+     * all, the measured price.
+     */
+    fun fromReference(side: Side): BigDecimal {
+        quotes.from
+            ?.price
+            ?.takeIf { it.signum() > 0 }
+            ?.let { return it }
+        val to = quotes.to?.price?.takeIf { it.signum() > 0 } ?: return fromPrice
+        val spreadAdjusted = (to - toPrice + fromPrice).takeIf { it.signum() > 0 } ?: return to
+        return if (side == Side.SELL) to.min(spreadAdjusted) else to.max(spreadAdjusted)
+    }
+
+    /** What a leg on the new contract is collared around: its latest quote's price, else the measured price. */
+    val toReference: BigDecimal get() = quotes.to?.price?.takeIf { it.signum() > 0 } ?: toPrice
+
+    /** Hears the quotes again, keeping what the old contract last said once the stream serves the new one. */
+    fun refreshQuotes() {
+        val later = quotes.later()
+        quotes = RollQuotes(later.from ?: quotes.from, later.to ?: quotes.to, later.later)
+    }
+
     /** Each holder's step, in carry order; a holder not reached yet has none. */
     val steps = LinkedHashMap<String, CarryStep>()
 

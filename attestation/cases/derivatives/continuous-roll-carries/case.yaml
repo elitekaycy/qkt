@@ -1,0 +1,34 @@
+id: continuous-roll-carries
+title: A held continuous future rolls on a normal book through two collared legs and trades on
+why: 'A live roll sent market legs that filled at 233,605 and 38,940 with the market near 78,000 (#1587). On a normal
+  book it must send one closing and one opening limit IOC leg inside the 25% collar, carry the position, let the strategy
+  close it on the new contract, and leave qkt''s realized equal to the venue''s deals of all four fills, roll cost included.
+  The roll''s time is set at the case start, so it runs at any hour on the venue''s real contracts. The history fetched
+  minutes ahead must hold no record of the roll, and the session must price it from the venue''s bars at its minute
+  (#1615): a record fetched early is priced from the bars before the roll.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC@front
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:continuous-roll
+- behaviour:roll-collar
+fills: 2
+replay: none
+continuous_roll:
+  root: DERIBIT:BTC_USDC
+  stream: DERIBIT:BTC_USDC@front
+  outcome: carried
+  quantity: 0.001
+  lead_seconds: 420
+  start_before_seconds: 300
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- roll-carried
+- roll-legs-collared
+- roll-priced-live
+budget_seconds: 600

@@ -1,5 +1,6 @@
 package com.qkt.cli.golden
 
+import com.qkt.marketdata.Candle
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipFile
 import kotlinx.serialization.json.JsonObject
@@ -26,6 +27,7 @@ internal fun readMarketRecords(
     val candles = mutableListOf<RecordedCandle>()
     val streamCandles = mutableListOf<RecordedCandle>()
     var strategyCandleEvaluations = 0L
+    var firstEvaluated: Candle? = null
     val sequences = mutableSetOf<Long>()
     for (name in engineNames) {
         zip.getInputStream(zip.getEntry(name)).bufferedReader(StandardCharsets.UTF_8).use { reader ->
@@ -43,7 +45,11 @@ internal fun readMarketRecords(
                     CANDLE_EVENT -> candles.add(readCandle(record, sequence, name, lineNumber))
                     STREAM_CANDLE_EVENT ->
                         streamCandles.add(readStreamCandle(record, sequence, name, lineNumber))
-                    STRATEGY_CANDLE_EVALUATED_EVENT -> strategyCandleEvaluations += 1L
+                    STRATEGY_CANDLE_EVALUATED_EVENT -> {
+                        strategyCandleEvaluations += 1L
+                        val evaluated = readCandle(record, sequence, name, lineNumber).candle
+                        firstEvaluated = earlierClose(firstEvaluated, evaluated)
+                    }
                 }
             }
         }
@@ -76,5 +82,16 @@ internal fun readMarketRecords(
         candles,
         streamCandles,
         strategyCandleEvaluations,
+        firstEvaluated,
     )
 }
+
+private fun earlierClose(
+    current: Candle?,
+    next: Candle,
+): Candle =
+    when {
+        current == null -> next
+        next.endTime != current.endTime -> if (next.endTime < current.endTime) next else current
+        else -> if (next.startTime > current.startTime) next else current
+    }

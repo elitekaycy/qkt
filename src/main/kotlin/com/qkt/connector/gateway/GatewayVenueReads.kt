@@ -21,9 +21,8 @@ import java.math.BigDecimal
  * stream's position as qkt booked it, under the id its deals carry), and its open time qkt's when the venue
  * states none; its mark and floating P&L stay null here (VGP v1 carries neither) for the state poller to value
  * from the session's quotes. A deal's leg, position and realized P&L are what qkt's accounting booked for that
- * fill, found by its `fill_id` ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or
- * before a restart)
- * has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
+ * fill, found by its `fill_id` ([GatewayFillLegs], which a restart takes back). A deal qkt did not book (placed
+ * elsewhere, or past what a restart keeps) has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
  * way to the books, so it and every deal after it wait for the next read.
  */
 internal class GatewayVenueReads(
@@ -177,3 +176,19 @@ internal class GatewayVenueReads(
         )
     }
 }
+
+/** The venue reads of a broker on this session, holding [positions] for [strategy]. */
+internal fun GatewaySession.venueReads(
+    positions: PositionProvider,
+    strategy: String?,
+) = GatewayVenueReads(
+    venue,
+    GatewayDirectReads(label, client),
+    client,
+    symbols,
+    legs,
+    positions,
+    strategy,
+    ledger::ownerOf,
+    routing::soleHolder,
+)

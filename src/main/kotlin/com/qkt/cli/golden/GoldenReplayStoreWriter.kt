@@ -2,11 +2,13 @@ package com.qkt.cli.golden
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
+import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DayRange
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.Manifest
 import com.qkt.marketdata.store.ManifestStore
+import com.qkt.marketdata.store.TickStoreKeys
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -18,41 +20,58 @@ import java.time.ZoneOffset
 internal class GoldenReplayStoreWriter(
     private val clock: Clock,
 ) {
-    /** Write one UTC-day CSV per bare symbol plus its tick-store manifest. */
+    /**
+     * Write each broker symbol's ticks into its venue's store (`ticks/<LABEL>/<SYMBOL>/`), one UTC-day CSV
+     * per day plus a manifest, and into the bare-symbol store (`symbols/<SYMBOL>/`) too when no other venue
+     * quotes that bare symbol, so a data root read by bare symbol keeps working. Each row carries when the
+     * tick reached qkt live (`receivedMs`, blank for a warmup tick), and a symbol's rows are written in that
+     * arrival order, so the replay sees each venue's ticks, and all venues together, in the order live qkt processed them.
+     */
     fun writeTickStore(
         root: Path,
         records: List<RecordedTick>,
     ) {
-        val symbolsByBare = records.groupBy { it.tick.symbol.substringAfter(':') }
-        for ((bare, symbolRecords) in symbolsByBare) {
-            val qktSymbols = symbolRecords.map { it.tick.symbol }.toSet()
-            require(qktSymbols.size == 1) { "multiple broker symbols share tick-store key '$bare': $qktSymbols" }
-            val byDay = symbolRecords.groupBy { utcDay(it.tick.timestamp) }.toSortedMap()
-            for ((day, dayRecords) in byDay) {
-                val dir = root.resolve("symbols").resolve(bare)
-                Files.createDirectories(dir)
-                makePrivateDirectory(dir)
-                val text =
-                    buildString {
-                        append("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n")
-                        for (record in dayRecords) {
-                            val tick = record.tick
-                            append(tick.timestamp).append(',').append(bare).append(',')
-                            append(tick.price.toPlainString()).append(',')
-                            append(tick.volume?.toPlainString().orEmpty()).append(',')
-                            append(tick.bid?.toPlainString().orEmpty()).append(',')
-                            append(tick.ask?.toPlainString().orEmpty()).append(',')
-                            append(tick.bidVolume?.toPlainString().orEmpty()).append(',')
-                            append(tick.askVolume?.toPlainString().orEmpty()).append('\n')
-                        }
-                    }
-                val file = dir.resolve("$day.csv")
-                Files.writeString(file, text, StandardCharsets.UTF_8)
-                makePrivateFile(file)
-            }
-            val ranges = byDay.keys.map { DayRange(it.toString(), it.plusDays(1).toString()) }
-            ManifestStore(root, clock).write(Manifest(symbol = bare, ranges = ranges))
+        val bySymbol = records.groupBy { it.tick.symbol }
+        val venuesByBare = bySymbol.keys.groupBy { it.substringAfter(':') }
+        for ((symbol, symbolRecords) in bySymbol) {
+            val bare = symbol.substringAfter(':')
+            if (':' in symbol) writeTickDays(root, symbol, bare, symbolRecords)
+            if (venuesByBare.getValue(bare).size == 1) writeTickDays(root, bare, bare, symbolRecords)
         }
+    }
+
+    private fun writeTickDays(
+        root: Path,
+        key: String,
+        bare: String,
+        records: List<RecordedTick>,
+    ) {
+        val dir = TickStoreKeys.dir(root, key)
+        Files.createDirectories(dir)
+        makePrivateDirectory(dir)
+        val byDay = records.groupBy { utcDay(it.tick.timestamp) }.toSortedMap()
+        for ((day, dayRecords) in byDay) {
+            val text =
+                buildString {
+                    append(CsvTickFeed.ARRIVAL_HEADER).append('\n')
+                    for (record in dayRecords.sortedWith(ARRIVAL_ORDER)) {
+                        val tick = record.tick
+                        append(tick.timestamp).append(',').append(bare).append(',')
+                        append(tick.price.toPlainString()).append(',')
+                        append(tick.volume?.toPlainString().orEmpty()).append(',')
+                        append(tick.bid?.toPlainString().orEmpty()).append(',')
+                        append(tick.ask?.toPlainString().orEmpty()).append(',')
+                        append(tick.bidVolume?.toPlainString().orEmpty()).append(',')
+                        append(tick.askVolume?.toPlainString().orEmpty()).append(',')
+                        append(record.receivedMs?.toString().orEmpty()).append('\n')
+                    }
+                }
+            val file = dir.resolve("$day.csv")
+            Files.writeString(file, text, StandardCharsets.UTF_8)
+            makePrivateFile(file)
+        }
+        val ranges = byDay.keys.map { DayRange(it.toString(), it.plusDays(1).toString()) }
+        ManifestStore(root, clock).write(Manifest(symbol = key, ranges = ranges))
     }
 
     /** Write each bar into both bar stores, grouped by broker, symbol, window and UTC day. */
@@ -90,4 +109,9 @@ internal class GoldenReplayStoreWriter(
         val symbol: String,
         val window: TimeWindow,
     )
+
+    private companion object {
+        /** Live processing order: arrival time (the journal record's), then journal sequence; a warmup tick by its own time. */
+        val ARRIVAL_ORDER: Comparator<RecordedTick> = compareBy({ it.receivedMs ?: it.tick.timestamp }, { it.sequence })
+    }
 }

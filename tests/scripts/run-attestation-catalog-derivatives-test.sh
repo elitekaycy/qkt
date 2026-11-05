@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 fake="$tmp/repo"; mkdir -p "$fake/scripts/live-validation" "$fake/attestation/lib" "$fake/bin"
 cp "$repo_root/scripts/live-validation/run-attestation-catalog.sh" "$fake/scripts/live-validation/"
+cp -r "$repo_root/scripts/live-validation/lib" "$fake/scripts/live-validation/"
 printf 'print("ok")\n' > "$fake/attestation/lib/validate.py"
 printf '#!/usr/bin/env bash\necho "qkt 0.0.0 (test)"\n' > "$fake/bin/qkt"; chmod +x "$fake/bin/qkt"
 for id in perpetual option; do
@@ -32,7 +33,7 @@ STUB
 
 run() {  # out-dir [deriv flags...]
     local out="$1"; shift
-    QKT_BROKER_API_KEY=x QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY bash "$fake/scripts/live-validation/run-attestation-catalog.sh" \
+    QKT_ATTEST_UTC_DAY_WAIT=off QKT_BROKER_API_KEY=x QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY bash "$fake/scripts/live-validation/run-attestation-catalog.sh" \
         --out "$out" --gateway-url http://127.0.0.1:5001 --expected-login 1 --expected-server S --magic-base 100 \
         --arm I_UNDERSTAND_DEMO_ORDER_0.01 --lanes derivatives --cli "$fake/bin/qkt" "$@"
 }

@@ -15,6 +15,7 @@ internal fun renderCaptureManifest(
     session: String,
     audit: AuditSummary,
     transport: TransportSummary,
+    venueExchanges: Long,
     createdAt: Instant,
     entries: List<EntryEvidence>,
     readOnly: Boolean,
@@ -38,6 +39,7 @@ internal fun renderCaptureManifest(
         append(", \"strategyCandleEvaluations\": ").append(audit.strategyCandleEvaluationCount)
         append(", \"fills\": ").append(audit.fillCount)
         append(", \"gatewayExchanges\": ").append(transport.exchangeCount)
+        append(", \"venueExchanges\": ").append(venueExchanges)
         append(", \"linkedPlacements\": ").append(transport.linkedPlacements)
         append(", \"mutations\": ").append(transport.mutationCount).append("},\n")
         append("  \"entries\": [\n")

@@ -22,7 +22,12 @@ REQUIRED_ARTIFACTS = (
     "coverage",
     "parity",
     "insights",
+    "catalog",
+    "trace",
 )
+# Lanes a release cannot leave out; the rest are the profile's. Shadow runs inside the wave, whose evidence is the bundle.
+CORE_LANES = ("orders", "risk", "book", "engine", "daemon", "stress")
+MAX_EVIDENCE_AGE_HOURS = 24
 
 
 def fail(message: str) -> None:
@@ -171,6 +176,97 @@ def verify_artifacts(document: dict[str, object], attestation: Path) -> None:
         digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
         if digest != artifact_hashes[field]:
             fail(f"{field} artifact SHA-256 mismatch")
+    verify_trace(document, attestation.parent / str(artifacts["trace"]))
+
+
+def verify_trace(document: dict[str, object], path: Path) -> None:
+    """The causal-chain trace (live against replay, per engine order) is what parity.parityMismatches counts."""
+    trace = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(trace, dict) or trace.get("schema") != "qkt-attestation-trace-v1":
+        fail("trace artifact has the wrong schema")
+    counted = require_int(trace.get("parityMismatches"), "trace.parityMismatches")
+    parity = document["parity"]
+    assert isinstance(parity, dict)
+    if counted != parity.get("parityMismatches"):
+        fail(f"trace artifact counts {counted} parity mismatches; parity.parityMismatches is {parity.get('parityMismatches')}")
+
+
+def binding_sha(binding: object) -> str:
+    return hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def ready_cases(root: Path, lanes: list[str]) -> set[str]:
+    names = set()
+    for lane in lanes:
+        folder = root / lane
+        for case_yaml in sorted(folder.glob("*/case.yaml")) if folder.is_dir() else []:
+            if re.search(r"^status:\s*ready\b", case_yaml.read_text(encoding="utf-8"), re.M):
+                names.add(f"{lane}-{case_yaml.parent.name}")
+    return names
+
+
+def verify_catalog_evidence(document: dict[str, object], attestation: Path, expected_git_sha: str, cases_root: Path | None) -> None:
+    """A release needs every required case passed on this exact build, however many runs it took to get there."""
+    artifacts = document["artifacts"]
+    assert isinstance(artifacts, dict)
+    evidence = json.loads((attestation.parent / str(artifacts["catalog"])).read_text(encoding="utf-8"))
+    if not isinstance(evidence, dict) or evidence.get("schema") != "qkt-attestation-catalog-evidence-v1":
+        fail("catalog evidence has the wrong schema")
+    if evidence.get("testingSha") != expected_git_sha:
+        fail(f"catalog evidence is for {evidence.get('testingSha')}, not {expected_git_sha}")
+    binding = evidence.get("binding")
+    if not isinstance(binding, dict) or binding.get("testingSha") != expected_git_sha:
+        fail("catalog evidence is not bound to this commit")
+    if expected_git_sha not in str(binding.get("cliVersion")):
+        fail(f"catalog evidence's CLI is not this commit's build: {binding.get('cliVersion')}")
+    expected_binding = binding_sha(binding)
+    if evidence.get("bindingSha256") != expected_binding:
+        fail("catalog evidence's binding hash does not match its binding")
+    if evidence.get("waveRunId") != document.get("runId"):
+        fail("catalog evidence belongs to another wave")
+    assembled = parse_utc(evidence.get("assembledAtUtc"), "catalog.assembledAtUtc")
+    if evidence.get("maxEvidenceAgeHours") != MAX_EVIDENCE_AGE_HOURS:
+        fail(f"catalog evidence must use the {MAX_EVIDENCE_AGE_HOURS}h limit")
+
+    def fresh(moment: object, label: str) -> None:
+        age = (assembled - parse_utc(moment, label)).total_seconds() / 3600.0
+        if age < 0 or age > MAX_EVIDENCE_AGE_HOURS:
+            fail(f"{label} is {age:.1f}h old at assembly; the limit is {MAX_EVIDENCE_AGE_HOURS}h")
+
+    stages = evidence.get("stages")
+    if not isinstance(stages, dict):
+        fail("catalog evidence has no stages")
+    for name in ("proofs", "wave", "insights"):
+        stage = stages.get(name)
+        if not isinstance(stage, dict) or stage.get("status") != "passed":
+            fail(f"stage {name} did not pass")
+        fresh(stage.get("completedAtUtc"), f"stage {name}")
+
+    lanes = evidence.get("lanes")
+    if not isinstance(lanes, list) or not set(CORE_LANES) <= set(lanes):
+        fail(f"catalog evidence must cover the lanes {', '.join(CORE_LANES)}")
+    seen = {}
+    for item in evidence.get("cases") or []:
+        name = require_string(item.get("name"), "catalog case name")
+        if item.get("status") != "passed":
+            fail(f"case {name} did not pass")
+        if item.get("bindingSha256") != expected_binding:
+            fail(f"case {name} passed on another build, profile or account")
+        attempts = item.get("attempts")
+        if not isinstance(attempts, list) or not attempts or attempts[-1].get("status") != "passed":
+            fail(f"case {name} does not end on a passed attempt")
+        if bool(item.get("flaky")) != any(a.get("status") != "passed" for a in attempts):
+            fail(f"case {name} hides a failed attempt")
+        if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("resultSha256"))):
+            fail(f"case {name} has no evidence hash")
+        fresh(item.get("passedAtUtc"), f"case {name}")
+        seen[name] = item
+    if cases_root is not None:
+        missing = ready_cases(cases_root, [str(lane) for lane in lanes]) - set(seen)
+        if missing:
+            fail(f"required cases have no pass on this build: {', '.join(sorted(missing))}")
+    if not seen:
+        fail("catalog evidence holds no case")
 
 
 def main() -> int:
@@ -181,6 +277,7 @@ def main() -> int:
     parser.add_argument("--min-continuous-hours", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--min-trading-days", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--max-dropped-ticks", type=int, default=0)
+    parser.add_argument("--cases-root", type=Path, help="attestation/cases at this commit: every ready case must be in the evidence")
     args = parser.parse_args()
 
     try:
@@ -195,6 +292,7 @@ def main() -> int:
         )
         assert isinstance(document, dict)
         verify_artifacts(document, args.attestation)
+        verify_catalog_evidence(document, args.attestation, args.expected_git_sha, args.cases_root)
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"paper-soak attestation invalid: {error}", file=sys.stderr)
         return 1

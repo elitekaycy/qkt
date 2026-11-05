@@ -8,10 +8,9 @@ import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * One account's connection to its VGP v1 gateway, shared by every strategy trading on the account and
- * open for as long as the account is: one client, one event stream, one translator. Each strategy's
- * broker attaches with the strategy it serves and its session's positions; [GatewayRouting] sends each
- * event where it belongs. The gateway's identity is checked when the stream opens and whenever its log
+ * One account's connection to its VGP v1 gateway, shared by every strategy on the account for as long as the
+ * account is open: one client, one event stream, one translator, one margin level. Each strategy's broker attaches
+ * with its strategy and session's positions; [GatewayRouting] sends each event where it belongs. The gateway's identity is checked when the stream opens and whenever its log
  * restarts. Each time a strategy is ready, once every strategy of [expectedStrategies] (asked then, as
  * strategies deploy one by one) is, their holdings must add up to the account's ([GatewayHolders]).
  * Either failure stops new risk: an identity mismatch refuses every order, a holdings mismatch every
@@ -44,6 +43,7 @@ internal class GatewaySession(
 
     /** What the account last reported. */
     val account = GatewayAccountState()
+    val margin = GatewayMarginLevel(client::account, clock, label)
     val routing = GatewayRouting()
     private val alerts = GatewayAlerts(label, routing, lock, clock)
 
@@ -56,7 +56,7 @@ internal class GatewaySession(
     private val holders =
         GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount, clock, deploysUnderway)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)
-    private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
+    internal val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
         GatewaySync(
             client,
@@ -162,6 +162,7 @@ internal class GatewaySession(
 
     /** Closes the connection with the account. */
     fun close() {
+        margin.close()
         stream.stop()
         placement.shutdown()
         resyncer.close()

@@ -61,12 +61,41 @@ qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-06-01 --to 2024-09-27
 
 For a continuous stream, give the root a roll policy in `instruments.yaml` and
 measure its rolls once with `qkt fetch BINANCE_UM:BTCUSDT --rolls` (`--tf 1d` for
-a root with only daily bars). The series is adjusted forward from the first
+a root with only daily bars). The fetch records only rolls whose minute has passed;
+a roll still ahead is priced at its own minute by the live session that reaches it,
+from the venue's bars, and appended to the history (a session ignores any record that
+was dated after it started, as an older fetch wrote them). The series is adjusted forward from the first
 measured roll; `roll.anchor` keeps a later contract at raw prices instead, for a
 panama series that would otherwise fall below zero (crude across 2020). Live, a
 continuous stream trades on a `type: gateway` account (parity rows A53-A57). A strategy whose
 roll failed is stopped on the stream: every order is refused, even after a restart, until a
 [`qkt resume`](../reference/cli-commands.md) finds nothing of it left on the stream and clears the stop.
+
+A position a failed roll stranded on its contract cannot be closed through qkt: the stopped stream refuses every order,
+`qkt stop --flatten` reports it held rather than `stopped`, and `qkt resume` is refused while it is held. It closes when the
+contract settles: a running session hears it, and a contract that expired while qkt was away is settled at the next start.
+`qkt resume` then clears the stop. To be out sooner, close it on the venue itself, in its own app or API. qkt does not hear
+of that close: it keeps the holding until settlement and books it closed at the settlement price, so its P&L differs from
+the venue's by the gap between the two prices.
+
+A live roll's legs are immediate-or-cancel limits 1% from the contract's latest quote (its measured roll price when a restart has heard none), so no leg
+can fill beyond that however the book moved. A leg an immediate-or-cancel end left unfilled goes again under a new id, only what is left of it, up to five
+attempts 15 s apart, as does a far or missing quote seen before sending; a venue refusal such as a kill switch does not.
+A leg with no attempt left stops the strategy: a closing leg leaves the
+position on its contract, an opening leg closes it on the stream at the old leg's fill. If the opening leg part
+filled and its unwind does not fill too, that part stays on the new contract, logged as an error and shown by
+`qkt resume`, until the contract settles. A venue refusing a leg under its own price limit counts as unfilled, so the leg goes again. The 25% check of the quotes before sending stays.
+
+
+Live on a gateway, a market entry on a dated future goes as an immediate-or-cancel limit 1% from the contract's last price
+(the venue's mark), so a stray far quote cannot fill it. The engine still sees one market order. An attempt the venue cancels
+is sent again, for what is left, after 1 s and 2 s, around the price as it then stands. An entry that finds nothing in 3 attempts
+is rejected with a reason saying so; with no price heard it is refused. A refusal under the venue's own price limit counts as unfilled; any other refusal, such as the gateway's kill switch, is final.
+A near entry never falls back to a plain market order. An exit (it closes a ticket or leg, or strictly reduces the strategy's position and
+the account's) is not collared: it goes as a plain market order with a warning, so it cannot get stuck, and it can still fill at
+a far quote. Resting stops stay venue stop orders. Perpetuals, spot and options keep plain market orders: in a 5-minute probe of
+Deribit's public tickers on 2026-11-02, dated futures had a side beyond 25% of mark on about 6% of ticks and perpetuals on none of
+57,733; spot, in 150 s, on none of 11,223. Backtests and MT5 are unchanged.
 
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;

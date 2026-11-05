@@ -18,6 +18,27 @@ import java.nio.file.Path
  * Returns `null` if no candidate exists.
  */
 object EditorPaths {
+    /** The file beside the editor manifest that names the qkt launcher for editor plugins. */
+    const val RECORDED_LAUNCHER = "qkt-path"
+
+    /**
+     * The command that started this qkt: `qkt.exe` itself in the Windows build, otherwise the
+     * script in `bin/`, since the running process is then `java`.
+     */
+    fun launcher(): Path? {
+        val command =
+            ProcessHandle
+                .current()
+                .info()
+                .command()
+                .orElse(null)
+                ?.let { Path.of(it) }
+        if (command?.fileName?.toString()?.startsWith("qkt") == true) return command
+        val bin = appHomeFromJar()?.resolve("bin") ?: return null
+        val windows = System.getProperty("os.name", "").lowercase().contains("win")
+        return bin.resolve(if (windows) "qkt.bat" else "qkt").takeIf { Files.isRegularFile(it) }
+    }
+
     fun bundledEditorRoot(
         env: Map<String, String> = System.getenv(),
         cwd: Path = Path.of(".").toAbsolutePath().normalize(),

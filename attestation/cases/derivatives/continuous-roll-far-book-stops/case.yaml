@@ -1,0 +1,37 @@
+id: continuous-roll-far-book-stops
+title: A book beyond the collar sends no roll leg, stops the strategy, and resume is refused while it holds
+why: 'A roll must not trade into a book far from the measured price (#1587, #1553): no leg goes, the position stays on
+  its contract, every later order of the strategy is refused, and `qkt resume` must fail and say so while it holds
+  (#1561), not print resumed. A real book cannot be made far on demand, so the new contract''s measured price is seeded
+  at half the market once the daemon runs, as another session''s live record would be (a daemon takes no record dated
+  ahead of its start, #1615): the book and venue are real, the reference is the fixture. The venue never answers a leg here; a
+  collared leg left unfilled by a book that moved after this check is proven only by the soak''s 08:00 roll. The runner
+  closes the held entry after judging it.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC@front
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:continuous-roll
+- behaviour:roll-refused-far-book
+- behaviour:resume-refused-while-held
+fills: 1
+replay: none
+continuous_roll:
+  root: DERIBIT:BTC_USDC
+  stream: DERIBIT:BTC_USDC@front
+  outcome: far_book
+  quantity: 0.001
+  far_reference: 0.5
+  lead_seconds: 420
+  start_before_seconds: 300
+  post_stop_wait_seconds: 150
+  resume_exit: 1
+assertions:
+- roll-no-leg
+- roll-position-stays
+- roll-stopped
+budget_seconds: 600

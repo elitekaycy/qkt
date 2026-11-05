@@ -79,6 +79,7 @@ class DaemonConfig(unittest.TestCase):
                          ("mt5", 929010, 436804390, "demo"))
         self.assertEqual((gateway["type"], gateway["api_key"], gateway["expected_adapter"],
                           gateway["expected_account_login"]), ("gateway", "env:QKT_CROSS_PAPER_KEY", "paper", "paper"))
+        self.assertIs(gateway["shared_account"], True)
 
     def test_a_case_config_merges_over_it(self):
         config = cv.daemon_config(self.VENUES, "/out", {"max_order_qty": "0.05"},
@@ -212,6 +213,42 @@ class Replay(unittest.TestCase):
         live = cv.parse_fills(LOG)
         replayed = [live[1], live[0], live[2]]
         self.assertEqual(cv.judge_replay_by_venue(live, replayed, ["EXNESS", "PAPER"])[0], [])
+
+
+class ExactReplay(unittest.TestCase):
+    def test_a_capture_holds_a_symbol_in_its_venue_store_or_the_bare_store(self):
+        import tempfile
+        data = tempfile.mkdtemp()
+        os.makedirs(os.path.join(data, "ticks/PAPER/BTC_USDC_PERPETUAL"))
+        os.makedirs(os.path.join(data, "symbols/BTCUSD"))
+        self.assertTrue(cv.captured_ticks(data, "PAPER:BTC_USDC_PERPETUAL"))
+        self.assertTrue(cv.captured_ticks(data, "EXNESS:BTCUSD"))
+        self.assertFalse(cv.captured_ticks(data, "DERIBIT:BTC_USDC_PERPETUAL"))
+
+    def test_the_replay_charges_the_fee_rate_the_venue_charged(self):
+        roots = [{"root": "PAPER:BTC_USDC", "multiplier": 1, "takerFeeRate": 0.0005, "perpetual": "BTC_USDC_PERPETUAL"},
+                 {"root": "DERIBIT:BTC_USDC", "multiplier": 1, "perpetual": "BTC_USDC_PERPETUAL"}]
+        fill = lambda symbol, price: {"symbol": symbol, "price": price, "quantity": "0.001"}
+        orders = {
+            "a": {"fills": [fill("PAPER:BTC_USDC_PERPETUAL", "77080.2")], "accounted": [{"totalCostsAccount": "0"}]},
+            "b": {"fills": [fill("DERIBIT:BTC_USDC_PERPETUAL", "77000")], "accounted": [{"totalCostsAccount": "0.0385"}]},
+            "c": {"fills": [fill("DERIBIT:BTC_USDC_PERPETUAL", "78000")], "accounted": [{"totalCostsAccount": "0.039"}]},
+        }
+        self.assertEqual(cv.venue_fee_rates(orders, roots), {"PAPER:BTC_USDC": "0", "DERIBIT:BTC_USDC": "0.0005"})
+
+    def test_fills_implying_different_rates_leave_the_case_fee_alone(self):
+        roots = [{"root": "PAPER:BTC_USDC", "multiplier": 1, "perpetual": "BTC_USDC_PERPETUAL"}]
+        fill = {"symbol": "PAPER:BTC_USDC_PERPETUAL", "price": "80000", "quantity": "0.001"}
+        orders = {"a": {"fills": [fill], "accounted": [{"totalCostsAccount": "0"}]},
+                  "b": {"fills": [fill], "accounted": [{"totalCostsAccount": "0.04"}]}}
+        self.assertEqual(cv.venue_fee_rates(orders, roots), {})
+
+    def test_every_unexplained_trace_difference_is_a_problem(self):
+        trace = {"mismatches": [{"orderId": "o-1", "step": "fill", "index": 0},
+                                {"orderId": "o-2", "step": "decision", "index": None}]}
+        self.assertEqual(cv.judge_trace(trace), [
+            "replay-causal-trace: o-1 fill[0] differs between live and replay",
+            "replay-causal-trace: o-2 decision differs between live and replay"])
 
 
 class Runner(unittest.TestCase):

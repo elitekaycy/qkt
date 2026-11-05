@@ -251,8 +251,12 @@ qkt fetch CME:CL --rolls --tf 1d       # a root with only daily bars, e.g. from 
 Each roll is priced at each contract's last stored bar (fetched, or built into the binary store)
 closed at or before the roll instant: from 1m bars by default, or from the bars `--tf` names (1d at
 most). Daily bars are looked for over the week before the roll, so a Monday roll takes Friday's close. Days the stored bars cannot price are fetched when qkt has a
-bar source for the venue; otherwise the history is measured from what is stored. A live session prices
-the rolls it adds from 1m bars.
+bar source for the venue; otherwise the history is measured from what is stored. Only rolls whose
+minute has passed are recorded: a roll still ahead is left out (the report counts it), so no record is
+priced from the bars before it. A live session prices the rolls it adds from 1m bars, at their minute,
+and takes no record dated after it started. A rebuild keeps a record already in the history for a
+roll the stored bars cannot price, such as one a live session measured from its venue's bars, so the
+history never ends before a roll live traded on.
 
 A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
 contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that
@@ -491,6 +495,12 @@ You can drop CSVs straight into the tick store — handy for broker-exported tic
 
 **Where:** `~/.qkt/data/symbols/<BARE_SYMBOL>/<YYYY-MM-DD>.csv` (one UTC day per file). The directory
 is the **bare** symbol — `XAUUSD`, not `BACKTEST:XAUUSD`. `.csv.gz` is also accepted.
+
+A venue may also keep its own ticks under `~/.qkt/data/ticks/<VENUE>/<BARE_SYMBOL>/` (same files, same
+manifest). A stream `EXNESS:AAPL` reads `ticks/EXNESS/AAPL/` when that folder exists and falls back to
+`symbols/AAPL/` otherwise, so two venues quoting the same symbol (a share CFD beside the share itself)
+replay their own prices. `qkt golden materialize` writes this layout; `qkt fetch` and `qkt data import`
+still write the bare store.
 
 **Exact format** — the header must match byte-for-byte, every row has 8 fields, timestamps are epoch
 milliseconds and **strictly non-decreasing**. `price`, `volume`, `bid`, `ask`, `bidVolume`, `askVolume`

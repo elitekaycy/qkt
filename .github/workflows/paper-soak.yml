@@ -31,7 +31,8 @@ jobs:
           set -euo pipefail
           python3 scripts/verify-paper-soak-attestation.py "$ATTESTATION_PATH" \
             --expected-git-sha "$GITHUB_SHA" \
-            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY"
+            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY" \
+            --cases-root attestation/cases
           image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$ATTESTATION_PATH")"
           docker pull "$image"
           revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
@@ -39,7 +40,7 @@ jobs:
           evidence_dir="$RUNNER_TEMP/paper-soak-attestation"
           install -d -m 0700 "$evidence_dir"
           source_dir="$(dirname "$ATTESTATION_PATH")"
-          for field in health journal reconciliation coverage parity insights; do
+          for field in health journal reconciliation coverage parity insights catalog trace; do
             artifact="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"][sys.argv[2]])' "$ATTESTATION_PATH" "$field")"
             install -m 0600 "$source_dir/$artifact" "$evidence_dir/$artifact"
           done

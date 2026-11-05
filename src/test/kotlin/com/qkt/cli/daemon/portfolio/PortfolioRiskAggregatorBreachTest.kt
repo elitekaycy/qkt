@@ -2,6 +2,7 @@ package com.qkt.cli.daemon.portfolio
 
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.FakePnL
+import com.qkt.risk.HaltScope
 import com.qkt.risk.TestClock
 import com.qkt.risk.rules.MaxDailyDrawdown
 import com.qkt.risk.rules.MaxDrawdown
@@ -31,6 +32,28 @@ class PortfolioRiskAggregatorBreachTest : PortfolioRiskAggregatorFixture() {
         assertThat(b.flattened).isEqualTo(1)
         assertThat(a.halted).contains("drawdown")
         assertThat(b.halted).isNotNull()
+    }
+
+    @Test
+    fun `failing closed closes open positions once and halts every child persistently`() {
+        val clock = TestClock(0L)
+        val a = FakeChild()
+        val b = FakeChild()
+        val agg =
+            PortfolioRiskAggregator(
+                children = listOf(a, b),
+                bookRiskState = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock),
+                haltRules = emptyList(),
+                clock = clock,
+            )
+
+        agg.failClosed("risk unreadable")
+        agg.failClosed("risk unreadable")
+        agg.evaluate()
+
+        assertThat(listOf(a.flattened, b.flattened)).containsExactly(1, 1)
+        assertThat(listOf(a.scope, b.scope)).containsOnly(HaltScope.PERSISTENT)
+        assertThat(listOf(a.halted, b.halted)).containsOnly("risk unreadable")
     }
 
     @Test

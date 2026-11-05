@@ -43,7 +43,7 @@ qkt editor install helix
 qkt editor install zed        # prints the steps; Zed installs extensions itself
 qkt editor install sublime
 qkt editor install emacs
-qkt editor install intellij   # prints the steps; also idea, pycharm, webstorm, ...
+qkt editor install intellij   # also idea, pycharm, webstorm, ...
 ```
 
 What each does:
@@ -54,7 +54,7 @@ What each does:
 - **helix** — adds a managed block to `~/.config/helix/languages.toml` (`%AppData%\helix` on Windows) that binds `*.qkt`, starts `qkt lsp` and points the grammar at the bundled tree-sitter source; copies the highlight queries to `runtime/queries/qkt/`; and compiles the grammar into `runtime/grammars/` when `cc`, `gcc` or `clang` is on `PATH` (otherwise run `hx --grammar build`). The rest of `languages.toml` is left alone, and re-running replaces the block.
 - **sublime** — copies the grammar (`qkt.tmLanguage`) and comment settings into `Packages/User/qkt/`, and prints the [LSP package](https://packagecontrol.io/packages/LSP) client entry for completion and diagnostics.
 - **emacs** — copies `qkt-mode.el` into `~/.emacs.d/qkt/` (or `~/.config/emacs/qkt/`) and adds a managed block to your init file (`~/.emacs` if you use one, else `init.el`) that loads it. `qkt-mode` starts eglot against `qkt lsp` itself.
-- **intellij** — prints the two settings steps for JetBrains IDEs: the TextMate bundle (the bundled VS Code extension folder) and an [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) language server running `qkt lsp`. JetBrains IDEs only take these through their settings UI.
+- **intellij** — unpacks the qkt plugin into the plugins folder of every JetBrains IDE from 2024.2 on, and downloads [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) from the JetBrains Marketplace if the IDE doesn't have it. Restart the IDE to load them. If the IDE is running on Windows, close it first. A build from source has no plugin zip, so there it prints the manual settings steps.
 - **zed** — prints how to install the qkt Zed extension from Zed's Extensions page, or as a dev extension from the bundled `share/editor/zed`.
 
 Every target is idempotent: re-running it upgrades the files, and managed blocks in your own
@@ -76,6 +76,17 @@ every keyword by category (sections, actions, clauses, portfolio keywords), ever
 indicator and function name, the constants, the pseudo-symbols (`ACCOUNT`, `POSITION`, `NOW`,
 `EXIT`, ...) and their member fields; strings are single-line with only the lexer's five escapes,
 and `=` and `<>` are highlighted as operators.
+
+## Finding qkt and Java
+
+Editors find qkt without any `PATH` setup: each `qkt editor install` records this qkt's location in
+`qkt-path` in your qkt config folder, and the VS Code extension and JetBrains plugin read it when qkt is
+on no path. The Windows and Linux installers run `qkt editor install all` for you (set `QKT_NO_EDITOR=1`
+to skip that).
+
+A build from source needs Java 21 or newer. The launcher finds one by itself: `QKT_JAVA_HOME`, then the
+bundled runtime, `JAVA_HOME`, `java` on `PATH`, then the usual install folders such as `~/.jdks`, SDKMAN,
+`/usr/lib/jvm` and `Program Files`. If none is new enough it says so.
 
 ## Install for everything detected
 
@@ -182,9 +193,9 @@ the LSP package and add the client the installer prints to `LSP.sublime-settings
 
 ### JetBrains IDEs
 
-`qkt editor install intellij` prints the steps with your paths filled in: add the bundled
-`share/editor/vscode` folder under **Settings > Editor > TextMate Bundles**, then add a
-language server in LSP4IJ with the command `qkt lsp` mapped to `*.qkt`.
+Run `qkt editor install intellij`, then restart the IDE. Highlighting, completion, hover and live errors
+then work with nothing to configure. The plugin is in
+[`editor/jetbrains`](https://github.com/elitekaycy/qkt/tree/dev/editor/jetbrains).
 
 ### Zed (automatic)
 

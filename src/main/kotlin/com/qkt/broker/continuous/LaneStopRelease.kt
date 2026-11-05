@@ -30,15 +30,19 @@ internal class LaneStopRelease(
     /** Why [strategyId] is stopped here, or null. The status surfaces read this off the engine thread. */
     fun standing(strategyId: String): String? = stops[strategyId]
 
+    /** What the venue holds for [strategyId] on the stream's contracts; the book's maps may be read off the engine thread. */
+    fun holdings(strategyId: String): List<String> =
+        book
+            .positionsFor(strategyId)
+            .values
+            .filter { it.quantity.signum() != 0 }
+            .map { "${it.quantity.toPlainString()} of ${it.symbol}" }
+
     private fun holdups(strategyId: String): List<String> =
         buildList {
             if (rolls.inFlight) add("a roll is in progress")
             positions[strategyId]?.takeIf { it.signum() != 0 }?.let { add("its position is ${it.toPlainString()}") }
-            book
-                .positionsFor(strategyId)
-                .values
-                .filter { it.quantity.signum() != 0 }
-                .forEach { add("the venue holds ${it.quantity.toPlainString()} of ${it.symbol} for it") }
+            holdings(strategyId).forEach { add("the venue holds $it for it") }
             val working = orders.all + legs.awaitedCancels
             working
                 .filter { it.request.strategyId == strategyId }

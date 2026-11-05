@@ -1,5 +1,6 @@
 package com.qkt.connector.mt5
 
+import com.qkt.connectivity.transport.TransportCorrelation
 import java.math.BigDecimal
 import okhttp3.Call
 import okhttp3.Callback

@@ -46,6 +46,14 @@ internal class GatewayPlacement(
     /** Runs [action] on the placement thread, after what is already queued; a failure is logged. */
     fun background(action: () -> Unit) = run(action)
 
+    /** Runs [action] on the placement thread after [delayMs]; a failure is logged. */
+    fun after(
+        delayMs: Long,
+        action: () -> Unit,
+    ) {
+        if (!executor.isShutdown) executor.schedule(logged(action), delayMs, TimeUnit.MILLISECONDS)
+    }
+
     /** Stops sending; called when the account closes. */
     fun shutdown() {
         executor.shutdownNow()
