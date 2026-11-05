@@ -55,9 +55,11 @@ class GatewayMarginFloorGapTest {
     private fun <T> onAdapter(
         adapter: String,
         label: String,
+        version: String = "0.3.1",
         body: (GatewayBroker) -> T,
     ): T {
         fake.adapter = adapter
+        fake.adapterVersion = version
         val session =
             GatewaySession(
                 client,
@@ -81,7 +83,7 @@ class GatewayMarginFloorGapTest {
         Thread.getAllStackTraces().keys.filter { it.isAlive && it.name == "qkt-gateway-margin-$label" }
 
     @Test
-    fun `a Bybit figure cannot refuse an entry, and nothing polls for it`() {
+    fun `a Bybit adapter before 0_3_2 cannot refuse an entry, and nothing polls for it`() {
         usingMargin()
         onAdapter("bybit", "BYBIT_GAP") { broker ->
             val rules = guard().rules(broker, listOf("V:X"))
@@ -100,7 +102,28 @@ class GatewayMarginFloorGapTest {
             guard().rules(broker, listOf("V:X"))
         }
 
-        assertThat(warnings().single()).contains("venue BYBIT_GAP", "pooled margin", "cannot apply", "V:X")
+        assertThat(warnings().single())
+            .contains("venue BYBIT_GAP", "before 0.3.2", "pooled margin", "cannot apply", "V:X")
+    }
+
+    @Test
+    fun `a Bybit adapter stating the pooled USD account is judged, without a warning`() {
+        usingMargin()
+        for (version in listOf("0.3.2", "0.4.0", "1.0")) {
+            onAdapter("bybit", "BYBIT_POOLED", version) { broker ->
+                guard().rules(broker, listOf("V:X"))
+                assertThat(broker.supportsMarginLevel).describedAs(version).isTrue()
+            }
+        }
+
+        assertThat(warnings()).isEmpty()
+    }
+
+    @Test
+    fun `a Bybit version that does not parse stays out of the floor`() {
+        onAdapter("bybit", "BYBIT_ODD", "dev-snapshot") { broker ->
+            assertThat(broker.supportsMarginLevel).isFalse()
+        }
     }
 
     @Test

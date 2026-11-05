@@ -283,7 +283,7 @@ POSITION_AVG_PRICE.<stream>                 -- the same average entry price, as 
 POSITION.<stream>.pnl                       -- strategy realized + this-symbol unrealized
 POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see note)
 POSITION.<stream>.unrealized_pnl            -- open P&L on this position, marked at the closing price
-POSITION.<stream>.holding_duration          -- seconds since the position was opened
+POSITION.<stream>.holding_duration          -- seconds since the open of the bar the position opened in
 POSITION.<stream>.mfe                       -- max favorable excursion of the entry leg (price units)
 POSITION.<stream>.mae                       -- max adverse excursion of the entry leg (price units)
 POSITION.<stream>.count                     -- open legs on this stream (hedging venues); .open_count is the same

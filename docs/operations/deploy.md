@@ -195,8 +195,10 @@ whatever the account's margin, and now reject below the floor, including the def
 
 A gateway's level is `equity / margin_used x 100` from its `/v1/account`, as the gateway adapter states those
 figures. Two adapters are not judged, and startup warns once per venue for each: `paper` always states no margin
-in use, and `bybit` divides one coin's equity by the account's pooled margin
-([qkt-venue-gateway#109](https://github.com/elitekaycy/qkt-venue-gateway/issues/109)). A background poller
+in use, and `bybit` before qkt-venue-gateway 0.3.2 divides one coin's equity by the account's pooled margin
+([qkt-venue-gateway#109](https://github.com/elitekaycy/qkt-venue-gateway/issues/109)). From 0.3.2 the Bybit
+adapter states the pooled account in USD, so qkt reads the adapter version from `/v1/health` and judges it like any
+other venue; run gateway 0.3.2 or later to have the floor apply on Bybit. A background poller
 reads it every 5 seconds, so a hung gateway cannot delay an entry. A level not yet read or older than 15 seconds
 counts as missing: each strategy's first two missing reads approve, later ones reject until a reading returns.
 

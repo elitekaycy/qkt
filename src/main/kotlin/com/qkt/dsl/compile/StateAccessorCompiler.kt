@@ -48,17 +48,21 @@ internal object StateAccessorCompiler {
                 }
             // holding_duration is SECONDS — the unit every shipped example and the DSL
             // reference assume. The clock is milliseconds internally; convert here so
-            // `holding_duration > 7200` means "open for more than 2 hours".
-            StateSource.POSITION_HOLDING_DURATION ->
+            // `holding_duration > 7200` means "open for more than 2 hours". It is measured on the
+            // bar clock, from the open of the bar the position opened in (see HoldingBarClock).
+            StateSource.POSITION_HOLDING_DURATION -> {
+                val barClock = HoldingBarClock()
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
                     val openedAt =
                         ctx.strategyContext.positions
                             .positionFor(symbol)
                             ?.openedAt
-                    val durationMs = if (openedAt == null) 0L else ctx.nowMs() - openedAt
+                    val durationMs =
+                        if (openedAt == null) 0L else ctx.nowMs() - barClock.anchor(ctx.streams, symbol, openedAt)
                     Value.Num(BigDecimal.valueOf(durationMs).divide(MS_PER_SECOND, Money.CONTEXT))
                 }
+            }
             StateSource.POSITION_MFE ->
                 CompiledExpr { ctx ->
                     val symbol = ctx.streams[ref.key]?.qktSymbol ?: error("Unknown stream alias: ${ref.key}")
