@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.accounting.AccountingConfig
 import com.qkt.accounting.AccountingEngine
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.instrument.ContractCatalog
@@ -58,6 +59,16 @@ class LiveSymbolChecksTest {
                 AccountingEngine(),
             )
         }.hasMessageContaining("GBP")
+    }
+
+    @Test
+    fun `a spot coin with no rate to the account currency is refused before the first fill (#1641)`() {
+        val engine = AccountingEngine(AccountingConfig(symbols = mapOf("EURUSD" to "OANDA:EURUSD")))
+
+        assertThatCode { requireLiveTradable(listOf("BYBIT_SPOT:ETHUSDT"), AccountingEngine()) }
+            .doesNotThrowAnyException()
+        assertThatThrownBy { requireLiveTradable(listOf("BYBIT_SPOT:ETHEUR"), engine) }
+            .hasMessageContaining("fx_conversion.symbols.ETHUSD")
     }
 
     @Test

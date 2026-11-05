@@ -26,3 +26,23 @@ fun AccountingEngine.requireBookable(symbols: Collection<String>) =
         canConvert = { symbol, _ -> canConvertSymbol(symbol) },
         currencyOf = ::quoteCurrencyOf,
     )
+
+/**
+ * Fails when a coin traded as one of [symbols] has no rate to the account currency (#1641). A spot venue can take
+ * a buy's fee in the coin bought; the fee is priced from the pair itself when the pair is quoted in the account
+ * currency (an ETH fee on `ETHUSDT`, USDT counting as USD), else from a configured `fx_conversion.symbols` pair.
+ * With neither, the session is refused at start with the config line to add instead of meeting it on a fill.
+ */
+fun AccountingEngine.requireCoinFeesBookable(symbols: Collection<String>) {
+    val missing =
+        symbols.distinct().mapNotNull { symbol ->
+            val coin = CurrencyPair.of(symbol)?.base?.takeIf(QuoteCurrencyGuard::isCoin) ?: return@mapNotNull null
+            if (canConvertCoin(coin, symbol)) null else symbol to coin
+        }
+    require(missing.isEmpty()) {
+        missing.joinToString("; ") { (symbol, coin) ->
+            "$symbol can charge its fees in $coin and no $coin->$accountCurrency rate is known: add " +
+                "fx_conversion.symbols.$coin$accountCurrency: <a qkt symbol pricing $coin in $accountCurrency>"
+        } + "; refusing to trade"
+    }
+}

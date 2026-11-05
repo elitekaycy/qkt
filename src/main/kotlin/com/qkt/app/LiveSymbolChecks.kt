@@ -2,14 +2,16 @@ package com.qkt.app
 
 import com.qkt.accounting.AccountingEngine
 import com.qkt.accounting.requireBookable
+import com.qkt.accounting.requireCoinFeesBookable
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
 
 /**
  * The start-up checks a live or paper session runs on its traded [symbols]: every symbol must book in
- * (or convert to) the account currency; a continuous futures stream (`VENUE:ROOT@front`) must be one of
- * the session's live streams ([continuous]: a declared root with its roll history on disk); and a chain
+ * (or convert to) the account currency, and so must a coin a spot fill may charge its fee in; a continuous
+ * futures stream (`VENUE:ROOT@front`) must be one of the session's live streams ([continuous]: a declared
+ * root with its roll history on disk); and a chain
  * analytics stream needs its option root fed (`OPTIONS:<VENUE>.<ROOT>`), because live chains are recorded
  * from the quotes of a fed root.
  */
@@ -29,4 +31,5 @@ internal fun requireLiveTradable(
             unfed.distinct().joinToString { OptionRootSymbol.PREFIX + it.replace(':', '.') }
     }
     accounting.requireBookable(symbols)
+    accounting.requireCoinFeesBookable(symbols)
 }
