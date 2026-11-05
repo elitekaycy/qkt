@@ -23,12 +23,16 @@ import org.slf4j.MDC
  * dropped, counted ([health]), logged at ERROR and recorded in the day's `.dropped` marker, so a
  * quote flood can delay the journal but never cost it a fill.
  */
-class EngineAuditJournal(
+class EngineAuditJournal internal constructor(
     rootDir: Path,
     private val owner: String,
     private val clock: Clock,
-    private val marketDataCapacity: Int = 50_000,
+    private val marketDataCapacity: Int,
+    encode: (Event) -> String,
 ) : AutoCloseable {
+    constructor(rootDir: Path, owner: String, clock: Clock, marketDataCapacity: Int = 50_000) :
+        this(rootDir, owner, clock, marketDataCapacity, ::encodeAuditLine)
+
     private val log = LoggerFactory.getLogger(EngineAuditJournal::class.java)
 
     private val queue = LinkedBlockingQueue<Event>()
@@ -42,7 +46,7 @@ class EngineAuditJournal(
     private val drops = AuditDropMarkers()
 
     private val files = AuditJournalFiles(rootDir, owner)
-    private val batch = AuditBatchWriter(files) { event -> eventDay(event) }
+    private val batch = AuditBatchWriter(files, { event -> eventDay(event) }, encode)
 
     private val worker =
         Thread({

@@ -7,12 +7,14 @@ import java.time.LocalDate
 /**
  * Writes a batch of audit events through [files] as one durable append per run of same-day events,
  * in order, instead of one synced write per event. A run whose encoding or write fails is lost as a
- * whole and reported in the returned [LostRecords]; the next run reopens the day file. Used only from
+ * whole and reported in the returned [LostRecords], whatever was thrown (an OutOfMemoryError included); the next
+ * run reopens the day file. Used only from
  * the journal's worker thread.
  */
 internal class AuditBatchWriter(
     private val files: AuditJournalFiles,
     private val dayOf: (Event) -> LocalDate,
+    private val encode: (Event) -> String = ::encodeAuditLine,
 ) {
     private val buffer = ByteArrayOutputStream(64 * 1024)
 
@@ -38,10 +40,11 @@ internal class AuditBatchWriter(
     ): LostRecords {
         buffer.reset()
         return try {
-            for (i in from until to) buffer.write(encodeAuditLine(events[i]).toByteArray(Charsets.UTF_8))
+            for (i in from until to) buffer.write(encode(events[i]).toByteArray(Charsets.UTF_8))
             files.append(day, buffer.toByteArray())
             LostRecords.NONE
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // An OutOfMemoryError too: it would otherwise kill the worker and silently stop the journal (#1645).
             files.close()
             val marketData = (from until to).count { isAuditMarketData(events[it]) }
             LostRecords(to - from, marketData, mapOf(day to (to - from).toLong()), e.message ?: e.javaClass.name)
