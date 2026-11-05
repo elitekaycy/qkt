@@ -32,10 +32,14 @@ class CommandDispatcher(
     ): String =
         when {
             result.unknown.isNotEmpty() -> "unknown strategy: ${result.unknown.first()}"
+            result.refused.isNotEmpty() -> "refused: ${result.refused.values.first()}"
             result.affected.isEmpty() -> "$verb: none"
             else ->
-                (listOf("$verb: ${result.affected.joinToString(", ")}") + result.streamStops.map { it.summary() })
-                    .joinToString("\n")
+                (
+                    listOf("$verb: ${result.affected.joinToString(", ")}") +
+                        result.bookHalts.map { (book, why) -> "cleared the halt on portfolio $book: $why" } +
+                        result.streamStops.map { it.summary() }
+                ).joinToString("\n")
         }
 
     private companion object {

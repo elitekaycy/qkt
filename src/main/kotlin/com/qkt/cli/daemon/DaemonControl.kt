@@ -14,15 +14,19 @@ sealed interface Target {
 }
 
 /**
- * Outcome of a halt/resume. [affected] are the strategy names actually acted on;
+ * Outcome of a halt/resume. [affected] are the strategy and portfolio names actually acted on;
  * [unknown] are requested names that weren't deployed; [streamStops] says what a resume did
- * about the stops failed rolls left on continuous streams.
+ * about the stops failed rolls left on continuous streams; [bookHalts] are the portfolio book
+ * halts a resume cleared (book name to the halt's reason); [refused] are names a resume would
+ * not act on, with why.
  */
 data class ControlResult(
     val affected: List<String>,
     val unknown: List<String> = emptyList(),
     val flattenResults: Map<String, FlattenResult> = emptyMap(),
     val streamStops: List<StreamStopRelease> = emptyList(),
+    val bookHalts: Map<String, String> = emptyMap(),
+    val refused: Map<String, String> = emptyMap(),
 )
 
 /** A point-in-time view of every deployed strategy's run/halt state. */
@@ -70,15 +74,19 @@ class RegistryDaemonControl(
         return result
     }
 
+    /** Resumes strategies, portfolio books and their children; see [OperatorResume]. */
     override fun resume(target: Target): ControlResult {
-        val streamStops = mutableListOf<StreamStopRelease>()
-        val result =
-            apply(target) {
-                it.live.resume()
-                streamStops += it.live.releaseStreamStops()
-            }.copy(streamStops = streamStops)
+        val result = OperatorResume(registry).resume(target)
         val details =
-            if (streamStops.isEmpty()) emptyMap() else mapOf("streamStops" to streamStops.joinToString { it.summary() })
+            buildMap {
+                if (result.streamStops.isNotEmpty()) {
+                    put("streamStops", result.streamStops.joinToString { it.summary() })
+                }
+                if (result.bookHalts.isNotEmpty()) {
+                    put("bookHalts", result.bookHalts.entries.joinToString { "${it.key}: ${it.value}" })
+                }
+                if (result.refused.isNotEmpty()) put("refused", result.refused.values.joinToString())
+            }
         operatorJournal?.record("resume", target, result, details)
         return result
     }

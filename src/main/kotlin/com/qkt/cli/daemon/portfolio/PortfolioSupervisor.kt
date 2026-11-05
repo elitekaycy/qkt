@@ -50,6 +50,12 @@ class PortfolioSupervisor(
         gate
             ?: PortfolioGate(ast, SystemClock(), TradingCalendar.crypto()).also { it.prepare() }
 
+    /** The book's halt as an operator sees it, or null when the book trades or has no book limits. */
+    fun bookHalt(): BookHalt? = riskAggregator?.bookHalt()
+
+    /** Operator resume of the book's halt; see [PortfolioRiskAggregator.resumeByOperator]. */
+    fun resumeBook(): BookHalt? = riskAggregator?.resumeByOperator()
+
     /** True between [start] and [stop]. */
     val running: Boolean get() = runFlag.get()
 

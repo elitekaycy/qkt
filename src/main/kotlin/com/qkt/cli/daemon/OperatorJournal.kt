@@ -20,7 +20,7 @@ class OperatorJournal(
             target = targetLabel(target),
             affected = result.affected,
             unknown = result.unknown,
-            outcome = if (result.unknown.isEmpty()) "accepted" else "rejected",
+            outcome = if (result.unknown.isEmpty() && result.refused.isEmpty()) "accepted" else "rejected",
             details = details,
         )
     }

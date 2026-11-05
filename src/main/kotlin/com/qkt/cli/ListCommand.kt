@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
-/** `qkt list` — table of every deployed strategy: uptime, port, trades, state. */
+/** `qkt list` — table of every deployed strategy: uptime, port, trades, state; then why each halted book halts. */
 class ListCommand(
     private val args: Args,
     private val clientFactory: (StateDir) -> ControlClient = { ControlClient(it) },
@@ -64,6 +64,14 @@ class ListCommand(
                 }
             val display = if (kind == "child") "  $name" else name
             println("%-19s %-10s %-8s %-8s %-8s %s".format(display, kind, formatUptime(uptimeMs), port, trades, state))
+        }
+        // A halted book holds every child, so say once why, under the table: `qkt resume <book>` clears it.
+        for (o in sorted.filter { it["kind"]?.jsonPrimitive?.contentOrNull == "portfolio" }) {
+            if (o["halted"]?.jsonPrimitive?.contentOrNull != "true") continue
+            val name = o["name"]?.jsonPrimitive?.contentOrNull ?: "?"
+            val scope = o["haltScope"]?.jsonPrimitive?.contentOrNull ?: "?"
+            val reason = o["haltReason"]?.jsonPrimitive?.contentOrNull ?: ""
+            println("portfolio $name halted ($scope): $reason")
         }
         return ExitCodes.SUCCESS
     }
