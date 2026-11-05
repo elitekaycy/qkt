@@ -17,8 +17,8 @@ import org.slf4j.Logger
  * the ledger never booked. A close is covered when a market close of the same strategy and symbol, on
  * the same side, is still working and either names the same leg (by id or venue ticket) or, where
  * the venue nets, already covers the strategy's whole open position. A covered close is held here,
- * not sent; when the close covering it ends, a fill drops it if nothing it closes is left, and an
- * unfilled end sends it. Only in-flight market closes count: a resting stop or target is not a close
+ * not sent; when the close covering it ends, it is cut to what is still open, dropped if nothing is
+ * left, and otherwise sent. Only in-flight market closes count: a resting stop or target is not a close
  * in flight. Cold path: runs once per close request, scanning only the symbol's live orders.
  */
 internal class LegCloseGuard(
@@ -90,8 +90,9 @@ internal class LegCloseGuard(
     }
 
     /**
-     * The close [id] ended: each close it held is dropped when a fill left nothing for it to close,
-     * otherwise passed to [submit], which judges it afresh. [id] counts as ended even before the
+     * The close [id] ended: each close it held is cut to what the strategy still holds on its leg (a
+     * covering close may have filled in part before it was cancelled), dropped when nothing is left,
+     * and otherwise passed to [submit], which judges it afresh. [id] counts as ended even before the
      * order book hears of it, since this may run ahead of the book's own update.
      */
     fun release(
@@ -103,10 +104,12 @@ internal class LegCloseGuard(
         ended = id
         try {
             for (request in waiting) {
-                if (filled && !stillOpen(request)) {
-                    log.info("held close {} dropped: close {} filled the position", request.id, id)
+                val sized = sizedToOpen(request, filled)
+                if (sized == null) {
+                    log.info("held close {} dropped: close {} left nothing of the position to close", request.id, id)
                 } else {
-                    submit(request)
+                    if (sized !== request) log.info("held close {} cut to {} still open", request.id, sized.quantity)
+                    submit(sized)
                 }
             }
         } finally {
@@ -114,15 +117,30 @@ internal class LegCloseGuard(
         }
     }
 
-    private fun stillOpen(request: OrderRequest.Market): Boolean {
-        val intent = request.legIntent as? LegIntent.Close ?: return true
+    // Never more than is still open: a close sized before another close filled in part would over-close.
+    private fun sizedToOpen(
+        request: OrderRequest.Market,
+        filled: Boolean,
+    ): OrderRequest.Market? {
+        val intent = request.legIntent as? LegIntent.Close ?: return request
+        val open = openOf(request, intent, filled) ?: return request
+        if (open.signum() <= 0) return null
+        if (open >= request.quantity) return request
+        return request.copy(quantity = open, partialClose = true, legIntent = intent.copy(partial = true))
+    }
+
+    // What the request's leg still holds; null when it cannot be known here.
+    private fun openOf(
+        request: OrderRequest.Market,
+        intent: LegIntent.Close,
+        filled: Boolean,
+    ): BigDecimal? {
         if (positionMode(request.symbol) == PositionAccountingMode.NETTING) {
-            val open = openOnSide(request.strategyId, request.symbol, request.side) ?: return true
-            return open.signum() > 0
+            return openOnSide(request.strategyId, request.symbol, request.side)
         }
-        val legId = intent.legId ?: return false
-        val resolver = openLegQuantity ?: return true
-        return (resolver(request.strategyId, legId) ?: BigDecimal.ZERO).signum() > 0
+        val legId = intent.legId ?: return if (filled) BigDecimal.ZERO else null
+        val resolver = openLegQuantity ?: return null
+        return resolver(request.strategyId, legId) ?: BigDecimal.ZERO
     }
 
     // What the strategy holds that a [closingSide] order reduces: its long for a SELL, its short for a BUY.

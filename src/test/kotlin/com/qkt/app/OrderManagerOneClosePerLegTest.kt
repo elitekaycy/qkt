@@ -151,6 +151,35 @@ class OrderManagerOneClosePerLegTest {
     }
 
     @Test
+    fun `a held close is cut to what is still open when the working close part fills then cancels`() {
+        val s = held(Session())
+        s.tickAt(91_000L)
+        s.om.submit(flattenClose())
+
+        val timed = s.sells().single()
+        net = Money.of("0.6")
+        s.bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                timed.id,
+                timed.id,
+                "MSFT",
+                Side.SELL,
+                Money.of("540"),
+                Money.of("0.4"),
+                Money.of("0.4"),
+                "book:msft",
+            ),
+        )
+        s.bus.publish(BrokerEvent.OrderCancelled(timed.id, timed.id, "rest cancelled", "book:msft", 92_000L))
+
+        val resent = s.sells().last()
+        assertThat(resent.id).isEqualTo("ORD-book:msft-1")
+        assertThat(resent.quantity).isEqualByComparingTo("0.6")
+        s.tickAt(151_000L)
+        assertThat(s.sells()).hasSize(2)
+    }
+
+    @Test
     fun `a second close naming the same leg is held back on a hedging venue too`() {
         val s = Session(PositionAccountingMode.HEDGING)
         net = Money.of("1")
