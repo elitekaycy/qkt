@@ -2,6 +2,7 @@ package com.qkt.broker.options
 
 import com.qkt.broker.liquidation.liquidationReason
 import com.qkt.common.Side
+import com.qkt.derivatives.options.chain.ChainQuoteLookup
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
@@ -28,6 +29,8 @@ class OptionExchangeEntryTest {
 
         assertThat(f.exchange.supports(f.symbol)).isTrue()
         assertThat(f.exchange.supports("DERIBIT:BTC_USDC_PERPETUAL")).isFalse()
+        val ownLog = OptionExchange(f.bus, f.clock, f.chain.registry, ChainQuoteLookup(dir, f.chain.registry))
+        assertThat(ownLog.supports(f.symbol)).isTrue()
     }
 
     @Test

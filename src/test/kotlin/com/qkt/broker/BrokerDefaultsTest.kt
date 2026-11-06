@@ -46,6 +46,21 @@ class BrokerDefaultsTest {
         minimal.modifyPositionAsync("t2", sl = Money.of("1"), tp = null) { results += it }
 
         assertThat(results).containsExactly(SubmitAck("t2", "t2", accepted = true))
+        minimal.modifyPositionAsync("t3") { results += it }
+        assertThat(results.last()).isEqualTo(SubmitAck("t3", "t3", accepted = true))
+    }
+
+    @Test
+    fun `a broker without venue truth never reads the booked legs and keeps no settled closes`() {
+        var reads = 0
+        minimal.watchBookedLegs {
+            reads++
+            emptyList()
+        }
+        minimal.restoreSettledCloses(emptyList())
+
+        assertThat(reads).isZero()
+        assertThat(minimal.deals(0L, Long.MAX_VALUE)).isEmpty()
     }
 
     @Test
