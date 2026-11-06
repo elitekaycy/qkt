@@ -1,6 +1,7 @@
 package com.qkt.marketdata.ingest
 
 import com.qkt.common.FixedClock
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.marketdata.ingest.plan.ImportDescriptor
 import com.qkt.marketdata.ingest.run.ImportReport
@@ -40,6 +41,7 @@ object IngestFixtures {
         onOverlap: OverlapPolicy = OverlapPolicy.FILL,
         sort: Boolean = false,
         trustClock: Boolean = false,
+        registry: InstrumentRegistry = StandardInstrumentRegistry,
     ): ImportReport =
         ImportRun(
             ImportRequest(
@@ -54,7 +56,7 @@ object IngestFixtures {
                 trustClock = trustClock,
                 qktVersion = "test",
             ),
-            StandardInstrumentRegistry,
+            registry,
             FixedClock(NOW_MS),
         ).run()
 
