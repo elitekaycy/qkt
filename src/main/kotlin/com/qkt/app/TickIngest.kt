@@ -5,7 +5,6 @@ import com.qkt.dsl.compile.ScheduleRunner
 import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.engine.Engine
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Mode
@@ -33,7 +32,7 @@ internal class TickIngest(
      * Where option and event contracts are found ([TickPriceBounds]): either may legally print zero, and an
      * event contract never prints above its payout. Every other symbol keeps the positive-price floor.
      */
-    instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    instruments: InstrumentRegistry,
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
