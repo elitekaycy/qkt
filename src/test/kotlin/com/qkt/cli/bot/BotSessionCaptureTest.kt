@@ -61,7 +61,7 @@ class BotSessionCaptureTest {
         val err = stderr { captureVenueInstruments(cfg, streams, dir) }
 
         val yaml = Files.readString(dir.resolve(SessionInstruments.FILE))
-        assertThat(yaml).contains("qktSymbol: \"EXNESS:XAUUSD\"", "contractSize: 100", "volumeMax: 50", "digits: 2")
+        assertThat(yaml).contains("qktSymbol: \"EXNESS:XAUUSD\"", "contractSize: 100", "volumeStep: 0.01", "digits: 2")
         assertThat(err).contains("qkt bot: venue spec not read for OTHER:X")
     }
 
