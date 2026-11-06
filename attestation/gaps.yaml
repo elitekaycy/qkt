@@ -1,4 +1,7 @@
 gaps:
+- capability: NORM_CDF
+  reason: a pure function of its argument, proven by unit tests; its live case lands with the event-contract attestation
+    lane (Kalshi demo), where it prices contracts against an underlying
 - capability: OBV
   reason: needs traded size; the demo FX/CFD feed quotes without volume, so this is provable only on a venue that reports
     it (crypto spot/perpetual)

@@ -1,11 +1,13 @@
 package com.qkt.backtest
 
 import com.qkt.common.FixedClock
+import com.qkt.derivatives.events.EventChainSymbol
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
+import com.qkt.instrument.SlotSymbol
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.depth.BookDepthMarketSource
 import com.qkt.marketdata.depth.BookDepthStore
@@ -19,11 +21,13 @@ import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.ContinuousMarketSource
+import com.qkt.marketdata.source.EventChainMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.OptionChainMarketSource
 import com.qkt.marketdata.source.OptionRootMarketSource
+import com.qkt.marketdata.source.SlotMarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
@@ -68,6 +72,9 @@ internal fun storeMarketSource(
         } else {
             storeSource
         }
+    // Event slots read their families' contracts through the slot source; a run with none builds what it built before.
+    val tradedSource =
+        if (symbols.any { SlotSymbol.isSlot(it) }) SlotMarketSource(localSource, instruments, symbols) else localSource
     // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
     // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
     // when a run actually declares one, so a run that binds neither constructs exactly the
@@ -81,7 +88,11 @@ internal fun storeMarketSource(
                     requireNotNull(instruments.options()?.dataRoot) { "option symbols have no chain data root" }
                 add(SymbolPattern.exactSet(options) to OptionChainMarketSource(chains, instruments))
             }
-            val analytics = symbols.filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) }
+            val events = symbols.filter { EventChainSymbol.isEventChain(it) }
+            if (events.isNotEmpty()) {
+                add(SymbolPattern.exactSet(events.toSet()) to EventChainMarketSource(localSource, instruments, events))
+            }
+            val analytics = symbols.filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) && it !in events }
             if (analytics.isNotEmpty()) {
                 val problems = analytics.mapNotNull { chainStreamProblem(it, instruments) }
                 require(problems.isEmpty()) { "chain analytics problems:\n  " + problems.joinToString("\n  ") }
@@ -120,9 +131,9 @@ internal fun storeMarketSource(
             }
         }
     return if (observationRoutes.isNotEmpty()) {
-        CompositeMarketSource(routes = observationRoutes, fallback = localSource)
+        CompositeMarketSource(routes = observationRoutes, fallback = tradedSource)
     } else {
-        localSource
+        tradedSource
     }
 }
 

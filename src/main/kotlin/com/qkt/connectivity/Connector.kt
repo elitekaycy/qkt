@@ -75,4 +75,7 @@ enum class ProductType {
 
     /** A share of a company held outright, e.g. AAPL at a stock broker (not a CFD on it). */
     EQUITY,
+
+    /** A binary event contract that pays 1 when its question resolves YES and 0 when NO, e.g. a Kalshi contract. */
+    EVENT,
 }

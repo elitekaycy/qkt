@@ -65,6 +65,7 @@ class MappingCompiler(
                     RowTime(listOf(cell(names, it)), TimeFormat.parse(descriptor.availableFormat ?: format.spec), clock)
                 },
             carryForward = descriptor.carryForward == true,
+            oneSidedQuotes = target.event,
             float32 = descriptor.float32 == true,
             where =
                 descriptor.where.map { (name, value) ->

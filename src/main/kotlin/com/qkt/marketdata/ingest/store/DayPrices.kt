@@ -55,9 +55,9 @@ class DayPrices(
 
         private fun priceOf(t: TickRecord): BigDecimal? {
             t.price?.let { return it }
-            val bid = t.bid ?: return null
-            val ask = t.ask ?: return null
-            return bid.add(ask).divide(TWO).setScale(Money.SCALE, Money.ROUNDING)
+            val bid = t.bid
+            val ask = t.ask ?: return bid
+            return bid?.add(ask)?.divide(TWO)?.setScale(Money.SCALE, Money.ROUNDING) ?: ask
         }
 
         private val TWO = BigDecimal(2)

@@ -26,5 +26,7 @@ class LayeredInstrumentRegistry(
 
     override fun options(): OptionDirectory? = layers.firstNotNullOfOrNull { it.options() }
 
+    override fun events(): EventDirectory? = layers.firstNotNullOfOrNull { it.events() }
+
     override fun corporateActions(): CorporateActionSource? = layers.firstNotNullOfOrNull { it.corporateActions() }
 }
