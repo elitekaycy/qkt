@@ -70,4 +70,36 @@ class SimulatedVenueRulesTest {
         assertThat(mt5Triggered(sellLimit, tick)).isFalse()
         assertThat(mt5Triggered(sellTouch, tick)).isTrue()
     }
+
+    @Test
+    fun `stop limits and if-touched orders trigger on their own side's quote`() {
+        val tick = Tick("X", Money.of("100"), 0L, bid = Money.of("99"), ask = Money.of("101"))
+
+        fun stopLimit(
+            side: Side,
+            stop: String,
+        ) = OrderRequest.StopLimit("sl", "X", side, Money.of("1"), Money.of(stop), Money.of(stop), TimeInForce.GTC, 0L)
+
+        fun touch(
+            side: Side,
+            trigger: String,
+        ) = OrderRequest.IfTouched(
+            id = "t",
+            symbol = "X",
+            side = side,
+            quantity = Money.of("1"),
+            triggerPrice = Money.of(trigger),
+            onTrigger = com.qkt.execution.TriggerType.MARKET,
+            timeInForce = TimeInForce.GTC,
+            timestamp = 0L,
+        )
+
+        assertThat(mt5Triggered(stopLimit(Side.BUY, "101"), tick)).isTrue()
+        assertThat(mt5Triggered(stopLimit(Side.BUY, "102"), tick)).isFalse()
+        assertThat(mt5Triggered(stopLimit(Side.SELL, "99"), tick)).isTrue()
+        assertThat(mt5Triggered(stopLimit(Side.SELL, "98"), tick)).isFalse()
+        assertThat(mt5Triggered(touch(Side.BUY, "101"), tick)).isTrue()
+        assertThat(mt5Triggered(touch(Side.BUY, "100"), tick)).isFalse()
+        assertThat(mt5Triggered(touch(Side.SELL, "100"), tick)).isFalse()
+    }
 }
