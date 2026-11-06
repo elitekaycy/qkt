@@ -90,6 +90,8 @@ sealed interface BrokerEvent : Event {
         val typedVenueCosts: List<VenueCost> = emptyList(),
         /** Venue/engine classification for a position-closing fill, when known. */
         val exitReason: ExitReason? = null,
+        /** The venue's execution time (epoch ms) when it reports one, else 0; the bus restamps [timestamp]. */
+        val venueTimeMs: Long = 0L,
     ) : OrderEvent
 
     /**
@@ -135,12 +137,9 @@ sealed interface BrokerEvent : Event {
     ) : OrderEvent
 
     /**
-     * The venue accepted a modification to a working order.
-     *
-     * Brokers publish this after [com.qkt.broker.Broker.modify] succeeds. The qkt-side
-     * order manager updates its tracked SL/TP/trigger from the [OrderModification] the
-     * caller supplied; the event carries the same accepted change set so observability
-     * can explain what changed.
+     * The venue accepted a modification to a working order, after [com.qkt.broker.Broker.modify] succeeds. The
+     * order manager updates its tracked SL/TP/trigger from the [OrderModification] the caller supplied; the event
+     * carries the same accepted change set so observability can explain what changed.
      */
     data class OrderModified(
         override val clientOrderId: String,
@@ -152,10 +151,8 @@ sealed interface BrokerEvent : Event {
     ) : OrderEvent
 
     /**
-     * Account balances refreshed from the venue.
-     *
-     * The `source` field identifies which broker emitted them — useful when a
-     * [com.qkt.broker.composite.CompositeBroker] routes through multiple venues.
+     * Account balances refreshed from the venue. The `source` field identifies which broker emitted them,
+     * useful when a [com.qkt.broker.composite.CompositeBroker] routes through multiple venues.
      */
     data class BalancesUpdated(
         val balances: Map<String, BigDecimal>,

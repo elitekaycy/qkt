@@ -10,14 +10,13 @@ class GatewayProtocolException(
 ) : RuntimeException(message)
 
 /**
- * The one place engine events are built from VGP v1 order, fill and settlement objects. An order is
- * accepted once, and cancelled or rejected once; its fills are partial until their quantities reach the
- * order's quantity, and the fill that reaches it completes the order. A venue's terminal `filled` below the order's
- * quantity moves that bar to its `filled_quantity`, and ends the order at once when its fills were all heard
- * (as a cancel of the rest: nothing more will come). A `fill_id` already booked (a
- * replay after a reconnect) is dropped, and so is any update of an order that has ended. [strategyOf]
- * attributes a client order id to its strategy. Not thread-safe: its owner calls it under one lock from
- * the stream, placement and engine threads.
+ * The one place engine events are built from VGP v1 order, fill and settlement objects. An order is accepted once, and
+ * cancelled or rejected once; its fills are partial until their quantities reach the order's quantity, and the fill
+ * that reaches it completes the order. A venue's terminal `filled` below the order's quantity moves that bar to its
+ * `filled_quantity`, and ends the order at once when its fills were all heard (as a cancel of the rest: nothing more
+ * will come). A `fill_id` already booked (a replay after a reconnect) is dropped, and so is any update of an order
+ * that has ended. [strategyOf] attributes a client order id to its strategy. Not thread-safe: its owner calls it under
+ * one lock from the stream, placement and engine threads.
  */
 class GatewayEventTranslator(
     private val symbols: GatewaySymbols,
@@ -159,6 +158,7 @@ class GatewayEventTranslator(
             strategy,
             timestamp = fill.time,
             typedVenueCosts = costs,
+            venueTimeMs = fill.time,
         )
     }
 

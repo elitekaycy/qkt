@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
-/** Reads and writes `timed-exits.json`: the armed `EXIT AFTER` timers of one strategy. */
+/** Reads and writes `timed-exits.json`: the armed and pending `EXIT AFTER` timers of one strategy. */
 internal class TimedExitsFile(
     private val writer: StateFileWriter,
     private val json: Json,
@@ -34,6 +34,8 @@ internal class TimedExitsFile(
                             closeId = it.closeId,
                             attempts = it.attempts,
                             failures = it.failures,
+                            entryId = it.entryId,
+                            holdMs = it.holdMs,
                         )
                     },
             )
@@ -67,6 +69,8 @@ internal class TimedExitsFile(
                 closeId = it.closeId,
                 attempts = it.attempts,
                 failures = it.failures,
+                entryId = it.entryId,
+                holdMs = it.holdMs,
             )
         }
     }
@@ -95,4 +99,6 @@ private data class TimedExitDto(
     val closeId: String? = null,
     val attempts: Int = 0,
     val failures: Int = 0,
+    val entryId: String? = null,
+    val holdMs: Long? = null,
 )
