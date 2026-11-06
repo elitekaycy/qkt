@@ -151,6 +151,20 @@ class MT5RestartRecoveryTest {
     }
 
     @Test
+    fun `a leg with no remembered ticket is joined to the one resting order its truncated comment fits`() {
+        venue(
+            """[{"ticket":9004,"symbol":"XAUUSDm","type":"4","volume":"0.10","price_open":"2450","magic":10001,""" +
+                """"comment":"leg-a-long-strat"}]""",
+            "[]",
+        )
+
+        val accounted = recovery.recoverPendingOrders(listOf(stopLeg("leg-a-long-strategy--7", null)), emptySet())
+
+        assertThat(accounted).containsExactly("leg-a-long-strategy--7")
+        assertThat(books.pendingBook.ticketOf("leg-a-long-strategy--7")).isEqualTo(9004L)
+    }
+
+    @Test
     fun `an order with no venue counterpart is left for the caller to retire`() {
         venue("[]", "[]")
 
