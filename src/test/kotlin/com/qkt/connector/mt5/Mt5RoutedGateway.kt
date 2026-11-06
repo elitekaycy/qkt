@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 
 /**
  * A fake mt5-gateway answering by path: each route holds a queue of replies, the last of which repeats.
@@ -55,6 +56,11 @@ internal class Mt5RoutedGateway : AutoCloseable {
         status: Int = 500,
     ) {
         routes[path] = CopyOnWriteArrayList(listOf(MockResponse().setResponseCode(status).setBody("{}")))
+    }
+
+    /** Drops every connection to [path] before answering, so the caller sees an IO failure. */
+    fun drop(path: String) {
+        routes[path] = CopyOnWriteArrayList(listOf(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)))
     }
 
     /** The recorded request lines whose path starts with [prefix]. */
