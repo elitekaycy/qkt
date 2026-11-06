@@ -10,7 +10,8 @@ import com.qkt.strategy.targetSymbol
 /**
  * Every order-lifecycle event lands in the append-only journal, in bus order, e.g. a filled
  * market buy writes `submit` (with `"approved":"true"`), `accepted`, then `filled`. An order the venue fills
- * in slices writes one `partially-filled` line (with `cumulative`) per slice before its final `filled`.
+ * in slices writes one `partially-filled` line (with `cumulative`) per slice before its final `filled`. A close
+ * the venue made on its own carries `exitReason`, and one found in venue history after a restart its `venueTime`.
  *
  * An [com.qkt.events.OrderEvent] only exists because risk approved the request, so the
  * submit path writes ONE `"submit"` line with `"approved":"true"` instead of separate
@@ -62,6 +63,8 @@ internal class OrderJournalWiring(
                     "price" to e.price.toPlainString(),
                     "qty" to e.quantity.toPlainString(),
                     "venueCosts" to e.venueCosts.toPlainString(),
+                    "exitReason" to e.exitReason?.name,
+                    "venueTime" to e.venueTime?.toString(),
                 ),
             )
         }

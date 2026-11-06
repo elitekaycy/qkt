@@ -11,9 +11,10 @@ import java.math.BigDecimal
  * refused ([refusal]), since its funding would never be booked. Each `funding` record ([record], or read
  * by a resynchronization through [readWindow]) becomes a [FundingCharged] for every attached broker
  * ([routing], under [lock]), charged on the record's position, or, when the venue gave none, on what the
- * attached sessions hold together, so none books another's share; each session books its strategies' own
- * parts and drops what it already booked. A broker whose session is ready gets the last
- * [FUNDING_REPLAY_MS] of funding again ([replay]), so what was funded while qkt was away is booked.
+ * attached sessions held together just before the record's time (a venue that realizes funding on a trade stamps
+ * it at that trade, which has usually filled by the time the record is heard), so none books another's share;
+ * each session books its strategies' own parts and drops what it already booked. A broker whose session is ready
+ * gets the last [FUNDING_REPLAY_MS] of funding again ([replay]), so what was funded while qkt was away is booked.
  */
 internal class GatewayFunding(
     private val client: GatewayClient,
@@ -72,14 +73,17 @@ internal class GatewayFunding(
             symbols.qkt(funding.symbol),
             amount,
             funding.currency,
-            basis ?: attachedHolding(symbols.qkt(funding.symbol)),
+            basis ?: attachedHolding(symbols.qkt(funding.symbol), funding.time),
             funding.time,
+            positionless = basis == null,
         )
     }
 
-    /** What every attached session holds of [symbol], signed: who shares a record that names no position. */
-    private fun attachedHolding(symbol: String): BigDecimal =
-        routing.brokers.fold(BigDecimal.ZERO) { sum, broker -> sum.add(broker.holding(symbol)) }
+    /** What every attached session held of [symbol] just before [atMs], signed: a positionless record's basis. */
+    private fun attachedHolding(
+        symbol: String,
+        atMs: Long,
+    ): BigDecimal = routing.brokers.fold(BigDecimal.ZERO) { sum, broker -> sum.add(broker.holdingAt(symbol, atMs)) }
 
     /** Hands [broker] the account's funding of the last [FUNDING_REPLAY_MS], when the gateway reports it. */
     fun replay(broker: GatewayRouting.Attached) {

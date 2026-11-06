@@ -43,9 +43,12 @@ fills and, when it asserts flat-by-strategy, is flat (or its budget ends), then 
     settlement of the strategy is reported from the restarted process, past the 60 s grace, with its leg and strategy;
   - `expect_log` / `reject_log`: regexes the daemon log must or must not match when the case ends.
 Before it touches the account the case waits for its venue (lib/venue_health.py: the gateway's venue link and, with
-QKT_ATTEST_DERIBIT_URL on a Deribit gateway, the strategy's instruments open with a fresh ticker), at most
-QKT_ATTEST_VENUE_WAIT_MAX_S, then samples it while it runs; the waits and any unavailable samples are written to the
-result (`venueWaits`, `venueOutage`) as the catalog's only grounds to rerun the attempt for free. Past the maximum it fails
+QKT_ATTEST_DERIBIT_URL on a Deribit gateway, every instrument the case will trade open with a fresh ticker: the
+strategy's own, its `@front` roll's current and next contract, its dated contract or expiring option as this runner
+picks it, its option legs as the daemon selects them), at most QKT_ATTEST_VENUE_WAIT_MAX_S, then samples it while it
+runs; the waits, any unavailable samples and, for a failed attempt, each order the venue refused because its book was
+closed (`11030 orderbook_disabled`) are written to the result (`venueWaits`, `venueOutage`) as the catalog's only
+grounds to rerun the attempt for free. Past the maximum it fails
 as `venue unavailable for Xh: ...`. A case bound to its lane's session (attestation/lanes.yaml, an alpaca share case)
 waits at most until the latest start its window allows, and after any venue wait must pass the catalog's own session
 check again (lib/attest_session.py can_start); if it no longer fits, the attempt ends as `session` (`sessionClosed` in
@@ -68,6 +71,7 @@ import derivatives_settlement as settlement  # noqa: E402
 import attest_session  # noqa: E402
 import strategy_scope as scope  # noqa: E402
 import venue_health  # noqa: E402
+import venue_instruments  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
@@ -166,6 +170,7 @@ class SessionClosed(RuntimeError):
 class Run:
     roll = capture = resumed = stopped_at = None  # class defaults: the cross lane's runner has its own __init__
     watch = leftovers_swept = session_closed = None
+    dated_pick = expiring_pick = None  # what the venue gate resolved: the contract the case then trades
     venue_waits = ()
     lane_config = {}
 
@@ -315,10 +320,29 @@ class Run:
             time.sleep(2)
 
     def venue_probes(self):
-        """The case's venue, as lib/venue_health.py samples it."""
+        """The case's venue, as lib/venue_health.py samples it: every instrument the case will trade."""
         text = open(os.path.join(self.args.case, "strategy.qkt")).read()
         return [venue_health.Probe(getattr(self, "label", None) or self.case.get("lane", "gateway"),
-                                   self.args.gateway_url, self.key, venue_health.strategy_symbols(text))]
+                                   self.args.gateway_url, self.key, venue_health.strategy_symbols(text),
+                                   resolve=lambda listing, at_ms, quotes_of: self.traded_codes(text, listing, at_ms,
+                                                                                               quotes_of))]
+
+    def traded_codes(self, text, listing, at_ms, quotes_of):
+        """The codes the case picks at run time (lib/venue_instruments.py), as prepare() and the daemon pick them: its
+        roll's pair, its dated contract or expiring option (kept, so the case trades what the gate waited on), and its
+        option structures' legs."""
+        roll, picks = self.case.get("continuous_roll"), []
+        if self.case.get("dated_from_root"):
+            self.dated_pick = self.dated_pick or self.dated_contract(self.case["dated_from_root"])
+            picks.append(self.dated_pick)
+        if self.case.get("expiring_option"):
+            self.expiring_pick = self.expiring_pick or self.expiring_option(self.case["expiring_option"])
+            picks.append(self.expiring_pick)
+        names = {pick.split(":", 1)[1] for pick in picks}
+        dated = [i["code"] for i in listing if venue_instruments.underscored(i["code"]) in names]
+        return venue_instruments.case_codes(
+            text, listing, at_ms, quotes_of, roll_at_ms=rolling.roll_at(at_ms, roll["lead_seconds"]) if roll else None,
+            priced=lambda code: self.recent_bars(code, at_ms) >= 0, dated=dated)
 
     def session_bound(self):
         """(seconds a venue wait may last, whether the session sets it): for a case bound to its lane's window, no
@@ -360,11 +384,14 @@ class Run:
         self.watch = venue_health.Watch(probes).start()
 
     def end_watch(self, problems):
-        """Stops the sampling; a failed attempt takes one more sample, at the time it failed."""
+        """Stops the sampling; a failed attempt takes one more sample, at the time it failed, and records each order the
+        venue refused because its book was closed (venue_health.Watch.record_refusals)."""
         if self.watch:
             self.watch.stop()
             if problems:
                 self.watch.look()
+                path = f"{self.out}/daemon.log"
+                self.watch.record_refusals(open(path, errors="replace").read() if os.path.exists(path) else "")
 
     def venue_record(self):
         """The attempt's venue evidence for its result: the waits, an outage sampled during it, what it swept first."""
@@ -518,9 +545,10 @@ class Run:
         text = open(os.path.join(self.args.case, "strategy.qkt")).read()
         root = self.case.get("dated_from_root")
         if root:  # the case's contract expires; trade the root's dated contract the venue lists now
-            text = text.replace(self.case["symbols"][0], self.dated_contract(root))
+            text = text.replace(self.case["symbols"][0], self.dated_pick or self.dated_contract(root))
         if self.case.get("expiring_option"):  # hold an option through its expiry: the one about to expire now
-            text = text.replace(self.case["symbols"][0], self.expiring_option(self.case["expiring_option"]))
+            text = text.replace(self.case["symbols"][0],
+                                self.expiring_pick or self.expiring_option(self.case["expiring_option"]))
         self.strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
         open(f"{self.out}/strategies/{self.strategy}.qkt", "w").write(text)
         shutil.copy(os.path.join(self.args.case, "instruments.yaml"), f"{self.out}/data/instruments.yaml")
@@ -599,6 +627,8 @@ class Run:
         self.roll = {"at_ms": at_ms, "at_utc": rolling.hhmm(at_ms), "outcome": spec["outcome"], "quantity": str(spec["quantity"]),
                      "prefix": rolling.leg_prefix(spec["stream"], at_ms, self.strategy), "from_code": from_code,
                      "to_code": to_code, "reference": str(last), "prefetched": prefetched}
+        for probe in self.watch.probes if self.watch else []:  # the venue gate samples the pair the roll trades
+            probe.track([from_code, to_code])
         for drill in self.drills.pending:
             if "before_roll_s" in drill:
                 drill["fire_at"] = at_ms / 1000 - drill["before_roll_s"]
