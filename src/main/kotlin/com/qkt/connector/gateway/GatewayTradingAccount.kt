@@ -39,8 +39,11 @@ class GatewayTradingAccount internal constructor(
     /** The account's REST exchanges and stream events, for golden capture (`gateway-transport-journal/<LABEL>/`). */
     private val journal =
         stateRoot?.let { TransportJournal(it.resolve(TransportJournalDirs.GATEWAY), config.name.uppercase(), clock) }
+
+    /** One rate-limit backoff for every client of this gateway, shared with other accounts on it (#1663). */
+    private val throttle = GatewayThrottle.of(settings.url)
     private val client by lazy {
-        GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal)
+        GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal, throttle)
     }
     private val opened =
         lazy {
@@ -99,6 +102,7 @@ class GatewayTradingAccount internal constructor(
             settings.apiKey,
             maxOf(settings.httpTimeoutMs, MARKS_TIMEOUT_MS),
             settings.retryAttempts,
+            throttle = throttle,
         )
     }
 

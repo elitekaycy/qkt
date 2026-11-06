@@ -14,9 +14,7 @@ import java.math.BigDecimal
  * continues to return the singular net view — strategies that don't use STACK_AT clauses
  * see no behavior change. The new [legBookFor] accessor exposes the leg-level view for
  * components that need to reason about individual legs (the stack engine, reconciliation).
- *
- * Stack legs are added via [addStackLeg] — they bypass the [apply] averaging logic which
- * would otherwise commingle them into the primary's entry-price math.
+ * Stack legs are added via [addStackLeg], bypassing [apply]'s averaging into the primary.
  */
 class StrategyPositionTracker private constructor(
     private val persistor: com.qkt.persistence.StatePersistor, // read reflectively by BacktestPersistenceInvariantTest
@@ -73,10 +71,8 @@ class StrategyPositionTracker private constructor(
     ): Boolean = reconciler.reconcileNet(symbol, signedQuantity, avgEntryPrice, openedAt, source, ticket, strategyId)
 
     /**
-     * Phase 29a: rebuild a [LegBook] from on-disk state. Called at deploy time so a
-     * restarted daemon resumes with its prior leg metadata (PRIMARY/STACK roles,
-     * parentLegId linkage) intact. No-op when the persistor has no record for this
-     * (strategyId, symbol).
+     * Rebuild a [LegBook] from on-disk state at deploy, roles and parentLegId linkage intact, so a restarted
+     * daemon resumes its legs. No-op when the persistor has no record for this (strategyId, symbol).
      */
     fun preloadFromPersistor(
         strategyId: String,
@@ -151,10 +147,7 @@ class StrategyPositionTracker private constructor(
         return application
     }
 
-    /**
-     * Net [trade] into the strategy's PRIMARY leg on its symbol — the netting-venue booking
-     * rule: same side averages in, the opposite side realizes, reduces, flat-closes or flips.
-     */
+    /** Net [trade] into the PRIMARY leg: same side averages in; the opposite realizes, reduces, closes or flips. */
     fun apply(
         strategyId: String,
         trade: Trade,
@@ -187,6 +180,12 @@ class StrategyPositionTracker private constructor(
         require(leg.role == LegRole.INDEPENDENT) { "addIndependentLeg requires LegRole.INDEPENDENT; got ${leg.role}" }
         directEdits.add(strategyId, leg)
     }
+
+    /** Put [leg] back with its role and ticket: a leg the venue closed while down, held until its close books. */
+    fun reattachLeg(
+        strategyId: String,
+        leg: PositionLeg,
+    ) = directEdits.add(strategyId, leg)
 
     /**
      * Close a specific leg by id. Used when a STACK leg's own bracket fires, or when
