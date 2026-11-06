@@ -4,6 +4,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
@@ -154,6 +155,8 @@ internal object ReplayFeeds {
         // Synthesizing open/low/high/close ticks across a declared window would smear a fact over the
         // window and drop the next fact as late when facts arrive faster than the window, which live
         // never does; so these streams replay their own facts in every tier, exactly as live delivers them.
+        // An event slot re-picks its contract at each close of its window, so it reads its ticks for that window.
+        if (SlotSymbol.isSlot(symbol)) return SequenceTickFeed(source.sampledTicks(symbol, window, range))
         if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX) ||
             symbol.startsWith(OptionRootSymbol.PREFIX) ||
             symbol.startsWith(HubMarketSource.PREFIX) ||
