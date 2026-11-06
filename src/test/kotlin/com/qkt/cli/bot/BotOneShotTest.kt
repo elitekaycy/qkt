@@ -150,4 +150,12 @@ class BotOneShotTest {
         assertThat(jsonValue(2.5)).isEqualTo("\"2.5\"")
         assertThat(jsonString("a\"b\\c\nd")).isEqualTo("\"a\\\"b\\\\c\\nd\"")
     }
+
+    @Test
+    fun `a session client names the run and mode of its descriptor`() {
+        val client = BotSessionClient(com.qkt.trade.session.BotSessionDescriptor("r1", 1, "tok", "live", 7L))
+
+        assertThat(client.runId).isEqualTo("r1")
+        assertThat(client.mode).isEqualTo("live")
+    }
 }
