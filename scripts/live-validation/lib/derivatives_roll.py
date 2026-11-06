@@ -86,6 +86,17 @@ def contracts_of_roll(catalog, at_ms, priced=lambda symbol: True):
     return (listed[0], listed[1]) if len(listed) > 1 else None
 
 
+# A roll's pair is a root's front: its nearest expiries. Parallel groups (lib/deriv_parallel.py) rely on it staying
+# clear of the dated contracts a dated case picks, which start 7 days from expiry.
+FRONT_MAX_DAYS = 6
+
+
+def is_front_pair(contracts, at_ms):
+    """Whether the roll's second contract expires under FRONT_MAX_DAYS after [at_ms]: a roll that trades a dated
+    contract (7 days out or more) would share an instrument with a dated case running beside it."""
+    return contracts[1]["expiryMs"] - at_ms < FRONT_MAX_DAYS * DAY_MS
+
+
 def days_before_expiry(contract, at_ms):
     """The policy's `daysBeforeExpiry` that rolls out of [contract] on [at_ms]'s day."""
     return contract["expiryMs"] // DAY_MS - at_ms // DAY_MS

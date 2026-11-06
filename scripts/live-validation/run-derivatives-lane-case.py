@@ -606,6 +606,11 @@ class Run:
         if not contracts:
             raise RuntimeError(f"venue-untradeable: {spec['root']} lists no two contracts with 1m bars in six hours "
                                f"expiring after {rolling.hhmm(at_ms)}'s day")
+        if os.environ.get("QKT_ATTEST_DERIV_PARALLEL") and not rolling.is_front_pair(contracts, at_ms):
+            # Groups beside this one hold dated contracts 7+ days out: a roll reaching one could share an instrument.
+            raise RuntimeError(f"venue-untradeable: {spec['root']}'s roll pair {contracts[0]['symbol']} -> "
+                               f"{contracts[1]['symbol']} reaches {rolling.FRONT_MAX_DAYS}+ days out, where a dated case "
+                               "running beside this one trades; rerun when the venue prices its dailies")
         catalog = rolling.catalog_of_roll(listing, contracts, lambda symbol: close_of(symbol) is not None)
         rolling.write(catalog_path, catalog)
         path = f"{self.out}/data/instruments.yaml"  # the roll leaves the pair's first contract at the case's minute
