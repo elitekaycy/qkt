@@ -23,7 +23,8 @@ import java.math.BigDecimal
  * leave an unbounded loss is refused, even one that reduces its own symbol (selling the long wing of
  * a call spread leaves the short naked). One that lowers the options' requirement passes even when
  * equity no longer covers it. A non-option order that only reduces a position always passes, and
- * symbols without margin terms that are not options are not judged.
+ * symbols without margin terms that are neither options nor event contracts are not judged. An event contract
+ * needs its premium at stake ([MarginModel.initial]).
  */
 class MarginRequirement(
     private val margin: MarginModel,
@@ -37,7 +38,7 @@ class MarginRequirement(
     ): Decision {
         val isOption = options?.covers(request.symbol) == true
         if (!isOption &&
-            (!margin.hasTerms(request.symbol) || isRiskReducing(request, positions))
+            (!margin.requiresInitial(request.symbol) || isRiskReducing(request, positions))
         ) {
             return Decision.Approve
         }
@@ -108,7 +109,7 @@ class MarginRequirement(
                     positions.pendingEntrySymbols(
                         null,
                     ) + request.symbol
-            ).filter(margin::hasTerms)
+            ).filter(margin::requiresInitial)
         var required = BigDecimal.ZERO
         for (symbol in symbols) {
             val price =
@@ -116,8 +117,7 @@ class MarginRequirement(
                     ?: prices.lastPrice(symbol)
                     ?: positions.positionFor(symbol)?.avgEntryPrice
                     ?: return BigDecimal.ZERO.also { unpriced(symbol) }
-            required =
-                required.add(margin.initial(symbol, exposure(symbol, request, positions), price, request.timestamp))
+            required = required.add(initial(symbol, request, positions, price))
         }
         return required
     }
@@ -146,10 +146,15 @@ class MarginRequirement(
             ?: positions.positionFor(symbol)?.avgEntryPrice
             ?: if (symbol == request.symbol) explicitPrice(request) else null
 
-    private fun exposure(
+    /**
+     * The initial margin of [symbol] at [price] on the larger exposure it can reach: every pending buy filled, or every
+     * pending sell. An event contract's YES and NO sides need different premiums, so it takes the larger of the two.
+     */
+    private fun initial(
         symbol: String,
         request: OrderRequest,
         positions: PositionProvider,
+        price: BigDecimal,
     ): BigDecimal {
         val net = positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
         var buys = positions.pendingOrderQuantity(symbol, Side.BUY)
@@ -157,7 +162,13 @@ class MarginRequirement(
         if (symbol == request.symbol) {
             if (request.side == Side.BUY) buys = buys.add(request.quantity) else sells = sells.add(request.quantity)
         }
-        return net.add(buys).abs().max(net.subtract(sells).abs())
+        val long = net.add(buys)
+        val short = net.subtract(sells)
+        val at = request.timestamp
+        if (margin.isEvent(symbol)) {
+            return margin.initial(symbol, long, price, at).max(margin.initial(symbol, short, price, at))
+        }
+        return margin.initial(symbol, long.abs().max(short.abs()), price, at)
     }
 
     private fun explicitPrice(request: OrderRequest): BigDecimal? =
