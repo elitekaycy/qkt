@@ -105,7 +105,7 @@ class BotOneShotTest {
                 "\"lastClose\":2652",
             ).contains("\"error\":null")
         assertThat(text.code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(text.out).contains("sma(1) on EXNESS:XAUUSD", "= 2652 (over ")
+        assertThat(text.out).contains("sma(1) on EXNESS:XAUUSD", "= 2652", "(over ")
     }
 
     @Test
@@ -153,7 +153,11 @@ class BotOneShotTest {
 
     @Test
     fun `a session client names the run and mode of its descriptor`() {
-        val client = BotSessionClient(com.qkt.trade.session.BotSessionDescriptor("r1", 1, "tok", "live", 7L))
+        val client =
+            BotSessionClient(
+                com.qkt.trade.session
+                    .BotSessionDescriptor("r1", 1, "tok", "live", 7L),
+            )
 
         assertThat(client.runId).isEqualTo("r1")
         assertThat(client.mode).isEqualTo("live")

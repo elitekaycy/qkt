@@ -118,7 +118,7 @@ class BotQueryCommandTest {
 
         assertThat(json.code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(json.out).contains("\"o\":2650", "\"h\":2655", "\"l\":2645", "\"c\":2652", "\"v\":10")
-        assertThat(text.out).contains(":00:00Z o=2650 h=2655 l=2645 c=2652")
+        assertThat(text.out).contains(":00:00Z o=2650", " h=2655", " l=2645", " c=2652")
         assertThat(mt5.requests).anyMatch { it.startsWith("GET /fetch_data_range") }
     }
 

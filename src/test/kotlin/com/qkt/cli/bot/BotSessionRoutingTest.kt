@@ -106,7 +106,7 @@ class BotSessionRoutingTest {
                 "start",
                 "--backtest",
                 "--symbols",
-                "EXNESS:XA\"U",
+                "EXNESS:XAU USD",
                 "--tf",
                 "15m",
                 "--from",

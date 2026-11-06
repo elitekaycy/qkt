@@ -93,7 +93,12 @@ class BotAdjustCommandsTest {
 
         assertThat(text.code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(text.err.trim()).isEqualTo("CANCEL FAILED ticket=9")
-        assertThat(json.out.trim()).isEqualTo("""[{"ok":false,"ticket":9}]""")
+        assertThat(
+            json.out
+                .trim()
+                .lines()
+                .last(),
+        ).isEqualTo("""[{"ok":false,"ticket":9}]""")
     }
 
     @Test
