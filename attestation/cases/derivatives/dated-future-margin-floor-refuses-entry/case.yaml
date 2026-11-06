@@ -6,6 +6,7 @@ why: 'risk.margin_floor_pct did nothing on a VGP gateway: it read no level, so e
   while the risk-reducing close still fills. Needs #1591: without it the add fills and the fill count and log fail.
   A dated contract, since funding on a perpetual others also hold cannot be shared exactly. An adapter reporting margin_used 0 reads as level 0, which the floor approves: this case would fail on that.'
 status: ready
+group: btc-dated
 symbols:
 - DERIBIT:BTC_USDC_30OCT26
 timeframes:
