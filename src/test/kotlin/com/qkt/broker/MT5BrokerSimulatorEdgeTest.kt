@@ -75,7 +75,17 @@ class MT5BrokerSimulatorEdgeTest {
         entry: OrderRequest,
         tp: String,
         stopLoss: StopLossSpec,
-    ) = OrderRequest.Bracket("b", symbol, Side.BUY, Money.of("0.01"), entry, BigDecimal(tp), stopLoss, TimeInForce.GTC, 0L)
+    ) = OrderRequest.Bracket(
+        "b",
+        symbol,
+        Side.BUY,
+        Money.of("0.01"),
+        entry,
+        BigDecimal(tp),
+        stopLoss,
+        TimeInForce.GTC,
+        0,
+    )
 
     private fun ifTouchedLimit(
         trigger: String,
@@ -110,7 +120,7 @@ class MT5BrokerSimulatorEdgeTest {
     @Test
     fun `a resting order whose instrument vanished by fill time is rejected on trigger`() {
         val broker = sim()
-        broker.submit(OrderRequest.Stop("s", symbol, Side.BUY, Money.of("0.01"), Money.of("2001.000"), TimeInForce.GTC, 0L))
+        broker.submit(OrderRequest.Stop("s", symbol, Side.BUY, Money.of("0.01"), Money.of("2001"), TimeInForce.GTC, 0L))
         metaVisible = false
 
         tick(1L, "2001.500", "2001.500")
@@ -143,7 +153,16 @@ class MT5BrokerSimulatorEdgeTest {
     @Test
     fun `a stop limit whose limit is marketable on activation fills on the trigger tick`() {
         val stopLimit =
-            OrderRequest.StopLimit("sl", symbol, Side.BUY, Money.of("0.01"), Money.of("2010"), Money.of("2010.2"), TimeInForce.GTC, 0L)
+            OrderRequest.StopLimit(
+                "sl",
+                symbol,
+                Side.BUY,
+                Money.of("0.01"),
+                Money.of("2010"),
+                Money.of("2010.2"),
+                TimeInForce.GTC,
+                0L,
+            )
         sim().submit(stopLimit)
 
         tick(1L, "2010.050", "2010.150")

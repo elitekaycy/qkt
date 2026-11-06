@@ -21,6 +21,7 @@ import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LastTradingDayOfMonth
+import com.qkt.dsl.ast.Market as AstMarket
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
@@ -64,7 +65,7 @@ class OrderRequestEvidenceExprTest {
                     StackPlan(
                         layers =
                             listOf(
-                                LayerSpec(0, SizeQty(one), com.qkt.dsl.ast.Market, At(expr, StackDirection.ABOVE), null),
+                                LayerSpec(0, SizeQty(one), AstMarket, At(expr, StackDirection.ABOVE), null),
                             ),
                         outerBracket = null,
                         withinMillis = 500L,
@@ -144,7 +145,10 @@ class OrderRequestEvidenceExprTest {
             .isEqualTo(
                 mapOf(
                     "type" to "CaseWhen",
-                    "branches" to listOf(mapOf("condition" to mapOf("type" to "BoolLit", "value" to false), "result" to numOne)),
+                    "branches" to
+                        listOf(
+                            mapOf("condition" to mapOf("type" to "BoolLit", "value" to false), "result" to numOne),
+                        ),
                     "else" to numTwo,
                 ),
             )

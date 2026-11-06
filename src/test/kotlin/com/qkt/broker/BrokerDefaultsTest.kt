@@ -52,7 +52,7 @@ class BrokerDefaultsTest {
     fun `recovery without venue truth vouches for every order`() {
         val orders =
             listOf("a", "b").map {
-                ManagedOrder(id = it, request = market(it), state = OrderState.WORKING, createdAt = 0L, lastUpdatedAt = 0L)
+                ManagedOrder(it, market(it), OrderState.WORKING, createdAt = 0L, lastUpdatedAt = 0L)
             }
 
         assertThat(minimal.recoverPendingOrders(orders)).containsExactly("a", "b")
@@ -79,7 +79,8 @@ class BrokerDefaultsTest {
 
     @Test
     fun `booked legs list only the legs that carry a venue ticket, per strategy`() {
-        val ticketed = PositionLeg("l1", "A:X", Side.SELL, Money.of("2"), Money.of("10"), 5L, LegRole.PRIMARY, brokerTicket = "T1")
+        val ticketed =
+            PositionLeg("l1", "A:X", Side.SELL, Money.of("2"), Money.of("10"), 5L, LegRole.PRIMARY, brokerTicket = "T1")
         val unticketed = PositionLeg("l2", "A:X", Side.BUY, Money.of("1"), Money.of("11"), 6L, LegRole.PRIMARY)
         val reads = legReads(mapOf("s1" to listOf(ticketed, unticketed), "s2" to emptyList()))
 

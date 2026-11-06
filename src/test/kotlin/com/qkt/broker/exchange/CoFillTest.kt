@@ -19,7 +19,8 @@ class CoFillTest {
 
     @Test
     fun `buy stops of one strategy on one contract co-fill and add up`() {
-        val working = listOf(stop("a", Side.BUY, "2"), stop("b", Side.BUY, "3"), stop("c", Side.BUY, "7", strategy = "other"))
+        val working =
+            listOf(stop("a", Side.BUY, "2"), stop("b", Side.BUY, "3"), stop("c", Side.BUY, "7", strategy = "other"))
 
         assertThat(CoFill.pending(working, stop("new", Side.BUY, "1"))).isEqualByComparingTo("5")
     }

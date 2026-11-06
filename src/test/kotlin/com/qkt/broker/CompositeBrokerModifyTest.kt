@@ -20,6 +20,11 @@ class CompositeBrokerModifyTest {
         symbol: String,
     ) = OrderRequest.Market(id, symbol, Side.BUY, Money.of("1"), timeInForce = TimeInForce.GTC, timestamp = 0L)
 
+    private fun routes(
+        a: Broker,
+        b: Broker,
+    ): List<Pair<SymbolPattern, Broker>> = listOf(SymbolPattern.prefix("A:") to a, SymbolPattern.prefix("B:") to b)
+
     private class ModifyingBroker(
         override val name: String,
     ) : Broker {
@@ -50,7 +55,7 @@ class CompositeBrokerModifyTest {
     fun `modify reaches the leaf that took the order`() {
         val a = ModifyingBroker("A")
         val b = ModifyingBroker("B")
-        val composite = CompositeBroker(listOf(SymbolPattern.prefix("A:") to a, SymbolPattern.prefix("B:") to b), bus = bus)
+        val composite = CompositeBroker(routes(a, b), bus = bus)
         composite.submit(market("o1", "B:X"))
         val change = OrderModification(newLimitPrice = Money.of("5"))
 
@@ -74,19 +79,21 @@ class CompositeBrokerModifyTest {
 
     @Test
     fun `async position modification of an unknown ticket reports a refusal`() {
-        val composite = CompositeBroker(listOf(SymbolPattern.prefix("A:") to FakeBroker(bus, clock, emptySet())), bus = bus)
+        val leaf = FakeBroker(bus, clock, emptySet())
+        val composite = CompositeBroker(listOf(SymbolPattern.prefix("A:") to leaf), bus = bus)
         val results = mutableListOf<SubmitAck>()
 
         composite.modifyPositionAsync("T9", sl = Money.of("1"), tp = null) { results += it }
 
-        assertThat(results).containsExactly(SubmitAck("T9", "T9", accepted = false, rejectReason = "no leaf owns ticket T9"))
+        assertThat(results)
+            .containsExactly(SubmitAck("T9", "T9", accepted = false, rejectReason = "no leaf owns ticket T9"))
     }
 
     @Test
     fun `async position modification reaches the leaf that filled the ticket`() {
         val a = FakeBroker(bus, clock, emptySet())
         val b = FakeBroker(bus, clock, emptySet())
-        val composite = CompositeBroker(listOf(SymbolPattern.prefix("A:") to a, SymbolPattern.prefix("B:") to b), bus = bus)
+        val composite = CompositeBroker(routes(a, b), bus = bus)
         val order = market("o2", "B:X")
         composite.submit(order)
         b.emitFill(order, Money.of("10"))
@@ -95,7 +102,8 @@ class CompositeBrokerModifyTest {
         composite.modifyPositionAsync("o2", sl = Money.of("9"), tp = Money.of("12")) { results += it }
 
         assertThat(results.single().accepted).isTrue()
-        assertThat(b.modifyPositions).containsExactly(FakeBroker.ModifyPositionCall("o2", Money.of("9"), Money.of("12")))
+        assertThat(b.modifyPositions)
+            .containsExactly(FakeBroker.ModifyPositionCall("o2", Money.of("9"), Money.of("12")))
         assertThat(a.modifyPositions).isEmpty()
     }
 
@@ -104,7 +112,7 @@ class CompositeBrokerModifyTest {
         val a = ModifyingBroker("A").apply { failShutdown = true }
         val b = ModifyingBroker("B")
         val fallback = ModifyingBroker("F").apply { failShutdown = true }
-        val composite = CompositeBroker(listOf(SymbolPattern.prefix("A:") to a, SymbolPattern.prefix("B:") to b), fallback)
+        val composite = CompositeBroker(routes(a, b), fallback)
 
         composite.shutdown()
 

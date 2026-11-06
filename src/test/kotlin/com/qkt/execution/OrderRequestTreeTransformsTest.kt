@@ -80,7 +80,8 @@ class OrderRequestTreeTransformsTest {
                 assertThat(planned.exitLegIntent()).`as`(request.type).isEqualTo(LegIntent.Close(legId = "leg-9"))
             }
         }
-        val oco = allRequests().single { it is OrderRequest.StandaloneOCO }.withLegIntent(LegIntent.Net) as OrderRequest.StandaloneOCO
+        val ocoRequest = allRequests().single { it is OrderRequest.StandaloneOCO }
+        val oco = ocoRequest.withLegIntent(LegIntent.Net) as OrderRequest.StandaloneOCO
         assertThat(listOf(oco.leg1.legIntent, oco.leg2.legIntent)).containsOnly(LegIntent.Net)
         assertThat(oco.exitLegIntent()).isEqualTo(LegIntent.Net)
     }

@@ -36,7 +36,16 @@ class OptionExchangeEntryTest {
     ) {
         val f = fixture(dir)
         val stop =
-            OrderRequest.Stop("st", f.symbol, Side.BUY, BigDecimal("0.1"), BigDecimal("100"), TimeInForce.GTC, f.clock.time, "s1")
+            OrderRequest.Stop(
+                "st",
+                f.symbol,
+                Side.BUY,
+                BigDecimal("0.1"),
+                BigDecimal.TEN,
+                TimeInForce.GTC,
+                f.clock.time,
+                "s1",
+            )
 
         val ack = f.exchange.submit(stop)
 

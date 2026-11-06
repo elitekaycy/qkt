@@ -26,7 +26,7 @@ class SimulatedVenueRulesTest {
 
     @Test
     fun `a market order never triggers as a resting order on the mt5 venue`() {
-        val market = OrderRequest.Market("m", "X", Side.BUY, Money.of("1"), timeInForce = TimeInForce.GTC, timestamp = 0L)
+        val market = OrderRequest.Market("m", "X", Side.BUY, Money.of("1"), TimeInForce.GTC, 0L)
 
         assertThat(mt5Triggered(market, Tick("X", Money.of("1"), 0L))).isFalse()
     }
@@ -34,7 +34,16 @@ class SimulatedVenueRulesTest {
     @Test
     fun `an engine-managed trailing stop is not a resting type the mt5 venue triggers`() {
         val trailing =
-            OrderRequest.TrailingStop("t", "X", Side.SELL, Money.of("1"), Money.of("2"), TrailMode.ABSOLUTE, TimeInForce.GTC, 0L)
+            OrderRequest.TrailingStop(
+                "t",
+                "X",
+                Side.SELL,
+                Money.of("1"),
+                Money.of("2"),
+                TrailMode.ABSOLUTE,
+                TimeInForce.GTC,
+                0,
+            )
 
         assertThatThrownBy { mt5Triggered(trailing, Tick("X", Money.of("1"), 0L)) }
             .hasMessage("MT5BrokerSimulator.mt5Triggered: unhandled order type TrailingStop")

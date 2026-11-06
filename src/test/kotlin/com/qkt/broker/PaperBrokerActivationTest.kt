@@ -75,7 +75,16 @@ class PaperBrokerActivationTest {
     @Test
     fun `a sell stop limit marketable on activation fills at the higher of print and limit`() {
         PaperBroker(bus, clock, MarketPriceTracker()).submit(
-            OrderRequest.StopLimit("sl", "X", Side.SELL, Money.of("1"), Money.of("100"), Money.of("99"), TimeInForce.GTC, 0L),
+            OrderRequest.StopLimit(
+                "sl",
+                "X",
+                Side.SELL,
+                Money.of("1"),
+                Money.of("100"),
+                Money.of("99"),
+                TimeInForce.GTC,
+                0L,
+            ),
         )
 
         tick("99.5", 1L)
@@ -88,7 +97,16 @@ class PaperBrokerActivationTest {
         val broker = PaperBroker(bus, clock, MarketPriceTracker(), fillAtTriggerPrice = { true })
         tick("105", 1L)
         broker.submit(
-            OrderRequest.StopLimit("sl", "X", Side.BUY, Money.of("1"), Money.of("100"), Money.of("101"), TimeInForce.GTC, 0L),
+            OrderRequest.StopLimit(
+                "sl",
+                "X",
+                Side.BUY,
+                Money.of("1"),
+                Money.of("100"),
+                Money.of("101"),
+                TimeInForce.GTC,
+                0L,
+            ),
         )
 
         tick("100.5", 2L)
@@ -99,7 +117,7 @@ class PaperBrokerActivationTest {
     @Test
     fun `a bracket is not an order type the paper broker books`() {
         val broker = PaperBroker(bus, clock, MarketPriceTracker())
-        val entry = OrderRequest.Market("e", "X", Side.BUY, Money.of("1"), timeInForce = TimeInForce.GTC, timestamp = 0L)
+        val entry = OrderRequest.Market("e", "X", Side.BUY, Money.of("1"), TimeInForce.GTC, 0L)
         val bracket =
             OrderRequest.Bracket(
                 "b",
