@@ -15,7 +15,8 @@ import org.slf4j.Logger
  * (CLOSE_AT_MARKET). A fill-anchored exit ([OrderRequest.TimeExit.holdMs]) waits in [PendingTimeExits]
  * until its entry fills, then is armed in [armed], timed from the venue's fill time; both are persisted
  * and re-armed by [restore] after a restart. Deadlines are compared against the tick clock on the
- * engine thread, so exits fire on the first tick at or after the deadline in backtest and live. A fired exit stays armed until its close fills ([TimedCloseRetries]).
+ * engine thread, so exits fire on the first tick at or after the deadline in backtest and live. A fired
+ * exit stays armed until its close fills ([TimedCloseRetries]).
  */
 internal class TimeExits(
     private val book: OrderBook,
