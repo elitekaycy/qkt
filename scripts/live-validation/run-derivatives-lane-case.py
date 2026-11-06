@@ -42,6 +42,16 @@ fills and, when it asserts flat-by-strategy, is flat (or its budget ends), then 
   - deals-reported-after-restart (a `qkt_restart` drill with `capture_deals`, lib/deal_capture.py): each venue deal and
     settlement of the strategy is reported from the restarted process, past the 60 s grace, with its leg and strategy;
   - `expect_log` / `reject_log`: regexes the daemon log must or must not match when the case ends.
+Before it touches the account the case waits for its venue (lib/venue_health.py: the gateway's venue link and, with
+QKT_ATTEST_DERIBIT_URL on a Deribit gateway, the strategy's instruments open with a fresh ticker), at most
+QKT_ATTEST_VENUE_WAIT_MAX_S, then samples it while it runs; the waits and any unavailable samples are written to the
+result (`venueWaits`, `venueOutage`) as the catalog's only grounds to rerun the attempt for free. Past the maximum it fails
+as `venue unavailable for Xh: ...`. A case bound to its lane's session (attestation/lanes.yaml, an alpaca share case)
+waits at most until the latest start its window allows, and after any venue wait must pass the catalog's own session
+check again (lib/attest_session.py can_start); if it no longer fits, the attempt ends as `session` (`sessionClosed` in
+the result) before the judged window opens, for the resumed release to rerun in the next window. Leftovers of an earlier run of the case's own strategy (a working order, a holding
+its own deals of the last day attribute to it that the account still holds) are swept before the judged window opens
+and written to the result (`leftoversSwept`); nobody else's order or size is touched.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
 import argparse, csv, datetime, json, os, re, shutil, signal, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
@@ -55,7 +65,9 @@ import deal_capture  # noqa: E402
 import derivatives_drills  # noqa: E402
 import derivatives_roll as rolling  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
+import attest_session  # noqa: E402
 import strategy_scope as scope  # noqa: E402
+import venue_health  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
@@ -63,6 +75,7 @@ QKT_MONEY_UNIT = Decimal("0.00000001")  # qkt Money.SCALE = 8
 FUNDING_RECONCILE_S = 90  # a gateway reconciles venue history every minute; one cycle past the last fill, with margin
 PREFLIGHT_LOOKBACK_MS = 86_400_000  # a strategy's deals over the last day must net flat before a case starts
 DAY_MS = 86_400_000
+LEFTOVER_FLAT_WAIT_S = 60  # a swept leftover's close must show in the venue's deals and positions before the case starts
 # Past its budget a case still runs: prepare, the settle and funding-reconcile waits, a chain replay's extra bar and the
 # daemon's stop. A run longer than an hour (a soak) is not held back for the day's end.
 RUN_TAIL_S = 300
@@ -83,9 +96,16 @@ def main():
     case["lane"] = lane if lanes.get(lane, {}).get("venue_gateway") else "derivatives"
     budget = args.budget_seconds or int(case.get("budget_seconds", lanes[case["lane"]]["budget_seconds"]))
     run = Run(args, case)
+    run.lane_config = lanes.get(lane, {})
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
     try:
         problems = run.execute(budget)
+    except SessionClosed as error:  # a venue wait took the case past its window: nothing was touched
+        run.venue_waits, run.session_closed = error.wait, {"reason": str(error), "at": venue_health.utc(time.time() * 1000)}
+        problems = [str(error)]
+    except venue_health.VenueUnavailable as error:  # the venue never came back: nothing was touched
+        run.venue_waits = error.wait
+        problems = [str(error)]
     except Exception as error:  # the verdict is always written, whatever went wrong
         problems = [f"runner error: {error}"]
     finally:
@@ -102,6 +122,7 @@ def main():
             run.sweep()
         except Exception as error:
             problems = problems + [f"sweep: the account may not be flat: {error}"]
+        run.end_watch(problems)
     return run.verdict(problems)
 
 
@@ -134,8 +155,19 @@ def await_one_utc_day(strategy_text, run_s, label):
         time.sleep(wait / 1000)
 
 
+class SessionClosed(RuntimeError):
+    """A venue wait took a session-bound case past the latest start its window allows."""
+
+    def __init__(self, reason, wait=()):
+        super().__init__(reason)
+        self.wait = list(wait)
+
+
 class Run:
     roll = capture = resumed = stopped_at = None  # class defaults: the cross lane's runner has its own __init__
+    watch = leftovers_swept = session_closed = None
+    venue_waits = ()
+    lane_config = {}
 
     def __init__(self, args, case):
         if args.arm != "I_UNDERSTAND_DEMO_ORDER_0.01":
@@ -228,19 +260,125 @@ class Run:
         """flat-by-strategy: no working order of the strategy's, and its own deals (less its settlements) net flat."""
         return not self.own(self.get("/v1/orders")["orders"]) and not self.holdings(since_ms)
 
+    def leftovers(self, since_ms):
+        """The strategy's working orders, and what its deals since [since_ms] attribute to it that the account still
+        holds. A drill's close often carries another label (the kill switch, the guardian, a sweep), so the deals alone
+        may never net; the venue's empty position settles it (strategy_scope.account_held)."""
+        working = self.own(self.get("/v1/orders")["orders"])
+        held = self.holdings(since_ms)
+        positions = self.get("/v1/positions")["positions"]
+        return working, (scope.account_held(held, positions) if held else {}), positions
+
     def preflight_clear(self, since_ms):
         """Before a case: no working order of the strategy's, and nothing its deals since [since_ms] attribute to it
-        that the account still holds. A drill's close often carries another label (the kill switch, the guardian, a
-        sweep), so the deals alone may never net; the venue's empty position settles it (strategy_scope.account_held).
-        Once clear, the case owns the strategy and judges from now, never from the older deals."""
-        if self.own(self.get("/v1/orders")["orders"]):
-            return False
-        held = self.holdings(since_ms)
-        if held and scope.account_held(held, self.get("/v1/positions")["positions"]):
+        that the account still holds. What an earlier run of the case left (one an outage cut off before its own sweep)
+        is swept first: its own orders cancelled, its own holding closed under its own id (strategy_scope.sweep_orders),
+        then the account must show it flat. The strategy is the case's alone, so its deals are earlier runs of this case;
+        nobody else's order or size is touched. Once clear, the case owns the strategy and judges from now, never from
+        the older deals or the sweep, so a sweep can never count toward this attempt or excuse an earlier one."""
+        working, held, positions = self.leftovers(since_ms)
+        if (working or held) and not self.sweep_leftovers(since_ms, working, held, positions):
             return False
         self.owns_strategy = True
         self.started_ms = int(time.time() * 1000)  # the run's own start replaces it; a sweep before then reads from here
         return True
+
+    def sweep_leftovers(self, since_ms, working, held, positions):
+        """Cancels [working] and closes [held] (the strategy's own, from earlier runs), waits until the account shows
+        the strategy clear, and records what it did in `leftovers_swept`. False when it is still not clear."""
+        now = int(time.time() * 1000)
+        record = {"at": venue_health.utc(now), "lookbackFromMs": since_ms, "held": {k: str(v) for k, v in held.items()},
+                  "cancelled": [], "orders": []}
+        label = getattr(self, "label", None) or (getattr(self, "case", None) or {}).get("id", "case")
+        venue_health.notice(f"{label}: strategy {self.strategy} still holds {record['held'] or 'nothing'} and "
+                            f"{len(working)} working order(s) from an earlier run; sweeping them before the case")
+        for order in working:
+            try:
+                self.get(f"/v1/orders/{urllib.parse.quote(order['client_order_id'])}", method="DELETE")
+            except urllib.error.HTTPError as error:
+                if error.code != 404:  # not_found: the order already ended
+                    raise
+            record["cancelled"].append(order["client_order_id"])
+        for order in scope.sweep_orders(held, positions, self.strategy, now) if held else []:
+            self.get("/v1/orders", order, "POST")
+            record["orders"].append(order)
+        self.leftovers_swept = record
+        deadline = time.time() + LEFTOVER_FLAT_WAIT_S
+        while True:
+            working, held, _ = self.leftovers(since_ms)
+            if not working and not held:
+                venue_health.notice(f"{label}: strategy {self.strategy} swept clear")
+                return True
+            if time.time() > deadline:
+                record["left"] = {"held": {k: str(v) for k, v in held.items()}, "working": len(working)}
+                return False
+            time.sleep(2)
+
+    def venue_probes(self):
+        """The case's venue, as lib/venue_health.py samples it."""
+        text = open(os.path.join(self.args.case, "strategy.qkt")).read()
+        return [venue_health.Probe(getattr(self, "label", None) or self.case.get("lane", "gateway"),
+                                   self.args.gateway_url, self.key, venue_health.strategy_symbols(text))]
+
+    def session_bound(self):
+        """(seconds a venue wait may last, whether the session sets it): for a case bound to its lane's window, no
+        longer than the latest start that still finishes inside the window; None for a 24/7 case."""
+        session = self.lane_config.get("session")
+        if not session or self.case.get("session") == "none":
+            return None, False
+        now = datetime.datetime.fromtimestamp(time.time(), datetime.timezone.utc)
+        _, closes = attest_session.current_or_next_window(session, now)
+        latest = closes - datetime.timedelta(seconds=attest_session.budget_of(self.case, self.lane_config))
+        left = max((latest - now).total_seconds(), 0)
+        most = venue_health.env_seconds("QKT_ATTEST_VENUE_WAIT_MAX_S", venue_health.DEFAULT_WAIT_MAX_S)
+        return (left, True) if left < most else (most, False)
+
+    def session_fits(self):
+        """The catalog's own per-case check (attest_session.can_start), now."""
+        now = datetime.datetime.fromtimestamp(time.time(), datetime.timezone.utc)
+        return attest_session.can_start(self.case, self.lane_config, now)
+
+    def await_venue(self, probes):
+        """Waits for the venue before the attempt touches anything, then samples it for the rest of the attempt. A
+        session-bound case waits no longer than its window allows and, after a wait, must still fit its window."""
+        bound, by_session = self.session_bound()
+        session = self.lane_config.get("session")
+        try:
+            self.venue_waits = venue_health.await_available(probes, max_s=bound)
+        except venue_health.VenueUnavailable as error:
+            if by_session:
+                venue_health.notice(f"{self.case.get('id', 'case')}: the venue wait reached the {session} window's latest "
+                                    "start; ending the attempt as session")
+                raise SessionClosed(f"session: the venue was unavailable until past the latest start of the "
+                                    f"{session} window ({error}); rerun in the next window", error.wait)
+            raise
+        if self.venue_waits and session and self.case.get("session") != "none" and not self.session_fits():
+            venue_health.notice(f"{self.case.get('id', 'case')}: no longer fits its {session} window after the venue "
+                                "wait; ending the attempt as session")
+            raise SessionClosed(f"session: after a venue wait the case no longer fits its {session} window; "
+                                "rerun in the next window", self.venue_waits)
+        self.watch = venue_health.Watch(probes).start()
+
+    def end_watch(self, problems):
+        """Stops the sampling; a failed attempt takes one more sample, at the time it failed."""
+        if self.watch:
+            self.watch.stop()
+            if problems:
+                self.watch.look()
+
+    def venue_record(self):
+        """The attempt's venue evidence for its result: the waits, an outage sampled during it, what it swept first."""
+        record = {}
+        if self.venue_waits:
+            record["venueWaits"] = list(self.venue_waits)
+        outage = self.watch.outage() if self.watch else None
+        if outage:
+            record["venueOutage"] = outage
+        if self.leftovers_swept:
+            record["leftoversSwept"] = self.leftovers_swept
+        if self.session_closed:
+            record["sessionClosed"] = self.session_closed
+        return record
 
     def own_positions(self):
         """The account's positions on the symbols the strategy holds now (a drill's evidence and probe price)."""
@@ -250,6 +388,8 @@ class Run:
     def execute(self, budget):
         text = open(os.path.join(self.args.case, "strategy.qkt")).read()
         await_one_utc_day(text, budget + RUN_TAIL_S, self.case.get("id", "case"))
+        self.await_venue(self.venue_probes())
+        await_one_utc_day(text, budget + RUN_TAIL_S, self.case.get("id", "case"))  # the venue wait may have crossed it
         health = self.get("/v1/health")
         if health["trade_mode"] != "demo" or str(health["account_login"]) != self.args.expected_login:
             raise RuntimeError("gateway is not the expected DEMO account")
@@ -804,7 +944,7 @@ class Run:
         result = {"schema": "qkt-attestation-derivatives-case-v1", "id": case_id,
                   "lane": self.case.get("lane", "derivatives"),
                   "status": "failed" if problems else "passed", "problems": problems,
-                  **getattr(self, "evidence", {})}
+                  **getattr(self, "evidence", {}), **self.venue_record()}
         if self.drills.records or self.drills.pending:
             result["drills"] = self.drills.records
         os.makedirs(self.out, exist_ok=True)

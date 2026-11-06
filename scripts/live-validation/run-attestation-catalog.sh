@@ -14,6 +14,7 @@ Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
          [--cross-venue LABEL=URL@LOGIN ...] [--binding FILE] [--session-wait-max-h H]
+         [--venue-wait-max SECONDS] [--deribit-public-url URL]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
 The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
@@ -39,6 +40,14 @@ Outside it, every other lane runs now and the session lane waits in this process
 wait logged and recorded in DIR/session-waits.jsonl), up to --session-wait-max-h hours (default 72) from the start;
 past that its cases fail as `session`, by name. Whatever the plan says, no session-bound case starts unless it can
 finish before the close (attest_session.py can-start); one that cannot fails as `session` and a resumed run reruns it.
+
+A gateway lane case (derivatives, bybit, alpaca, cross) first waits for its venue (lib/venue_health.py: the gateway's
+venue link and, on Deribit, each of its instruments `open` with a fresh ticker on --deribit-public-url, default the
+testnet's API), up to --venue-wait-max seconds (default 21600), and samples the venue while it runs. An attempt that
+failed while those samples show the venue unavailable is recorded as `venue-outage` with its evidence and reruns once the
+venue is back without spending the case's budget; a venue still down past the maximum fails the case as
+`venue-unavailable` (no retry), which a resumed release reruns. Each wait goes to the case log and, when
+QKT_ATTEST_NOTICE_FD names an open descriptor, to the release log.
 USAGE
 }
 fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
@@ -47,6 +56,7 @@ out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; ar
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
 alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=(); session_wait_max_h=72
+venue_wait_max=21600; deribit_public_url="https://test.deribit.com/api/v2"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -68,6 +78,8 @@ while [ "$#" -gt 0 ]; do
         --alpaca-expected-login) alpaca_expected_login="${2:-}"; shift 2 ;;
         --cross-venue) cross_venues+=(--venue "${2:-}"); shift 2 ;;
         --session-wait-max-h) session_wait_max_h="${2:-}"; shift 2 ;;
+        --venue-wait-max) venue_wait_max="${2:-}"; shift 2 ;;
+        --deribit-public-url) deribit_public_url="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -76,6 +88,8 @@ for v in out gateway_url expected_login expected_server magic_base; do [ -n "${!
 [ "$arm" = "I_UNDERSTAND_DEMO_ORDER_0.01" ] || fail "--arm I_UNDERSTAND_DEMO_ORDER_0.01 is required"
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || fail "--max-parallel must be a positive integer"
 [[ "$session_wait_max_h" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--session-wait-max-h must be a number of hours"
+[[ "$venue_wait_max" =~ ^[0-9]+$ ]] || fail "--venue-wait-max must be a whole number of seconds"
+export QKT_ATTEST_VENUE_WAIT_MAX_S="$venue_wait_max" QKT_ATTEST_DERIBIT_URL="$deribit_public_url"
 if [ -e "$out" ]; then
     [ -n "$binding" ] && [ -f "$out/binding.json" ] || fail "output already exists: $out"
     cmp -s <(jq -S . "$binding") <(jq -S . "$out/binding.json") || fail "$out belongs to another build, profile or account"
@@ -115,6 +129,13 @@ launch_case() {  # name magic
     case_started["$name"]="$(date -u +%FT%TZ)"; case_dirname["$name"]="$name$tail"
     launch "$name" "${runner[@]}" --case "${case_path[$name]}" --out "$out/$name$tail" "${common[@]}" --magic "$2" --arm "$arm"
 }
+# A venue wait or outage rerun, in the catalog log and, when the release opened one, its own log.
+venue_notice() {
+    printf '%s venue: %s\n' "$(date -u +%T)" "$1"
+    if [ -n "${QKT_ATTEST_NOTICE_FD:-}" ] && { true >&"$QKT_ATTEST_NOTICE_FD"; } 2>/dev/null; then
+        printf '%s venue: %s\n' "$(date -u +%T)" "$1" >&"$QKT_ATTEST_NOTICE_FD"
+    fi
+}
 # One gateway case and its retries, one after another on the lane's account.
 gateway_case() {  # name command...   (the command takes --out last)
     local name="$1" tail code when status cause action delay; shift
@@ -125,7 +146,11 @@ gateway_case() {  # name command...   (the command takes --out last)
         read -r status cause action delay < <(cases_tool record --out "$out" --name "$name" --dir "$out/$name$tail" \
             --log "$out/logs/$name$tail.log" --exit "$code" --started "$when" --require-result)
         [ "$action" = retry ] || { [ "$status" = passed ]; return; }
-        printf 'retrying %s after %ss: %s\n' "$name" "$delay" "$cause"
+        if [ "$cause" = venue-outage ]; then
+            venue_notice "$name failed while its venue was unavailable (evidence in attempts/$name.jsonl); rerunning after ${delay}s without spending an attempt"
+        else
+            printf 'retrying %s after %ss: %s\n' "$name" "$delay" "$cause"
+        fi
         sleep "$delay"
     done
 }
