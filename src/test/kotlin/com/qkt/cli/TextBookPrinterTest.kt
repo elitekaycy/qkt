@@ -13,7 +13,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class TextBookPrinterTest : ReportPrinterFixture() {
-    private fun result(
+    private fun bookResult(
         bookRisk: BookRiskReport? = null,
         bookAnalytics: BookAnalytics? = null,
     ) = BacktestResult(
@@ -44,7 +44,7 @@ class TextBookPrinterTest : ReportPrinterFixture() {
                 events = listOf(BookRiskEvent.DeRiskChange(1L, BigDecimal("0.5"))),
             )
 
-        val lines = printed { TextBookPrinter.printBookRisk(result(bookRisk = risk), it) }
+        val lines = printed { TextBookPrinter.printBookRisk(bookResult(bookRisk = risk), it) }
 
         assertThat(lines).containsSubsequence(
             "Book risk",
@@ -59,7 +59,7 @@ class TextBookPrinterTest : ReportPrinterFixture() {
     fun `book risk without a vol says n-a and omits a zero event count`() {
         val risk = BookRiskReport(emptyList(), null, BigDecimal.ONE, BigDecimal.ZERO)
 
-        val lines = printed { TextBookPrinter.printBookRisk(result(bookRisk = risk), it) }
+        val lines = printed { TextBookPrinter.printBookRisk(bookResult(bookRisk = risk), it) }
 
         assertThat(lines).contains("  book vol (annual):  n/a").noneMatch { it.contains("events:") }
     }
@@ -74,7 +74,7 @@ class TextBookPrinterTest : ReportPrinterFixture() {
                 drawdownContribution = emptyMap(),
             )
 
-        val lines = printed { TextBookPrinter.printBookAnalytics(result(bookAnalytics = analytics), it) }
+        val lines = printed { TextBookPrinter.printBookAnalytics(bookResult(bookAnalytics = analytics), it) }
 
         assertThat(lines).containsSubsequence(
             "Book analytics",
@@ -93,9 +93,9 @@ class TextBookPrinterTest : ReportPrinterFixture() {
         val analytics =
             BookAnalytics(mapOf("a" to BigDecimal.ONE), emptyList(), mapOf("a" to BigDecimal.ONE), emptyMap())
 
-        assertThat(printed { TextBookPrinter.printBookAnalytics(result(bookAnalytics = analytics), it) })
+        assertThat(printed { TextBookPrinter.printBookAnalytics(bookResult(bookAnalytics = analytics), it) })
             .noneMatch { it.contains("return correlation") }
-        assertThat(printed { TextBookPrinter.printBookAnalytics(result(), it) }).containsExactly("")
-        assertThat(printed { TextBookPrinter.printBookRisk(result(), it) }).containsExactly("")
+        assertThat(printed { TextBookPrinter.printBookAnalytics(bookResult(), it) }).isEqualTo(listOf(""))
+        assertThat(printed { TextBookPrinter.printBookRisk(bookResult(), it) }).isEqualTo(listOf(""))
     }
 }
