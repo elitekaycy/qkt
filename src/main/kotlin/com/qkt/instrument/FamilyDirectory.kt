@@ -70,10 +70,20 @@ class OpenEvents(
             }.sortedWith(compareBy({ it.closeAtMs }, { it.event }))
 
     private companion object {
+        val BOUNDS: Comparator<BigDecimal?> = nullsLast(naturalOrder())
+
+        /** By the first bound (strikeless contracts last), then the cap, then the symbol, so the order never ties. */
         val STRIKE_ORDER: Comparator<FamilyContract> =
-            compareBy<FamilyContract, BigDecimal?>(nullsLast<BigDecimal>()) {
-                it.terms.predicate.floor ?: it.terms.predicate.cap
-            }.thenBy(nullsLast<BigDecimal>()) { it.terms.predicate.cap }
-                .thenBy { it.symbol }
+            Comparator { a, b ->
+                val first = BOUNDS.compare(a.firstBound(), b.firstBound())
+                val cap = BOUNDS.compare(a.terms.predicate.cap, b.terms.predicate.cap)
+                when {
+                    first != 0 -> first
+                    cap != 0 -> cap
+                    else -> a.symbol.compareTo(b.symbol)
+                }
+            }
+
+        fun FamilyContract.firstBound(): BigDecimal? = terms.predicate.floor ?: terms.predicate.cap
     }
 }
