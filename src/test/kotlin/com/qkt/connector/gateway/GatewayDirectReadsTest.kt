@@ -20,7 +20,7 @@ class GatewayDirectReadsTest {
         GatewayDirectVenue(
             name = "deribit",
             prefix = "DERIBIT:",
-            client = GatewayClient(fake.url, "k", httpTimeoutMs = 2_000, retryAttempts = 0),
+            client = GatewayClient(fake.url, "k", httpTimeoutMs = 2_000, retryAttempts = 1),
             baseUrl = fake.url,
             apiKey = "k",
             pollTimeoutMs = 2_000,

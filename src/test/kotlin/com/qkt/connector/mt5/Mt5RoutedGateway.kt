@@ -60,7 +60,7 @@ internal class Mt5RoutedGateway : AutoCloseable {
 
     /** Drops every connection to [path] before answering, so the caller sees an IO failure. */
     fun drop(path: String) {
-        routes[path] = CopyOnWriteArrayList(listOf(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)))
+        routes[path] = CopyOnWriteArrayList(listOf(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)))
     }
 
     /** The recorded request lines whose path starts with [prefix]. */
