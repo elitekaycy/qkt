@@ -86,4 +86,14 @@ class ClauseKeywordErrorsTest {
         assertThat(portfolioErrors(regimes.format("DEFAULT") + allocate.format("regime_weighted", "5")))
             .contains("expected alias or CASH in allocate entry")
     }
+
+    @Test
+    fun `a malformed portfolio header is reported and parsing resumes at the next block`() {
+        val result =
+            Dsl.parseAny(
+                "PORTFOLIO p VERSION x\nIMPORT 'a.qkt' AS a\nRULES\n    RUN a\n",
+            ) as ParseResult.Failure
+
+        assertThat(result.errors.map { it.message }).containsExactly("expected integer version, got 'x'")
+    }
 }
