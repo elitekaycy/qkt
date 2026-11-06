@@ -147,7 +147,7 @@ class SessionFlattenTest {
         f.leg("pinned", "XAUUSD", "77")
         f.leg("loose", "EURUSD", null)
 
-        val gap = interruptingSleeps { f.subject.flattenAndSweep() }
+        val (gap, handedBack) = interruptingSleeps { f.subject.flattenAndSweep() }
 
         assertThat(gap)
             .contains("venue positions unreadable after 3 reads on venue")
@@ -155,11 +155,14 @@ class SessionFlattenTest {
             .contains("could not close legs without a ticket [loose (EURUSD)]")
         assertThat(f.closes.map { (it as OrderRequest.Market).closesTicket }).containsExactly("77")
         // The interrupts the reads swallowed are handed back to the caller's thread.
-        assertThat(Thread.interrupted()).isTrue()
+        assertThat(handedBack).isTrue()
     }
 
-    /** Runs [block] while a watcher cuts short every sleep it enters, so retry backoff costs no wall time. */
-    private fun <T> interruptingSleeps(block: () -> T): T {
+    /**
+     * Runs [block] while a watcher cuts short every sleep it enters, so retry backoff costs no wall
+     * time. Returns the block's result and whether it left the thread interrupted (the flag is cleared).
+     */
+    private fun <T> interruptingSleeps(block: () -> T): Pair<T, Boolean> {
         val target = Thread.currentThread()
         val done = AtomicBoolean(false)
         val watcher =
@@ -175,11 +178,13 @@ class SessionFlattenTest {
                 isDaemon = true
                 start()
             }
-        try {
-            return block()
-        } finally {
-            done.set(true)
-            watcher.join()
+        val result = runCatching(block)
+        val leftInterrupted = Thread.interrupted()
+        done.set(true)
+        while (watcher.isAlive) {
+            runCatching { watcher.join() }
         }
+        Thread.interrupted()
+        return result.getOrThrow() to leftInterrupted
     }
 }

@@ -121,7 +121,8 @@ class IndicatorWarmerSpecEdgesTest {
 
         assertThat(ticks.map { it.timestamp }).allMatch { it < boundary }
         // The closed 5m bar, then 15:00, 15:01, 15:02 and the in-window tick of the degenerate minute.
-        assertThat(ticks.map { it.price.toPlainString() }.distinct()).containsExactly("90", "100", "101", "102", "777")
+        val prices = ticks.map { it.price.stripTrailingZeros().toPlainString() }.distinct()
+        assertThat(prices).containsExactly("90", "100", "101", "102", "777")
         assertThat(ticks).hasSize(4 + 12 + 2)
     }
 }
