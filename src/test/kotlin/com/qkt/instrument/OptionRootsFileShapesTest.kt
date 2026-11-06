@@ -42,7 +42,8 @@ class OptionRootsFileShapesTest {
     fun `chains are trade or book`(
         @TempDir dir: Path,
     ) {
-        assertThat(load(dir, "options:\n" + root(", chains: trade")).single().chains).isEqualTo(QuoteSource.TRADE)
+        val trade = load(dir, "options:\n" + root(", chains: trade, markSpread: 0.05")).single()
+        assertThat(trade.chains).isEqualTo(QuoteSource.TRADE)
         assertThat(load(dir, "options:\n" + root(", chains: book")).single().chains).isEqualTo(QuoteSource.BOOK)
         assertThatThrownBy { load(dir, "options:\n" + root(", chains: quotes")) }
             .hasMessageContaining("chains must be trade or book, got 'quotes'")
