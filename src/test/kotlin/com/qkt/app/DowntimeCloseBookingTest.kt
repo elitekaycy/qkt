@@ -4,6 +4,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.CloseReason
 import com.qkt.broker.PaperBroker
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
@@ -95,6 +96,8 @@ class DowntimeCloseBookingTest {
                 calendar = TradingCalendar.crypto(),
                 source = NullMarketSource,
                 candleWindow = TimeWindow.ONE_MINUTE,
+                // An Exness MT5 account hedges: each ticket is its own position, so the close names its leg.
+                positionMode = { PositionAccountingMode.HEDGING },
             )
         strategyPnl.setStartingBalance(strategy, BigDecimal("10000"))
         val accounted = mutableListOf<FillAccountedEvent>()
