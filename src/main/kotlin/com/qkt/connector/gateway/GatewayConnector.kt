@@ -26,6 +26,7 @@ class GatewayConnector : Connector {
                     ProductType.SPOT,
                     ProductType.OPTION,
                     ProductType.EQUITY,
+                    ProductType.EVENT,
                 ),
             settings = GatewaySettings.KEYS,
         )
