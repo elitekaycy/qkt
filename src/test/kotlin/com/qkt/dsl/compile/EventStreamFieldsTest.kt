@@ -55,6 +55,7 @@ class EventStreamFieldsTest {
         bid: String? = "0.40",
         ask: String? = "0.50",
         instruments: InstrumentRegistry = registry,
+        compiler: (StreamFieldRef) -> CompiledExpr = { ExprCompiler().compile(it) },
     ): Value {
         val one = BigDecimal.ONE
         val symbol = streams.getValue(alias).qktSymbol
@@ -67,7 +68,7 @@ class EventStreamFieldsTest {
                 strategyContext = testStrategyContext(instruments = instruments),
                 evaluationTimeMs = at,
             )
-        return ExprCompiler().compile(StreamFieldRef(alias, field)).evaluate(ctx)
+        return compiler(StreamFieldRef(alias, field)).evaluate(ctx)
     }
 
     private fun num(value: Value): BigDecimal = (value as Value.Num).v
@@ -149,5 +150,12 @@ class EventStreamFieldsTest {
             .hasMessageContaining("reads maker_fee of $between but its fee model is unknown")
         assertThatCode { start("    WHEN b.minutes_left > 0 AND k.taker_fee < 0.02 AND k.title = 'x'") }
             .doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `a field the event compiler does not know is refused, never read as a fee`() {
+        assertThatThrownBy { eval("k", "bid_depth", compiler = EventFieldCompiler::compile) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("bid_depth")
     }
 }
