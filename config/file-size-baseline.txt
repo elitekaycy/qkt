@@ -50,7 +50,7 @@
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
 261 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
 257 src/test/kotlin/com/qkt/connector/mt5/MT5PollerSessionGateTest.kt
-252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
+249 src/main/kotlin/com/qkt/events/BrokerEvent.kt
 249 src/main/kotlin/com/qkt/lsp/QktSnippets.kt
 249 src/test/kotlin/com/qkt/dsl/compile/GeneratedActionParityTest.kt
 249 src/test/kotlin/com/qkt/dsl/compile/GeneratedExpressionParityTest.kt
