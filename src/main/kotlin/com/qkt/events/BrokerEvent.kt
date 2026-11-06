@@ -22,9 +22,7 @@ sealed interface BrokerEvent : Event {
     }
 
     /**
-     * The subset of broker events that report on a specific submitted order.
-     *
-     * Excludes balance/position events that aren't tied to a single client order.
+     * The subset of broker events that report on a specific submitted order, not balance or position events.
      */
     sealed interface OrderEvent : BrokerEvent {
         /** The client-assigned order id used to correlate the request with the response. */
@@ -92,6 +90,8 @@ sealed interface BrokerEvent : Event {
         val exitReason: ExitReason? = null,
         /** The venue's execution time (epoch ms) when it reports one, else 0; the bus restamps [timestamp]. */
         val venueTimeMs: Long = 0L,
+        /** When the venue executed it (UTC ms), set when that is not now: a close found in history after a restart. */
+        val venueTime: Long? = null,
     ) : OrderEvent
 
     /**
