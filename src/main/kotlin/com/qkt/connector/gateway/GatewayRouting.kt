@@ -42,8 +42,12 @@ internal class GatewayRouting {
             atMs: Long,
         ): BigDecimal = moves.heldAt(symbol, atMs) { holding(symbol) }
 
-        /** The broker's session accounted [e], a fill that may have moved what it holds. */
-        fun moved(e: FillAccountedEvent) {
+        /** The broker's session accounted [e], a fill that may have moved what it holds; [legs] keep its leg too. */
+        fun moved(
+            e: FillAccountedEvent,
+            legs: GatewayFillLegs,
+        ) {
+            legs.record(e)
             val before = e.accountPositionBefore?.quantity ?: BigDecimal.ZERO
             val after = e.accountPositionAfter?.quantity ?: BigDecimal.ZERO
             moves.record(e.symbol, HoldingTimeline.movedAt(e), before, after)
