@@ -88,6 +88,7 @@ internal class StrategyBinder(
             requireMarkPrices(strategyId, strategy, source)
             requireTradeFlow(strategyId, strategy, source)
             requireOptionMarks(strategyId, strategy, source, base.instruments)
+            requireEventTerms(strategyId, strategy, base.instruments)
             requireBookCapability(strategyId, strategy, bookBalance)
             strategy.bindStatePersistor(strategyId, persistor)
             val kept = StructurePersistence(strategyId, book, persistor).also { it.restore() }
