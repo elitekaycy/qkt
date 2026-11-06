@@ -10,13 +10,14 @@ import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.events.TickEvent
 import com.qkt.instrument.EventTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * Routes a replay's event contracts to one [EventVenue]: orders fill at the contracts' quoted bid and ask (a buy at
  * the ask, a sell at the bid, netting, at any hour) and expiries settle at the catalogued outcome ([EventExpiry]),
  * recorded in the books' settlement log. Every event contract is routed, so contracts picked after start are tradable.
- * Empty when the run declares no event contract, so other runs build exactly what they built before.
+ * Empty when the run declares no event contract or slot, so other runs build exactly what they built before.
  * No liquidator is registered: an event position is fully collateralised (its premium at stake), so it can never fall
  * below maintenance margin.
  */
@@ -30,7 +31,9 @@ internal fun replayEventRoutes(
 ): ReplayExchangeRoutes {
     val instruments = books.instruments
     val isEvent = { s: String -> instruments.lookup(s)?.derivative is EventTerms }
-    val events = symbols.filterTo(LinkedHashSet(), isEvent)
+    // A slot of a declared family trades its family's contracts, so it needs the venue; its orders never name it.
+    val isSlot = { s: String -> SlotSymbol.parse(s)?.let { instruments.events()?.family(it.root) } != null }
+    val events = symbols.filterTo(LinkedHashSet()) { isEvent(it) || isSlot(it) }
     if (events.isEmpty()) return ReplayExchangeRoutes(emptyList(), emptySet())
     lateinit var fills: Broker
     val expiry = EventExpiry(bus, instruments, books.strategyPositions, books.settlements) { fills.cancel(it) }

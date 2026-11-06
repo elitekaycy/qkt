@@ -75,4 +75,15 @@ class CompositeMarketSource(
         symbol: String,
         range: TimeRange,
     ): Sequence<Tick> = sourceFor(symbol).ticks(symbol, range)
+
+    override fun sampledTicks(
+        symbol: String,
+        window: TimeWindow?,
+        range: TimeRange,
+    ): Sequence<Tick> = sourceFor(symbol).sampledTicks(symbol, window, range)
+
+    override fun slotContractAt(
+        symbol: String,
+        atMs: Long,
+    ): String? = sourceFor(symbol).slotContractAt(symbol, atMs)
 }

@@ -66,6 +66,26 @@ interface MarketSource {
         throw UnsupportedDataException(MarketSourceCapability.TICKS, this::class.java.simpleName ?: "MarketSource")
 
     /**
+     * [symbol]'s ticks over [range] for a stream sampled every [window] (null when no stream names one). Only a source
+     * whose ticks depend on the window reads it: an event slot re-picks its contract at each window close
+     * ([SlotMarketSource]). Every other source serves [ticks].
+     */
+    fun sampledTicks(
+        symbol: String,
+        window: TimeWindow?,
+        range: TimeRange,
+    ): Sequence<Tick> = ticks(symbol, range)
+
+    /**
+     * The contract event slot [symbol] followed for its latest ticks before [atMs] ([SlotMarketSource]), or null when
+     * [symbol] is no slot of this source or followed nothing then. A routing source answers for its leaf.
+     */
+    fun slotContractAt(
+        symbol: String,
+        atMs: Long,
+    ): String? = null
+
+    /**
      * Real ticks in the half-open window `[fromMs, toMs)` for [symbol] — the per-bar slicing the
      * `--tick-fills` replay does on every bar. The default re-reads via [ticks] (correct, but
      * re-decodes the whole day on every call); [LocalMarketSource] overrides it to mmap each day
