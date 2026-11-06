@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.app.movingFill
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.FundingCharged
@@ -62,6 +63,25 @@ internal class GatewayFundingTest : GatewayHarness() {
         assertThat(
             listOf(heardA.single().basis, heardB.single().basis),
         ).allMatch { it.compareTo(BigDecimal("0.4")) == 0 }
+    }
+
+    @Test
+    fun `a record without a position is shared over what the sessions held at its time, not when it is heard`() {
+        fake.capabilities = listOf("funding")
+        val shared = session(setOf("a", "b"))
+        val a = Strategy().apply { held[symbol] = BigDecimal("-0.03") }
+        val b = Strategy()
+        val heardA = a.funding()
+        broker(shared, a, "a")
+        broker(shared, b, "b")
+        // b's buy realized the record: the venue stamps the funding at the trade, qkt accounts the fill later.
+        b.held[symbol] = BigDecimal("0.03")
+        b.bus.publish(movingFill("b", symbol, "0", "0.03", FakeGateway.TIME + 4_000))
+
+        fake.act { fund(record("tx-169224002", null)) }
+
+        await { heardA.isNotEmpty() }
+        assertThat(heardA.single().basis).isEqualByComparingTo("-0.03")
     }
 
     @Test
