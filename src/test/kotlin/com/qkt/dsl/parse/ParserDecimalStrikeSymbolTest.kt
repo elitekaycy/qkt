@@ -20,7 +20,12 @@ class ParserDecimalStrikeSymbolTest {
             """.trimIndent(),
         )
 
-    private fun symbolOf(stream: String): String = (parse(stream) as ParseResult.Success).value.streams.single().symbol
+    private fun symbolOf(stream: String): String =
+        (parse(stream) as ParseResult.Success)
+            .value
+            .streams
+            .single()
+            .symbol
 
     @Test
     fun `a decimal strike stays inside the symbol`() {
