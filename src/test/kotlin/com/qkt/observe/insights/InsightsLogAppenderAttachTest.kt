@@ -10,7 +10,8 @@ class InsightsLogAppenderAttachTest {
     fun `attach adds one started appender to the root logger and is idempotent`() {
         val root = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
         val sink = InsightsSink(url = "http://127.0.0.1:9/ingest", token = "t", instanceId = "i", healthIntervalMs = 0L)
-        val other = InsightsSink(url = "http://127.0.0.1:9/ingest", token = "t", instanceId = "j", healthIntervalMs = 0L)
+        val other =
+            InsightsSink(url = "http://127.0.0.1:9/ingest", token = "t", instanceId = "j", healthIntervalMs = 0L)
         try {
             InsightsLogAppender.attach(sink)
             val first = root.getAppender(InsightsLogAppender.NAME)

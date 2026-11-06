@@ -3,8 +3,12 @@ package com.qkt.observe
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.FillAccountedEvent
+import com.qkt.events.SignalEvent
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionTracker
+import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -52,8 +56,9 @@ class AuditLineEncoderBlocksTest {
             .contains("\"cumulativeFilled\":\"0.30\"")
             .contains("\"conversionRate\":\"1.1\",\"conversionTimestampMs\":99,\"conversionSource\":\"ecb\"")
             .contains("\"legId\":\"leg-1\",\"legAction\":\"CLOSED\"")
-            .contains("\"accountPositionBefore\":{\"symbol\":\"XAUUSD\",\"quantity\":\"0.3\",\"avgEntryPrice\":\"1990\",\"openedAtMs\":5}")
-            .contains("\"accountPositionAfter\":null")
+            .contains(
+                "\"accountPositionBefore\":{\"symbol\":\"XAUUSD\",\"quantity\":\"0.3\",\"avgEntryPrice\":\"1990\",\"openedAtMs\":5}",
+            ).contains("\"accountPositionAfter\":null")
             .doesNotContain("contractSize")
             .endsWith("}\n")
     }
@@ -77,6 +82,15 @@ class AuditLineEncoderBlocksTest {
             ",\"fill\":{\"side\":\"SELL\",\"price\":\"2001.5\",\"quantity\":\"0.1\"," +
                 "\"cumulativeFilled\":\"0.2\",\"brokerOrderId\":\"\",\"partial\":true}",
         )
+    }
+
+    @Test
+    fun `a submit signal line carries the order block`() {
+        val request = OrderRequest.Market("o-9", "XAUUSD", Side.BUY, BigDecimal("0.2"), TimeInForce.GTC, 1L, "alpha")
+
+        val line = encodeAuditLine(SignalEvent(Signal.Submit(request), strategyId = "alpha"))
+
+        assertThat(line).contains("\"orderSchemaVersion\":", "\"order\":{").contains("\"strategyId\":\"alpha\"")
     }
 
     @Test

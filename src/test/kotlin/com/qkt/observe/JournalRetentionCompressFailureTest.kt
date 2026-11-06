@@ -11,7 +11,8 @@ class JournalRetentionCompressFailureTest {
     // 2023-11-14T22:13:20Z
     private val clock = FixedClock(1_700_000_000_000L)
 
-    private fun retention(root: Path) = JournalRetention(listOf(root), retentionDays = 0, clock = clock, compressAfterDays = 7)
+    private fun retention(root: Path) =
+        JournalRetention(listOf(root), retentionDays = 0, clock = clock, compressAfterDays = 7)
 
     private fun dayFile(root: Path): Path {
         val dir = Files.createDirectories(root.resolve("alpha"))

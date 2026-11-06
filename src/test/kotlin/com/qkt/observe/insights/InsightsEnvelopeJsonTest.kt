@@ -21,7 +21,9 @@ class InsightsEnvelopeJsonTest {
                     "o" to StringBuilder("raw"),
                 ),
             )
-        assertThat(json).isEqualTo("{\"s\":\"x\",\"b\":true,\"d\":1000,\"n\":7,\"e\":\"SELL\",\"l\":[1,null,\"y\"],\"o\":\"raw\"}")
+        assertThat(
+            json,
+        ).isEqualTo("{\"s\":\"x\",\"b\":true,\"d\":1000,\"n\":7,\"e\":\"SELL\",\"l\":[1,null,\"y\"],\"o\":\"raw\"}")
         assertThat(InsightsEnvelope.json(null)).isEqualTo("null")
     }
 
@@ -34,6 +36,8 @@ class InsightsEnvelopeJsonTest {
     @Test
     fun `an envelope without a strategy omits the field`() {
         val json = InsightsEnvelope("i", 1L, 2L, null, "log", emptyMap()).toJson("inst")
-        assertThat(json).isEqualTo("{\"v\":1,\"instanceId\":\"inst\",\"id\":\"i\",\"seq\":1,\"ts\":2,\"type\":\"log\",\"payload\":{}}")
+        assertThat(
+            json,
+        ).isEqualTo("{\"v\":1,\"instanceId\":\"inst\",\"id\":\"i\",\"seq\":1,\"ts\":2,\"type\":\"log\",\"payload\":{}}")
     }
 }
