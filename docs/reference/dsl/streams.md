@@ -105,6 +105,71 @@ spaces (`KALSHI:KXHIGHNY_26NOV06_B73.5`); it may not start with a digit or hold 
 
 If a venue rejects a symbol you wrote, check the actual venue name vs the qkt-side name. The [config schema](../config-schema.md) covers `symbolPolicy` overrides.
 
+## Event slots (`KALSHI:KXINXU@front.p70`)
+
+An event family (a series of yes/no contracts, such as the hourly S&P 500 ladder `KALSHI:KXINXU`) lists new
+contracts every hour and retires old ones. A **slot** is one stable stream of the family that follows whichever
+contract its selectors pick, so a strategy never names a contract code and never goes stale:
+
+```qkt
+STRATEGY spx_ladder VERSION 1
+SYMBOLS
+    p70 = KALSHI:KXINXU@front.p70 EVERY 1m,
+    atm = KALSHI:KXINXU@front.atm EVERY 1m,
+    up2 = KALSHI:KXINXU@next.above2 EVERY 1m
+RULES
+    -- Buy the strike priced nearest 70% when it trades below 0.72 after the fee; sell what is held above 0.85.
+    WHEN p70.ask + p70.taker_fee < 0.72 AND POSITION.p70 = 0
+    THEN BUY p70 SIZING 10
+    WHEN p70.bid > 0.85 AND POSITION.p70 > 0
+    THEN CLOSE p70
+```
+
+<!-- qkt-doc: grammar -->
+```qkt
+<alias> = <VENUE>:<FAMILY>@<event>.<strike> EVERY <window>
+```
+
+| Part | Selector | Picks |
+|---|---|---|
+| event | `front` | the open event that stops trading first |
+| event | `next` | the one after it |
+| strike | `pNN` (`p05` … `p95`) | the contract whose YES mid is nearest NN %, ties to the lower strike |
+| strike | `atm` | `p50` |
+| strike | `aboveN`, `belowN` | N strikes above / below `atm` in strike order |
+| strike | `topN` (`top1` …) | the contract with the Nth highest YES mid (the favourite), ties to the lower strike |
+
+An event with one contract (a 15-minute up/down window, a single question) resolves every strike selector to it;
+`@front.atm` is the usual spelling. A future's continuous stream (`CME:ES@front`) never has the `.<strike>` part,
+which is how the two are told apart. The family must be declared under `events:` in `instruments.yaml` with its event
+catalog imported ([backtest data](../../how-to/backtest-data.md)); a slot of an undeclared family does not start.
+
+**Selection.** At each close of the slot's `EVERY` window the selectors read the family's quotes as they stood just
+before that instant and pick a contract; the pick holds until the next close. Only contracts with a two-sided quote
+(a bid at or below the ask) are candidates. Same data, same pick. The slot's bars are the followed contract's YES
+prices, never back-adjusted: when the pick changes, the next bar is the new contract's, so `p70` is a
+constant-probability series and its indicators keep their history across events. `p70.contract` names the contract
+a bar came from (its code, `KXINXU_26NOV06H1500_T7425`), and the event contract fields below
+(`floor_strike`, `minutes_left`, `taker_fee`, …) read that contract's terms.
+
+**Orders land on real contracts.** `BUY p70` is placed, when the rule fires, on the contract whose prices the rule
+just read. The slot keeps a book of the contracts it opened, and a contract stays held after the slot moves on,
+until it settles at its outcome or the strategy closes it.
+
+- An order opposite to what the slot holds reduces first: `SELL p70` while long closes its held contracts oldest
+  first at their own quotes, and only what is left opens NO on the contract the slot follows now. A slot therefore
+  never holds YES on one contract and NO on another, and while a held contract has stopped trading (awaiting its
+  result) no opposite remainder opens.
+- `POSITION.p70` is the signed total of the book: positive long YES, negative long NO, 0 when it holds nothing, so
+  `POSITION.p70 = 0` does not re-enter while an earlier entry is still held.
+- `CLOSE p70` closes every contract in the book and cancels their working orders.
+- Market and limit orders translate; any other order type on a slot is suppressed with the reason.
+
+Slots run in backtests. A slot reads its family's stored quote ticks; it has no bars of its own, so warmup starts
+cold, and `--tick-fills` is refused. Live slots (the family's quotes through the gateway's `roots=` subscription)
+are not wired yet. The family's contracts are traded and settled like any event contract,
+and trades and settlements report the real contract symbols.
+
 ## Timeframes (`EVERY <window>`)
 
 How often a candle closes for this stream. The candle aggregator collects ticks into OHLC bars; rules fire on candle close.
