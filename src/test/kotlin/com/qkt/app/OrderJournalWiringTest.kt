@@ -5,7 +5,12 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.RiskEvent
+import com.qkt.marketdata.Tick
 import com.qkt.observe.OrderJournal
+import com.qkt.strategy.Signal
+import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -67,5 +72,85 @@ class OrderJournalWiringTest {
             "\"venueCosts\":\"0.0245\"",
         )
         assertThat(lines[1]).contains("\"kind\":\"filled\"", "\"qty\":\"0.01\"")
+    }
+
+    private fun lines(
+        tmp: Path,
+        dir: String,
+    ): List<String> = Files.list(tmp.resolve(dir)).use { files -> Files.readAllLines(files.toList().single()) }
+
+    private fun protection(strategyId: String) =
+        BrokerEvent.PositionProtectionChanged(
+            broker = "mt5",
+            symbol = "XAUUSD",
+            ticket = "77",
+            oldStopLoss = BigDecimal("1900"),
+            newStopLoss = BigDecimal("1890"),
+            oldTakeProfit = BigDecimal("2000"),
+            newTakeProfit = BigDecimal("2010"),
+            strategyId = strategyId,
+        )
+
+    @Test
+    fun `rejections cancels and venue protection changes are journaled under their owner`(
+        @TempDir tmp: Path,
+    ) {
+        val clock = FixedClock(1_793_000_000_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val journal = OrderJournal(tmp, clock)
+        val owner =
+            "owner" to
+                object : Strategy {
+                    override fun onTick(
+                        tick: Tick,
+                        ctx: StrategyContext,
+                        emit: (Signal) -> Unit,
+                    ) {}
+                }
+        OrderJournalWiring(listOf(owner)).wire(bus, journal)
+
+        bus.publish(BrokerEvent.OrderRejected("o1", null, "no margin", strategyId = "owner"))
+        bus.publish(BrokerEvent.OrderCancelled("o2", "b-2", "user", strategyId = "owner"))
+        bus.publish(protection(strategyId = ""))
+        bus.publish(protection(strategyId = "named"))
+        journal.close()
+
+        val owned = lines(tmp, "owner")
+        assertThat(owned).hasSize(3)
+        assertThat(owned[0]).contains("\"kind\":\"rejected\"", "\"id\":\"o1\"", "\"reason\":\"no margin\"")
+        assertThat(owned[1]).contains("\"kind\":\"cancelled\"", "\"id\":\"o2\"", "\"reason\":\"user\"")
+        assertThat(owned[2]).contains(
+            "\"kind\":\"position-protection-changed\"",
+            "\"broker\":\"mt5\"",
+            "\"ticket\":\"77\"",
+            "\"oldSl\":\"1900\"",
+            "\"newSl\":\"1890\"",
+            "\"oldTp\":\"2000\"",
+            "\"newTp\":\"2010\"",
+        )
+        assertThat(lines(tmp, "named").single()).contains("\"kind\":\"position-protection-changed\"")
+    }
+
+    @Test
+    fun `unowned protection changes and account wide halts land in the unattributed journal`(
+        @TempDir tmp: Path,
+    ) {
+        val clock = FixedClock(1_793_000_000_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val journal = OrderJournal(tmp, clock)
+        OrderJournalWiring(emptyList()).wire(bus, journal)
+
+        bus.publish(protection(strategyId = ""))
+        bus.publish(RiskEvent.Halted(reason = "account dd", strategyId = null))
+        bus.publish(RiskEvent.Resumed(strategyId = null))
+        bus.publish(RiskEvent.Halted(reason = "own dd", strategyId = "s1"))
+        bus.publish(RiskEvent.Resumed(strategyId = "s1"))
+        journal.close()
+
+        val unattributed = lines(tmp, "_unattributed")
+        assertThat(unattributed.map { it.substringAfter("\"kind\":\"").substringBefore('"') })
+            .containsExactly("position-protection-changed", "halted", "resumed")
+        assertThat(unattributed[1]).contains("\"reason\":\"account dd\"")
+        assertThat(lines(tmp, "s1")).hasSize(2)
     }
 }
