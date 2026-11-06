@@ -43,6 +43,13 @@ internal object QktFunctionDocs {
                         "e.g. normalize(3, 1, 5) = 0.5. Returns 0 when all values are equal. " +
                         "Use softmax for probability weights that sum to 1.",
                 ),
+            "NORM_CDF" to
+                doc(
+                    "norm_cdf(x)",
+                    "Standard normal cumulative probability of x, in [0, 1]: norm_cdf(0) = 0.5, " +
+                        "norm_cdf(1.96) ≈ 0.975. e.g. the fair value of \"settles at or above K\" is " +
+                        "norm_cdf((ref - K) / (vol * sqrt(t))).",
+                ),
             "SOFTMAX" to
                 doc(
                     "softmax(self, other, ...)",
