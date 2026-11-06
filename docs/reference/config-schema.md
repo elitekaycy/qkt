@@ -668,8 +668,11 @@ On a shared account the check changes in three ways:
 
 Two things only the account total knows cannot be split exactly on a shared account. Funding on a
 perpetual is booked per strategy as `amount × the strategy's holding / the account's position`, so
-other traders keep their part of it. The account's balance and equity include every trader's profit
-and loss, so they cannot check one daemon's realized P&L. Use the daemon's own trade history for that.
+other traders keep their part of it. The holding is the one the strategy had just before the record's
+time. A venue record that names no position (Deribit realizes funding on a trade) is shared by what
+qkt's sessions on the account held together then, so together they book the record exactly once. The
+account's balance and equity include every trader's profit and loss, so they cannot check one daemon's
+realized P&L. Use the daemon's own trade history for that.
 
 ## `market_data`
 

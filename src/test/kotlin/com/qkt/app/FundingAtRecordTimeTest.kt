@@ -120,4 +120,18 @@ class FundingAtRecordTimeTest {
         assertThat(costs.map { it.strategyId }).containsExactlyInAnyOrder("k30", "k33", "o11", "o13")
         assertThat(costs.fold(BigDecimal.ZERO) { sum, c -> sum.add(c.amount) }).isEqualByComparingTo("0.00819756")
     }
+
+    @Test
+    fun `a positionless record on a basis of zero is booked by no session, not by what each closed since`() {
+        bind("o01")
+        bind("o10")
+        bus.publish(closingFill("o01", perp, "-0.03"))
+        bus.publish(closingFill("o10", perp, "-0.02"))
+
+        bus.publish(
+            FundingCharged("tx-0", perp, BigDecimal("-1"), "USDC", BigDecimal.ZERO, fundedAt, positionless = true),
+        )
+
+        assertThat(costs).isEmpty()
+    }
 }
