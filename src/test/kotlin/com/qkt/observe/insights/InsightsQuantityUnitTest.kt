@@ -7,6 +7,7 @@ import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
 import com.qkt.broker.VenueInstrument
 import com.qkt.execution.OrderRequest
+import com.qkt.instrument.EventContracts
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -43,6 +44,17 @@ class InsightsQuantityUnitTest {
         assertThat(unit("perpetual")).isEqualTo("contracts")
         assertThat(unit("future")).isEqualTo("contracts")
         assertThat(unit("option")).isEqualTo("contracts")
+        assertThat(unit("event")).isEqualTo("contracts")
+    }
+
+    @Test
+    fun `an event contract qkt knows is of kind event, counted in contracts`() {
+        val venues = InsightsVenues(instruments = EventContracts.registry(EventContracts.meta()))
+        val fields = venues.instrument(EventContracts.SYMBOL)
+
+        assertThat(fields?.get("kind")).isEqualTo("event")
+        assertThat(fields?.get("quantityUnit")).isEqualTo("contracts")
+        assertThat(fields?.get("root")).isEqualTo("KALSHI:KXINXU")
     }
 
     @Test

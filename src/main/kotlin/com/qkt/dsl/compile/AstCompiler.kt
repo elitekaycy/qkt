@@ -180,6 +180,7 @@ class AstCompiler {
             markSymbols = markSymbols,
             optionMarkSymbols = optionMarkSymbols,
             flowReads = flowReads,
+            eventReads = eventReads(ast, streams),
             usesBookSizing = actionCompiler.usesBookSizing,
             metaRefs = metaRefs,
             warmupGate = warmupGate,
