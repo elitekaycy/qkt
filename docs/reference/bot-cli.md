@@ -93,6 +93,29 @@ Also refused one-shot on a gateway: GTD and `--expires` (VGP v1 has no expiry), 
 position. `close` sends the gateway's flatten (`POST /v1/positions/close`, idempotent), all of it or
 `--partial`; a netting position's ticket is its venue code. Quotes come from the gateway's quote stream.
 
+### Event contracts (Kalshi-style yes/no markets)
+
+```bash
+qkt bot markets KALSHI --category Financials --family KXINXU --open --json   # the catalog, filtered
+qkt bot chain   KALSHI:KXINXU@front --json                                   # every contract of one event
+qkt bot quote   KALSHI:KXINXU@front.p70 --json                               # a slot names its contract now
+qkt bot buy  10 KALSHI:KXINXU@front.p70 --limit 0.71                         # YES on that contract
+qkt bot sell 10 KALSHI:KXINXU_26NOV06H1500_T7425 --limit 0.74                # NO, by its own symbol
+```
+
+- `markets VENUE` reads the gateway's event listing (`kind: event`) through its filters: `--category` (the
+  venue's grouping), `--family` (a series, `KXINXU` or `KALSHI:KXINXU`) and `--open` (listed, trading, and its
+  close and expiry still ahead), so an agent sees the contracts a strategy's slot would.
+- `chain VENUE:FAMILY@front|next` lists every contract of the family's open event that stops trading first
+  (`front`) or the one after (`next`), in strike order, each with its terms and latest quote; a side nobody quotes is
+  `null`.
+- `buy`, `sell` and `quote` take an event slot (`VENUE:FAMILY@<event>.<strike>`, see event slots in
+  [streams](dsl/streams.md)) and resolve it when the command runs, with the same selectors a strategy uses, to the
+  contract it follows now; the order lands on that contract and `quote` names it. A `--dry-run` sends nothing and
+  does not resolve the slot.
+- A contract the venue has paused (`trading: disabled`, for example while an in-game market waits on a review) or
+  closes out only (`close_only`) is refused by name before anything is sent; close a holding with `bot close`.
+
 ## Queries
 
 ```bash
@@ -122,8 +145,12 @@ An MT5 ticket is a number, a gateway ticket its `client_order_id` string. `close
 (one element per ticket); `modify` prints `{ok,retcode,error}`. `account` prints
 `{ok,equity,balance,currency,margin,freeMargin,marginLevel,openProfit,leverage,login,server,hedging}`;
 `positions` `[{ticket,symbol,side,lots,entry,current,sl,tp,profit,swap,openedAtMs,comment}]`; `orders`
-`[{ticket,symbol,type,lots,price,sl,tp,expiresAt}]`; `quote` `{symbol,bid,ask,spread,timeMs}`; `bars`
+`[{ticket,symbol,type,lots,price,sl,tp,expiresAt}]`; `quote` `{symbol,bid,ask,spread,timeMs}` (with `contract`
+after `symbol` when the symbol is an event slot); `bars`
 `[{t,o,h,l,c,v}]`; `history` `[{dealTicket,positionTicket,symbol,side,entry,lots,price,profit,commission,swap,fee,timeMs,comment}]`.
+`markets`
+`[{symbol,family,event,title,category,strikeType,floor,cap,openAt,closeAt,expiry,frequency,takerFeeRate,makerFeeRate,trading}]`
+(`trading` is `full`, `disabled`, `close_only`, ...); `chain` `{event,closeAt,contracts:[{...the markets fields,bid,ask}]}`.
 Every failure prints `{"ok":false,"error":"..."}` and exits 1; a usage error exits 2.
 
 Each trade renders to a complete canonical `.qkt` strategy; the text, its sha256, the qkt version and the
