@@ -75,4 +75,29 @@ class BotSizingFormsTest : BotActionCompilerFixture() {
         assertThatThrownBy { quantizeLots(BigDecimal.ZERO, open) }
             .hasMessage("resolved volume must be > 0: 0")
     }
+
+    @Test
+    fun `a zero volume step is ignored when quantizing`() {
+        val noStep = ctx.copy(volumeStep = BigDecimal.ZERO, volumeMin = null)
+
+        assertThat(quantizeLots(BigDecimal("0.123"), noStep)).isEqualByComparingTo("0.123")
+    }
+
+    @Test
+    fun `money sizing refuses a venue that does not name the quote currency`() {
+        assertThatThrownBy { resolveBotLots(SizeNotional(num("20000")), ctx.copy(quoteCurrency = null), price, null) }
+            .hasMessageStartingWith("percent/risk/notional sizing needs quote currency (null)")
+    }
+
+    @Test
+    fun `risk sizing refuses a zero stop distance`() {
+        assertThatThrownBy { resolveBotLots(SizeRiskAbs(num("300")), ctx, price, BigDecimal.ZERO) }
+            .hasMessage("risk sizing requires a stop loss (--sl) to derive the risk distance")
+    }
+
+    @Test
+    fun `a money amount must be a numeric literal`() {
+        assertThatThrownBy { resolveBotLots(SizeNotional(Ref("cash")), ctx, price, null) }
+            .hasMessage("SIZING <n> USD must be a numeric literal one-shot, got Ref")
+    }
 }
