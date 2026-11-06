@@ -42,7 +42,7 @@ class Planning(unittest.TestCase):
         self.assertIsNone(rolling.contracts_of_roll(CATALOG, AT + 3 * DAY))
 
     def test_the_leg_prefix_is_the_engines_id(self):
-        digest = hashlib.sha256(f"DERIBIT:BTC_USDC@front\n{AT}\ns".encode()).hexdigest()[:12]
+        digest = hashlib.sha256(f"DERIBIT:BTC_USDC@front\n{AT}\ns".encode()).hexdigest()[:8]
         self.assertEqual(rolling.leg_prefix("DERIBIT:BTC_USDC@front", AT, "s"), f"roll:{AT}:{digest}:")
 
     def test_a_case_keeps_clear_of_the_venues_expiry(self):
