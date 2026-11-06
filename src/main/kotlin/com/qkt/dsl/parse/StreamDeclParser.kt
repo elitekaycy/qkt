@@ -20,7 +20,8 @@ internal class StreamDeclParser(
     /**
      * Parse the stream body after `<alias> =`: `<broker>:<symbol>[@front|@next] EVERY <tf> [WARMUP <n> BARS]`.
      * A continuous-futures selector stays part of the symbol (`BTCUSDT@front`), so the stream's
-     * identity, and every existing strategy's AST, are unchanged by the syntax.
+     * identity, and every existing strategy's AST, are unchanged by the syntax; so does a decimal strike
+     * (`KXHIGHNY_26NOV06_B73.5`, [venueSymbol]).
      */
     fun parseStream(alias: String): StreamDecl {
         val broker = cursor.expect(TokenKind.IDENT, "expected broker prefix").lexeme
@@ -38,7 +39,7 @@ internal class StreamDeclParser(
             } else if (broker == CHAIN_BROKER || broker == OPTIONS_BROKER) {
                 parseDottedSymbol()
             } else {
-                val name = cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+                val name = cursor.venueSymbol()
                 if (cursor.peek().kind == TokenKind.AT_SIGN) "$name@${parseSelector()}" else name
             }
         cursor.expect(TokenKind.EVERY, "expected EVERY")
