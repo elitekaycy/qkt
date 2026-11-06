@@ -90,6 +90,7 @@ class EquityCostCommissionTest {
     fun `an instrument without equity costs is charged by the fallback exactly as before`() {
         assertThat(fill("EXNESS:EURUSD", Side.SELL, "0.5", "1.1", "ORD-1")).isEqualByComparingTo("3.5")
         assertThat(model.cost("EXNESS:EURUSD", BigDecimal("0.5"))).isEqualByComparingTo("3.5")
+        assertThat(model.cost("EXNESS:EURUSD", BigDecimal("0.5"), BigDecimal("1.1"))).isEqualByComparingTo("3.5")
         assertThat(fill("UNKNOWN:X", Side.BUY, "1", "1", "ORD-2")).isEqualByComparingTo("0")
     }
 
