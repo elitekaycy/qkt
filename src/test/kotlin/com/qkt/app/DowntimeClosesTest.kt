@@ -18,7 +18,6 @@ import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.engine.Engine
 import com.qkt.events.FillAccountedEvent
-import com.qkt.events.FillAccountingKind
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -157,11 +156,11 @@ class DowntimeClosesTest {
         closes.bookInto(pipeline(bus))
 
         assertThat(broker.windows).containsExactly(9_999L to 50_000L, 9_999L to 50_000L)
-        // -40 -1 -0.5 -0.6 on the OUT plus 5 -1 -0.5 on the OUT_BY; the IN and the other ticket are ignored.
-        val reconcile = booked.single()
-        assertThat(reconcile.kind).isEqualTo(FillAccountingKind.RECONCILE)
-        assertThat(reconcile.legId).isEqualTo("leg-1")
-        assertThat(reconcile.netAccountRealized).isEqualByComparingTo("-38.6")
+        // The leg whose ticket the venue history names is booked once, as the closing fill of that leg; the leg
+        // with no ticket in the history books nothing. How the close is accounted is pinned in DowntimeCloseBookingTest.
+        val close = booked.single()
+        assertThat(close.orderId).isEqualTo("reconcile:leg-1")
+        assertThat(close.strategyId).isEqualTo("alpha")
     }
 
     @Test

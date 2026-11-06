@@ -13,12 +13,16 @@ import org.junit.jupiter.api.Test
 class GatewayPlacementTest {
     private val gateway = Mt5RoutedGateway()
     private val orders = CopyOnWriteArrayList<WireOrder>()
+    private val firstOrder = CompletableFuture<WireOrder>()
     private val rejects = CopyOnWriteArrayList<String>()
     private val placement =
         GatewayPlacement(
             GatewayClient(gateway.url, "k", httpTimeoutMs = 2_000, retryAttempts = 1),
             FixedClock(time = 1_000L),
-            onOrder = { orders.add(it) },
+            onOrder = {
+                orders.add(it)
+                firstOrder.complete(it)
+            },
             onFill = {},
             submitDeadlineMs = 0L,
             retryMs = 0L,
@@ -44,6 +48,9 @@ class GatewayPlacementTest {
             done.get(5, TimeUnit.SECONDS)
         }
     }
+
+    /** Waits for the order the retry chain ends on: the placement thread retries after each attempt, so a fixed drain can end early. */
+    private fun awaitOrder(): WireOrder = firstOrder.get(10, TimeUnit.SECONDS)
 
     private fun deletes() = gateway.calls("/v1/orders/c-1").filter { it.startsWith("DELETE") }
 
@@ -74,7 +81,7 @@ class GatewayPlacementTest {
         gateway.respond("/v1/orders/c-1", 500 to failure("internal"), 200 to order("cancelled"))
 
         placement.cancel("c-1")
-        drain(3)
+        awaitOrder()
 
         assertThat(orders.single().status).isEqualTo("cancelled")
         assertThat(deletes()).hasSize(2)
@@ -85,7 +92,7 @@ class GatewayPlacementTest {
         gateway.respond("/v1/orders/c-1", 503 to failure("venue_unavailable"), 200 to order("cancelled"))
 
         placement.cancel("c-1")
-        drain(3)
+        awaitOrder()
 
         assertThat(orders.single().status).isEqualTo("cancelled")
         assertThat(deletes()).hasSize(2)
@@ -104,7 +111,7 @@ class GatewayPlacementTest {
         val submit = WireSubmit("c-1", "BTC-PERP", "buy", "limit", "1", "100", null, "gtc")
 
         placement.submit(submit) { rejects.add(it) }
-        drain(5)
+        awaitOrder()
 
         assertThat(rejects).isEmpty()
         assertThat(orders.single().status).isEqualTo("working")
