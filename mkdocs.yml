@@ -230,6 +230,7 @@ nav:
       - Phase workflow: contributing/phase-workflow.md
       - Adding a connector: contributing/adding-a-broker.md
       - Stress tests: contributing/stress-tests.md
+      - Test coverage: contributing/test-coverage.md
       - Release changelogs:
           - phases/index.md
           - Phase 23 — DSL catalog expansion: phases/phase-23.md

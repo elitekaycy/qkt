@@ -86,8 +86,34 @@ jobs:
         run: python3 attestation/lib/validate.py
       - name: Test the derivatives lane runner offline
         run: python3 -m unittest discover -s scripts/live-validation/tests
-      - name: Build + test + ktlint
-        run: ./gradlew build --no-daemon
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test diff-coverage gate
+        run: |
+          pip install --quiet -r config/coverage-requirements.txt
+          bash tests/scripts/check-diff-coverage-test.sh
+      - name: Build + test + ktlint + coverage floor
+        run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
+      # Every line a pull request adds or edits under src/main must run under test
+      # (docs/contributing/test-coverage.md). Kover's XML report is read locally; nothing is uploaded.
+      - name: Diff coverage (100% of changed lines)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          DIFF_COVERAGE_HTML=build/reports/diff-coverage.html DIFF_COVERAGE_MARKDOWN=build/reports/diff-coverage.md \
+            bash scripts/check-diff-coverage.sh "$BASE_SHA" || { cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            build/reports/kover/
+            build/reports/diff-coverage.*
+          retention-days: 14
       # Real vendor files through the built qkt, checked against independent readers and the vendors' own data
       # (docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md). The corpus is private third-party data,
       # pinned by commit in tests/data-e2e/corpus.lock and read with a read-only deploy key.

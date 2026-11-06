@@ -11,6 +11,7 @@ snakeyaml-engine = "2.7"
 dokka = "1.9.20"
 lsp4j = "0.23.1"
 apache-poi = "5.5.1"
+kover = "0.9.1"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
@@ -26,6 +27,7 @@ snakeyaml-engine = { module = "org.snakeyaml:snakeyaml-engine", version.ref = "s
 xz = { module = "org.tukaani:xz", version = "1.9" }
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
 apache-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "apache-poi" }
+kover-gradle-plugin = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -57,6 +57,10 @@ This runs:
 3. `git status` — must be clean
 4. A scan for common problems (TODO/FIXME without issue links)
 
+Every line a PR adds or edits under `src/main` must run under a test; CI refuses the PR
+otherwise. Check yours with `scripts/check-diff-coverage.sh origin/dev` after
+`./gradlew koverXmlReport` ([docs/contributing/test-coverage.md](docs/contributing/test-coverage.md)).
+
 You are still responsible for: reading every commit message in the branch, ensuring no AI references slipped in, and confirming the PR is ready for review.
 
 ## Pull requests
