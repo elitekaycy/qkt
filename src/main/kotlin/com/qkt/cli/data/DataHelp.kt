@@ -24,7 +24,9 @@ internal object DataHelp {
                     listOf(
                         "--as SYMBOL" to "where it lands: SYMBOL for ticks, SOURCE:SYMBOL for bars (EXNESS:XAUUSD)",
                         "--dry-run" to "read, check and report; write nothing",
-                        "--kind KIND" to "ticks, bars, funding, open-interest or series, when no preset fits",
+                        "--kind KIND" to
+                            "ticks, bars, funding, open-interest or series when no preset fits; " +
+                            "corporate-actions; events",
                         "--preset ID|FILE" to "a built-in preset id, or a YAML file saved with --plan",
                         "--map ROLE=EXPR" to "which column feeds which field: time=Date+Time, close=Close, bid=\$1",
                         "--time-format FMT" to "epoch, epoch:s|ms|us|ns, iso, or a java.time pattern",
