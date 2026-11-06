@@ -2,8 +2,11 @@ package com.qkt.connector.gateway
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.events.EventChainSymbol
 import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.instrument.EventTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.flow.FlowKind
@@ -29,7 +32,10 @@ import org.slf4j.LoggerFactory
  * option root has none. Each quote's mark and index are kept for strategies to read ([GatewayMarks]), when
  * the gateway's [capabilities] include `mark_prices`, and each option quote's mark IV and forward
  * ([GatewayOptionMarks]), when they include `option_marks`. Trade flow is read from the gateway's tape through
- * [prints] ([GatewayTradeFlow]), when they include `trades` or `liquidations`.
+ * [prints] ([GatewayTradeFlow]), when they include `trades` or `liquidations`. An event slot
+ * (`KALSHI:KXINXU@front.p70`) or event `CHAIN:` stream subscribes its whole family (`roots=KXINXU`, every contract
+ * of the series, including ones listed later) once [events] lists it, and the feed carries the family's contracts
+ * under their own symbols; the slot's own ticks are built above, from these.
  */
 internal class GatewayMarketSource(
     private val prefix: String,
@@ -42,6 +48,7 @@ internal class GatewayMarketSource(
     },
     prints: (code: String, kind: FlowKind, fromMs: Long, toMs: Long) -> List<Print> = { _, _, _, _ -> emptyList() },
     capabilities: () -> Collection<String> = { emptyList() },
+    private val events: GatewayEventFamilies? = null,
 ) : MarketSource {
     private val marks = GatewayMarks(prefix, capabilities)
 
@@ -51,13 +58,23 @@ internal class GatewayMarketSource(
 
     private val rootPrefix = OptionRootSymbol.PREFIX + prefix.removeSuffix(":") + "."
 
+    private val chainPrefix = "CHAIN:" + prefix.removeSuffix(":") + "."
+
     private val log = LoggerFactory.getLogger(GatewayMarketSource::class.java)
 
     override val name: String = "gateway"
     override val capabilities: Set<MarketSourceCapability> =
         setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
 
-    override fun supports(symbol: String): Boolean = symbol.startsWith(prefix) || symbol.startsWith(rootPrefix)
+    override fun supports(symbol: String): Boolean =
+        symbol.startsWith(prefix) ||
+            symbol.startsWith(rootPrefix) ||
+            (symbol.startsWith(chainPrefix) && EventChainSymbol.isEventChain(symbol))
+
+    /** The event family [symbol] reads whole (a slot or an event `CHAIN:` stream), or null. */
+    private fun familyOf(symbol: String): String? =
+        SlotSymbol.parse(symbol)?.root
+            ?: symbol.takeIf { EventChainSymbol.isEventChain(it) }?.let { EventChainSymbol.parse(it).root }
 
     /** The account's contracts' quoted marks ([GatewayMarks]); an option root's whole feed has none. */
     override fun marksFor(symbol: String): MarkPrices? = marks.takeIf { symbol.startsWith(prefix) }
@@ -102,8 +119,16 @@ internal class GatewayMarketSource(
         val roots = fedRoots.map { it.root.substringAfter(':') }
         val unlisted = roots.filterNot { it in listedRoots }
         require(unlisted.isEmpty()) { "gateway lists no options of $unlisted" }
-        // A contract of a fed root already arrives with its root, so it is not asked for twice.
-        val contracts = symbols.filter { s -> s.startsWith(prefix) && fedRoots.none { it.covers(s) } }
+        val families = symbols.mapNotNull(::familyOf).distinct()
+        for (family in families) {
+            requireNotNull(events?.family(family)) { "gateway lists no event contracts of $family" }
+        }
+        val inFamily = { s: String -> (events?.lookup(s)?.derivative as? EventTerms)?.root in families }
+        // A contract of a fed root or family already arrives with it, so it is not asked for twice.
+        val contracts =
+            symbols.filter { s ->
+                s.startsWith(prefix) && familyOf(s) == null && fedRoots.none { it.covers(s) } && !inFamily(s)
+            }
         val codes = contracts.map { requireNotNull(gatewaySymbols.venue(it)) { "gateway does not list $it" } }
         val url =
             baseUrl
@@ -111,7 +136,9 @@ internal class GatewayMarketSource(
                 .newBuilder()
                 .addPathSegments("v1/quotes")
                 .apply { if (codes.isNotEmpty()) addQueryParameter("symbols", codes.joinToString(",")) }
-                .apply { if (roots.isNotEmpty()) addQueryParameter("roots", roots.joinToString(",")) }
+                .apply {
+                    if (roots.isNotEmpty() || families.isNotEmpty()) addQueryParameter("roots", series(roots, families))
+                }
                 .build()
                 .toString()
         val recorders = HashMap<String, (WireQuote) -> Unit>()
@@ -125,8 +152,14 @@ internal class GatewayMarketSource(
             optionMarks.heard(quote)
             recorders[quote.symbol.substringBefore('-')]?.invoke(quote)
         }
-        return LiveTickFeed(GatewayQuoteSource(url, apiKey, gatewaySymbols::qkt, ::record))
+        val isEvent = { symbol: String -> events?.lookup(symbol)?.derivative is EventTerms }
+        return LiveTickFeed(GatewayQuoteSource(url, apiKey, gatewaySymbols::qkt, ::record, oneSided = isEvent))
     }
+
+    private fun series(
+        roots: List<String>,
+        families: List<String>,
+    ): String = (roots + families.map { it.removePrefix(prefix) }).joinToString(",")
 
     private companion object {
         const val MINUTE_MS = 60_000L
