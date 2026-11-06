@@ -73,4 +73,11 @@ class DeribitWireTest {
         assertThatThrownBy { requireMatchesRoot(listed("0.01" to "0.0005"), root) }
             .hasMessageContaining("tickSteps")
     }
+
+    @Test
+    fun `a trade page decodes its trades and whether more follow`() {
+        val page = json.decodeFromString(DeribitTradePage.serializer(), """{"trades":[],"has_more":true}""")
+
+        assertThat(page).isEqualTo(DeribitTradePage(trades = emptyList(), hasMore = true))
+    }
 }
