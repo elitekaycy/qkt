@@ -92,6 +92,55 @@ The strategy file never goes stale, it has a handful of symbols instead of thous
 history across events because the slot's series is continuous. A probability slot (`p70`) is a
 **constant-probability series**, the prediction-market analogue of a constant-maturity rate.
 
+### 2.4 Every market type on the venue
+
+Measured on Kalshi's public API on 2026-11-06: 15,835 series in 20 categories (Sports 4,155, Entertainment 2,602,
+Elections 2,461, Politics 2,341, Financials 1,130, Economics 866, Climate and Weather 501, Mentions 465, Science and
+Technology 389, Crypto 294, Companies 192, World 137, Commodities 108, Health 94, Social 48, Transportation 34,
+Exotics 14, …), at frequencies `fifteen_min` (38 series), `hourly` (80), `daily`, `weekly`, `monthly`,
+`quarterly`, `annual`, `custom` and `one_off`. Every open market sampled was `market_type: binary`. The design
+covers all of them with one model; what differs is shape, not kind:
+
+| Shape | Examples | Contracts per event | Predicate | How a strategy picks a contract | What is special |
+|---|---|---|---|---|---|
+| **Up/down window** | `KXGOLD15M`, `KXBTC15M`, `KXEURUSD15M`, `KXINX15M`, `KXWTI15M`, rates | 1 | `greater_or_equal` the price at open (`floor`) | `@front.atm` (the only contract) | 15-minute life; settles minutes after close on a published reference |
+| **Strike ladder** | `KXINXU` (S&P hourly), `KXBTCD`, CPI, Fed rate, weather highs, NBA totals | 5–80 | nested `greater`/`less` | `pNN`, `atm`, `aboveN`/`belowN` | monotonic: `ladder_breaks` |
+| **Range buckets** | `KXINX` daily, temperature ranges, Economics `between` | 10–30, exclusive | `between` | `pNN`, `topN` | exactly one pays: `overround` |
+| **Head-to-head** | `KXNBAGAME`, `KXNFLGAME` (one contract per side) | 2 (3 with a draw), exclusive | `custom` (a team) | `top1` (favourite), `top2`; a side by `title` in a set filter | trades live in-game; closes early when the game ends; game start in `occurs_at` |
+| **Lines on one occasion** | `KXNBASPREAD`, `KXNBATOTAL` beside `KXNBAGAME` | ladders | `greater` (the line) | as ladders | several families share one occasion (§3.1 `occasion`), so winner, spread and total can be read together |
+| **Candidate field** | Elections, Politics, awards, "who will host" | 2–80, exclusive | `custom` | `top1`…`topN` | long-dated (months to years); cash locked until resolution |
+| **Single question** | Mentions, Entertainment, Science, Companies | 1 | none | `@front.atm` | often resolves during a live broadcast; can close early |
+| **Career / season totals** | player career yards, championships before a date | ladders | `greater`/`greater_or_equal` | as ladders | years to resolve |
+| **Combos** | `KXMVE…` (Exotics) | created on request | `custom` | not selectable | quoted by request-for-quote only; listed read-only until an `rfq` capability exists (§8) |
+
+Many events of one family are open at once (every NBA game this week, every race this cycle, several hourly
+closes), so the `each` event selector in symbol sets (part two) makes every open event a member; `front`/`next`
+pick one.
+
+### 2.5 How event contracts meet the markets qkt already trades
+
+The financial short-dated series settle on prices qkt already streams, so a strategy can hold both sides in one file:
+
+| Event family | Settles on | qkt stream already available |
+|---|---|---|
+| `KXGOLD15M`, `KXSILVER15M` | gold / silver reference price | `EXNESS:XAUUSD`, `EXNESS:XAGUSD` (CFD) |
+| `KXEURUSD15M`, `KXUSDJPY15M`, `KXGBPUSD15M`, `KXAUDUSD15M` | FX reference rate | `EXNESS:EURUSD`, … (CFD) |
+| `KXINX15M`, `KXINXU`, `KXINX`; `KXNDQ15M`; `KXDJIA15M` | S&P 500, Nasdaq-100, Dow | `EXNESS:US500`, `US100`, `US30` (CFD); CME futures |
+| `KXWTI15M`, `KXBRENT15M`, `KXNATGAS15M` | oil, gas | `EXNESS:USOIL`, `UKOIL` (CFD); CME futures |
+| `KXBTC15M`, `KXBTCD`, `KXETH15M`, `KXSOL15M` | crypto reference index | `BYBIT_LINEAR:BTCUSDT` (perpetual), `DERIBIT` futures/options, `BYBIT_SPOT` |
+
+What that enables, all with existing verbs:
+
+- **Fair value from the underlying:** a window or ladder contract is a digital option; `norm_cdf` of the distance
+  to the strike over the volatility left prices it.
+- **Hedged binaries:** buy a mispriced contract and offset its sensitivity on the CFD or perpetual (a digital's
+  delta is its density times the payout), closing the hedge as the contract settles.
+- **Lead-lag:** the CFD or perpetual reprices first; contracts whose quotes lag are taken before they move.
+- **Signals the other way:** event odds as inputs (Fed, CPI, election probabilities) to trades on gold, indices or
+  FX, without trading the event (example in §9).
+- **Cross-venue:** the same window on Polymarket's 15-minute markets, declared as a pair (settlement sources differ,
+  so never matched automatically).
+
 ## 3. Decisions
 
 ### 3.1 `EventTerms`: a new derivative kind
@@ -103,8 +152,12 @@ KDoc already says "new derivative kinds are new subtypes"). Fields:
 |---|---|
 | `root` | the family, `VENUE:SERIES` |
 | `event` | the event code |
-| `predicate` | `StrikePredicate(type, floor?, cap?)`, `type` ∈ `greater, greater_or_equal, less, less_or_equal, between, custom` |
-| `openAtMs`, `closeAtMs`, `expiryMs` | trading opens, trading stops, the result is expected |
+| `predicate` | `StrikePredicate(type, floor?, cap?)`, `type` ∈ `greater, greater_or_equal, less, less_or_equal, between, custom, none` (`none`: a plain question with no strike) |
+| `openAtMs`, `closeAtMs`, `expiryMs` | trading opens, trading stops (latest), the result is expected |
+| `occursAtMs` | when the thing being asked about happens (a game's start, a release time, a window's end), or null |
+| `occasion` | the venue's key shared by families about the same occasion (one game's winner, spread and total), or null |
+| `canCloseEarly` | trading may stop before `closeAtMs` (a game ends, a question resolves early) |
+| `title` | the human label of this contract ("Detroit", "7,425 or above") |
 | `exclusive` | the event's contracts partition its outcomes |
 | `payout` | 1 (a scalar for venues that pay otherwise; validated > 0) |
 | `fee` | `ProbabilityFee(takerRate, makerRate, roundingUnit)` or null (§3.5) |
@@ -164,6 +217,8 @@ stream's instrument (or slot's family) is an event, as option fields are (`Q/app
 | `minutes_left` | `(close_at − now) / 60000`, judged at the bar's close |
 | `taker_fee`, `maker_fee` | the fee one contract pays at the current ask / bid under the instrument's fee model |
 | `contract` | on a slot: the code it follows now (string, as on `@front`) |
+| `occurs_at`, `minutes_to_occurs` | the occasion's time and the minutes until it (negative once it started: in-game) |
+| `title` | the contract's label (string; `=`/`!=` only, as `contract`) |
 
 Everything else already exists and is venue-neutral, served when the gateway declares the capability:
 
@@ -213,6 +268,11 @@ information venues publish.
 | strike | `pNN` (`p05` … `p95`) | the contract whose YES mid is nearest NN %, ties to the lower strike |
 | strike | `atm` | `p50` |
 | strike | `aboveN`, `belowN` | N strikes above / below `atm` in the ladder |
+| strike | `topN` (`top1` …) | the contract with the Nth highest YES mid (the favourite, the frontrunner) |
+| event (sets only) | `each` | every open event of the family, one member each (part two) |
+
+On an event with one contract (up/down windows, single questions) every strike selector resolves to it;
+`@front.atm` is the conventional spelling.
 
 **Selection is deterministic.** At each close of the slot's `EVERY` window, the selector reads the family's quotes
 as of that instant and picks a contract; the pick holds until the next close. Same data, same pick, backtest and
@@ -383,6 +443,20 @@ qkt bot eval "ema(close, 20)" KALSHI:KXINXU@front.p70 --tf 1m --json
 11. Stops: refused at start on a gateway that does not declare `stop_orders` when the strategy has stop orders or
     stop brackets on an event contract.
 12. Capital per venue shard: one gateway per shard (gateway design §3.7).
+13. Live in-game and live-broadcast markets: prices jump on a score or a sentence; quotes may vanish while the venue
+    pauses a market. A pause arrives as `trading: disabled` (orders refused, held positions kept), and resumes as
+    `full`; rules see no quote while paused.
+14. Early close: a contract with `canCloseEarly` may stop trading before `closeAtMs`; orders after the venue
+    closes it are refused, and its settlement arrives whenever the venue settles it.
+15. Long-dated contracts (elections, career totals): cash is locked for months; the backtest holds it until the
+    settlement time (§3.3). Interest a venue pays on held positions, if any, is a credit on the account, reported by
+    the venue, not modelled.
+16. Combos: listed with `trading: disabled` until request-for-quote trading exists; a strategy naming one does not
+    start.
+17. Several open events per family: `front` is the earliest-closing open event; strategies that want every game or
+    every race use the `each` selector in a set.
+18. Draws and three-way events: an exclusive event may have more than two contracts; `top1` is still the
+    favourite, and `overround` covers all of them.
 
 ## 6. Proof that nothing existing changes
 
@@ -420,6 +494,8 @@ one live-parity attestation case on the Kalshi demo environment, following
 5. A settlement-reference `index` for event contracts (Kalshi streams its CF Benchmarks BTC index). Capabilities
    are per gateway, not per instrument, so declaring `mark_prices` would promise an index for every series. Deferred
    until per-instrument availability is designed; strategies take the underlying from its own venue meanwhile.
+
+6. Request-for-quote trading for combos (`rfq` capability): a separate design once a strategy needs combos.
 
 ## 8a. Calls made in this design (check these)
 
@@ -467,4 +543,34 @@ RULES
      AND p80.book_imbalance > 0.2
      AND POSITION.p80 = 0
     THEN BUY p80 SIZING 1 PCT RISK ORDER_TYPE = LIMIT AT p80.bid + 0.01   -- held to settlement
+```
+
+```qkt
+STRATEGY gold_window_vs_cfd VERSION 1
+SYMBOLS
+    xau = EXNESS:XAUUSD EVERY 1m,
+    win = KALSHI:KXGOLD15M@front.atm EVERY 1m        -- "gold ≥ the price at open", 15-minute window
+LET vol  = stddev(log(xau.close / xau.close[1]), 30)
+LET fair = norm_cdf(log(xau.close / win.floor_strike) / (vol * sqrt(win.minutes_left)))
+RULES
+    -- The CFD moved; the window's quotes have not caught up.
+    WHEN fair - win.ask - win.taker_fee > 0.05 AND win.minutes_left > 2 AND POSITION.win = 0
+    THEN BUY win SIZING 1 PCT RISK
+    WHEN win.bid - fair - win.taker_fee > 0.05 AND win.minutes_left > 2 AND POSITION.win = 0
+    THEN SELL win SIZING 1 PCT RISK
+```
+
+```qkt
+STRATEGY nba_favourite_drift VERSION 1
+SYMBOLS
+    fav = KALSHI:KXNBAGAME@front.top1 EVERY 1m       -- the favourite of the next game to finish
+RULES
+    -- Pre-game only: money keeps arriving on the favourite.
+    WHEN fav.minutes_to_occurs > 30 AND fav.minutes_to_occurs < 240
+     AND fav.close > ema(fav.close, 30) AND fav.buy_volume[1] > 2 * fav.sell_volume[1]
+     AND POSITION.fav = 0
+    THEN BUY fav SIZING 0.5 PCT RISK ORDER_TYPE = LIMIT AT fav.bid + 0.01
+    -- Out before tip-off: no in-game exposure.
+    WHEN fav.minutes_to_occurs < 5 AND POSITION.fav != 0
+    THEN CLOSE fav
 ```

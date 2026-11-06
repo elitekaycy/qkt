@@ -75,6 +75,10 @@ RULES
 - `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC]`: a filtered universe. `TOP` is required; `n` is capped by
   `sets.max_members` (default 500).
 - `VENUE:*@<event>.<strike> WHERE …`: the filter runs over **families**, and each member is that family's slot.
+  With the event selector `each` (`KALSHI:*@each.top1 WHERE family = "KXNBAGAME"`), every open event of each
+  matching family is a member: every game, every race, every open window. A member is keyed by (family, event) and
+  leaves when its event closes.
+- `<family>@front.*` / `@each.*`: every contract of the selected event(s) as members (ladders, buckets, candidates).
 - `a + b`: union of sets declared above, each keeping its own venue. Members must share `EVERY`.
 - `FOR EACH m IN <set> DO <rule>`: the rule runs once per member. The bracket form `FOR EACH s IN [a, b]` keeps its
   current compile-time meaning, unchanged.
@@ -101,6 +105,8 @@ Every venue already publishes instrument metadata; the work is one vocabulary ov
 | `family`, `underlying` | futures/option roots, event series | derivatives, events |
 | `expiry_at`, `dte` | catalogs | futures, options, events |
 | `event`, `open_at`, `close_at`, `minutes_left`, `tenor`, `strike_type`, `floor_strike`, `cap_strike` | event catalog (part one §3.7) | events |
+| `frequency` | the venue's declared cadence, normalised: `15m`, `1h`, `1d`, `1w`, `1mo`, `1q`, `1y`, `custom`, `one_off` | events |
+| `occasion`, `occurs_at`, `minutes_to_occurs`, `title`, `can_close_early`, `exclusive` | event catalog | events |
 
 `tenor` is `close_at − open_at` rounded to the venue grid (`15m`, `1h`, `1d`, …), so "hourly" is a fact, not a
 venue word.
@@ -324,3 +330,42 @@ RULES
 
 `@front.*` selects every contract of the front event as members; `listed_for` is `now − open_at` from the catalog.
 Both join the vocabulary in step 2.
+
+```qkt
+STRATEGY every_game_favourite VERSION 1
+SYMBOLS
+    favs = KALSHI:*@each.top1 WHERE category = "Sports" AND family IN ("KXNBAGAME", "KXNFLGAME", "KXNHLGAME")
+           AND minutes_to_occurs > 0 AND minutes_to_occurs < 360
+           TOP 30 BY volume EVERY 1m
+RULES
+    FOR EACH m IN favs DO
+      WHEN m.close BETWEEN 0.60 AND 0.85 AND m.book_imbalance > 0.3 AND POSITION.m = 0
+      THEN BUY m SIZING 0.25 PCT RISK ORDER_TYPE = LIMIT AT m.bid + 0.01
+    FOR EACH m IN favs DO
+      WHEN m.minutes_to_occurs < 5 AND POSITION.m != 0
+      THEN CLOSE m
+```
+
+```qkt
+STRATEGY all_windows_vs_underlyings VERSION 1
+SYMBOLS
+    wins = KALSHI:*@each.atm WHERE frequency = 15m AND category IN ("Crypto", "Commodities", "Financials")
+           TOP 40 BY volume EVERY 1m
+RULES
+    -- Every 15-minute window, priced against its own last minute of drift: cross-member mean reversion of quotes.
+    FOR EACH m IN wins DO
+      WHEN m.minutes_left > 3 AND m.close - AVG_OF(m.close, wins) > 0.25 AND m.sell_volume[1] > m.buy_volume[1]
+       AND POSITION.m = 0
+      THEN SELL m SIZING 0.25 PCT RISK
+```
+
+```qkt
+STRATEGY election_frontrunner_flow VERSION 1
+SYMBOLS
+    leaders = KALSHI:*@each.top1 WHERE category = "Elections" AND exclusive = 1
+              TOP 50 BY open_interest EVERY 1h
+RULES
+    FOR EACH m IN leaders DO
+      WHEN m.close > ema(m.close, 24) AND m.open_interest > 1.1 * m.open_interest[24] AND POSITION.m = 0
+      THEN BUY m SIZING 0.25 PCT RISK
+```
