@@ -86,4 +86,28 @@ class ImportRowValuesTest {
             .isInstanceOf(ImportRefusal::class.java)
             .hasMessageContaining("no preset fits and no --kind was given")
     }
+
+    @Test
+    fun `values said to be float32 that are not are kept as written and counted`() {
+        val bars =
+            ImportDescriptor(
+                kind = IngestKind.BARS,
+                time = listOf("$0"),
+                float32 = true,
+                fields = mapOf("open" to "$1", "high" to "$2", "low" to "$3", "close" to "$4"),
+            )
+        val rows =
+            "2024-01-02T10:00:00Z,1234567.89,1234567.89,1234567.89,1234567.89\n" +
+                "2024-01-02T10:01:00Z,1234567.89,1234567.89,1234567.89,1234567.89\n"
+
+        val report = IngestFixtures.import(root, listOf(file("f.csv", rows)), "DATA:EURUSD", bars, dryRun = true)
+
+        assertThat(report.warnings).anySatisfy { assertThat(it).contains("were not float32 values") }
+        val first =
+            report.preview
+                .map { it.second }
+                .filterIsInstance<BarRecord>()
+                .first()
+        assertThat(first.close).isEqualByComparingTo("1234567.89")
+    }
 }
