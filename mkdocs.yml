@@ -37,6 +37,7 @@ theme:
         name: Switch to dark mode
   font: false
   features:
+    - announce.dismiss
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.sections
@@ -282,4 +283,7 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/elitekaycy/qkt
+    - icon: octicons/heart-fill-16
+      link: https://github.com/sponsors/elitekaycy
+      name: Sponsor qkt
   generator: false
