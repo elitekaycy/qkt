@@ -99,8 +99,15 @@ class ContinuousMarketSourceEdgesTest {
     fun `a request reaching before the first measured roll warns once that it is clipped`() {
         val early = TimeRange(Instant.parse("2024-09-19T06:00:00Z"), Instant.parse("2024-09-19T09:00:00Z"))
 
-        source.bars("BINANCE_UM:BTCUSDT@front", TimeWindow(15 * 60_000L), early).toList()
-        source.bars("BINANCE_UM:BTCUSDT@front", TimeWindow(15 * 60_000L), early).toList()
+        val empty =
+            ContinuousMarketSource(
+                InMemoryMarketSource(),
+                ContinuousChains(requireNotNull(registry.futures())),
+                registry,
+            )
+
+        assertThat(empty.bars("BINANCE_UM:BTCUSDT@front", TimeWindow(15 * 60_000L), early).toList()).isEmpty()
+        empty.bars("BINANCE_UM:BTCUSDT@front", TimeWindow(15 * 60_000L), early).toList()
 
         val warnings = appender.list.map { it.formattedMessage }.filter { "first measured roll" in it }
         assertThat(warnings).hasSize(1)

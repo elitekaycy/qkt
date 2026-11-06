@@ -59,7 +59,7 @@ class ImportDayChecksTest {
 
         val e = refusal { IngestFixtures.import(root, listOf(f), "DATA:BTCUSDT", oi, dryRun = true) }
 
-        assertThat(e.lines).anySatisfy { assertThat(it).contains("open interest -3 is negative") }
+        assertThat(e.lines).anySatisfy { assertThat(it).contains("open interest -3.00000000 is negative") }
     }
 
     @Test
