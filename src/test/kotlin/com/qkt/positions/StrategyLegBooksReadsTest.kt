@@ -49,7 +49,16 @@ class StrategyLegBooksReadsTest {
     fun `a book with only owned legs has no primary ticket`() {
         val tracker = StrategyPositionTracker()
         val leg =
-            PositionLeg("h", symbol, Side.SELL, BigDecimal.ONE, BigDecimal.TEN, 1L, LegRole.INDEPENDENT, brokerTicket = "T9")
+            PositionLeg(
+                legId = "h",
+                symbol = symbol,
+                side = Side.SELL,
+                quantity = BigDecimal.ONE,
+                entryPrice = BigDecimal.TEN,
+                openedAt = 1L,
+                role = LegRole.INDEPENDENT,
+                brokerTicket = "T9",
+            )
         tracker.addIndependentLeg("s", leg)
 
         assertThat(tracker.ticketForPrimary("s", symbol)).isNull()
