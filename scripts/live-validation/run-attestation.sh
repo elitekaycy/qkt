@@ -90,6 +90,11 @@ lanes=orders,risk,book,engine,daemon,stress; deriv=()
 if [ -n "${deriv_gateway_url:-}" ]; then
     lanes="$lanes,derivatives"
     deriv=(--deriv-gateway-url "$deriv_gateway_url" --deriv-expected-login "${deriv_expected_login:?profile sets deriv_gateway_url without deriv_expected_login}")
+    # deriv_drill_gateway_urls (space separated; scripts/live-validation/deribit-gateway-pool.sh starts them): one more
+    # gateway on the same account per kill_switch case. With them the lane runs its groups side by side, at most
+    # deriv_parallel (default 4) at once; without them, one case after another.
+    for url in ${deriv_drill_gateway_urls:-}; do deriv+=(--deriv-drill-gateway-url "$url"); done
+    [ -z "${deriv_parallel:-}" ] || deriv+=(--deriv-parallel "$deriv_parallel")
 fi
 if [ "${attest_stocks:-false}" = true ]; then lanes="$lanes,stocks"; fi
 if [ -n "${bybit_gateway_url:-}" ]; then

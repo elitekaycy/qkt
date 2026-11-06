@@ -201,7 +201,7 @@ class Gateway:
 
 
 class CaseRun(unittest.TestCase):
-    def run_case(self, case, mode, resume_exit="1"):
+    def run_case(self, case, mode, resume_exit="1", **extra_env):
         gateway = Gateway()
         self.addCleanup(gateway.server.server_close)
         self.addCleanup(gateway.server.shutdown)
@@ -217,7 +217,7 @@ class CaseRun(unittest.TestCase):
         env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_DERIV_GATEWAY_KEY="token",
                    QKT_DERIV_GUARDIAN_KEY="guard",
                    QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", FAKE_GATEWAY=gateway.url, FAKE_ROLL=mode,
-                   FAKE_RESUME_EXIT=resume_exit)
+                   FAKE_RESUME_EXIT=resume_exit, **extra_env)
         out = os.path.join(work, "run")
         subprocess.run([sys.executable, RUNNER, "--case", copied, "--out", out, "--gateway-url", gateway.url,
                         "--expected-login", "test-login", "--arm", "I_UNDERSTAND_DEMO_ORDER_0.01",
@@ -247,6 +247,23 @@ class CaseRun(unittest.TestCase):
     def test_a_resume_that_says_resumed_while_held_fails(self):
         result, _ = self.run_case("continuous-roll-far-book-stops", "far_book", resume_exit="0")
         self.assertTrue(any(p.startswith("resume:") for p in result["problems"]), result["problems"])
+
+    def test_beside_parallel_groups_a_roll_pair_reaching_a_dated_contract_is_refused(self):
+        # The pair's second contract expires nine days out: a dated case beside this one may hold it.
+        result, _ = self.run_case("continuous-roll-carries", "carried", FAKE_PAIR_GAP_DAYS="9",
+                                  QKT_ATTEST_DERIV_PARALLEL="1")
+        self.assertEqual(len(result["problems"]), 1, result["problems"])
+        self.assertRegex(result["problems"][0], r"^runner error: venue-untradeable: .*reaches 6\+ days out")
+
+    def test_alone_the_same_pair_still_rolls(self):
+        result, _ = self.run_case("continuous-roll-carries", "carried", FAKE_PAIR_GAP_DAYS="9")
+        self.assertEqual(result["problems"], [])
+
+    def test_a_front_pair_is_two_nearby_contracts(self):
+        near = [{"expiryMs": AT + DAY}, {"expiryMs": AT + 2 * DAY}]
+        self.assertTrue(rolling.is_front_pair(near, AT))
+        self.assertFalse(rolling.is_front_pair([near[0], {"expiryMs": AT + 6 * DAY}], AT))
+        self.assertTrue(rolling.is_front_pair([near[0], {"expiryMs": AT + 6 * DAY - 1}], AT))
 
 
 if __name__ == "__main__":

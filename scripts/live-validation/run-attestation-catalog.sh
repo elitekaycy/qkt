@@ -12,13 +12,18 @@ Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca][,cross]] [--max-parallel N]
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
+         [--deriv-drill-gateway-url URL ...] [--deriv-parallel N]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
          [--cross-venue LABEL=URL@LOGIN ...] [--binding FILE] [--session-wait-max-h H]
          [--venue-wait-max SECONDS] [--deribit-public-url URL]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
 The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
---deriv-* flags and QKT_DERIV_GATEWAY_KEY, and its cases run one after another (one netting account).
+--deriv-* flags and QKT_DERIV_GATEWAY_KEY. One netting account, so its cases run one after another, unless
+--deriv-drill-gateway-url names a second gateway process on the same account for each kill_switch case (the switch is
+per process; attestation/README.md, lib/deriv_parallel.py): then the lane's `group:`s of cases, which trade disjoint
+instruments, run side by side, at most --deriv-parallel (default 4) at once, each case holding a lock per instrument
+class it trades, and the cross lane's Deribit leg queues behind the same locks.
 The bybit lane is the same on a gateway running the Bybit adapter: the --bybit-* flags and
 QKT_BYBIT_GATEWAY_KEY (QKT_BYBIT_GUARDIAN_KEY for its kill-switch drill); it runs beside the derivatives lane.
 The cross lane runs one daemon on this MT5 demo and the gateway venues its cases name: one --cross-venue flag per
@@ -55,6 +60,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""; binding=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
+deriv_drill_urls=(); deriv_parallel=4
 alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=(); session_wait_max_h=72
 venue_wait_max=21600; deribit_public_url="https://test.deribit.com/api/v2"
 while [ "$#" -gt 0 ]; do
@@ -72,6 +78,8 @@ while [ "$#" -gt 0 ]; do
         --binding) binding="${2:-}"; shift 2 ;;
         --deriv-gateway-url) deriv_gateway_url="${2:-}"; shift 2 ;;
         --deriv-expected-login) deriv_expected_login="${2:-}"; shift 2 ;;
+        --deriv-drill-gateway-url) deriv_drill_urls+=("${2:-}"); shift 2 ;;
+        --deriv-parallel) deriv_parallel="${2:-}"; shift 2 ;;
         --bybit-gateway-url) bybit_gateway_url="${2:-}"; shift 2 ;;
         --bybit-expected-login) bybit_expected_login="${2:-}"; shift 2 ;;
         --alpaca-gateway-url) alpaca_gateway_url="${2:-}"; shift 2 ;;
@@ -87,6 +95,7 @@ done
 for v in out gateway_url expected_login expected_server magic_base; do [ -n "${!v}" ] || { usage >&2; exit 2; }; done
 [ "$arm" = "I_UNDERSTAND_DEMO_ORDER_0.01" ] || fail "--arm I_UNDERSTAND_DEMO_ORDER_0.01 is required"
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || fail "--max-parallel must be a positive integer"
+[[ "$deriv_parallel" =~ ^[1-9][0-9]*$ ]] || fail "--deriv-parallel must be a positive integer"
 [[ "$session_wait_max_h" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--session-wait-max-h must be a number of hours"
 [[ "$venue_wait_max" =~ ^[0-9]+$ ]] || fail "--venue-wait-max must be a whole number of seconds"
 export QKT_ATTEST_VENUE_WAIT_MAX_S="$venue_wait_max" QKT_ATTEST_DERIBIT_URL="$deribit_public_url"
@@ -203,11 +212,48 @@ run_gateway_lane() {  # lane url login key guardian
         if [ "$lane" = alpaca ] && ! can_start "$case_yaml"; then
             session_closed "$lane-$id" "not enough of the $lane window was left to start it and finish before the close"; code=1; continue
         fi
-        gateway_case "$lane-$id" python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
+        gateway_case "$lane-$id" with_claims "$repo_root/attestation/cases/$lane/$id" \
+            python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
             --case "$repo_root/attestation/cases/$lane/$id" \
             --gateway-url "$url" --expected-login "$login" --arm "$arm" --cli "$cli" || code=1
     done
     return "$code"
+}
+# The derivatives lane's groups of cases side by side, on one account (lib/deriv_parallel.py): a group's cases one after
+# another, a kill_switch case on a gateway of its own, every case under a lock per instrument class it trades.
+run_derivatives_group() {  # group plan-file login
+    local group="$1" plan="$2" login="$3" gid id gurl code=0
+    while IFS=$'\t' read -r -u 3 gid id gurl; do
+        [ "$gid" = "$group" ] || continue
+        gateway_case "derivatives-$id" with_claims "$repo_root/attestation/cases/derivatives/$id" \
+            python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
+            --case "$repo_root/attestation/cases/derivatives/$id" \
+            --gateway-url "$gurl" --expected-login "$login" --arm "$arm" --cli "$cli" || code=1
+    done 3< "$plan"
+    return "$code"
+}
+run_derivatives_groups() {  # url login key guardian
+    local url="$1" login="$2" plan="$out/derivatives-plan.tsv" group code=0 gpids=() p
+    export QKT_DERIV_GATEWAY_KEY="$3" QKT_DERIV_GUARDIAN_KEY="$4" QKT_ATTEST_DERIV_PARALLEL=1
+    python3 "$lib/deriv_parallel.py" plan --cases "$repo_root/attestation/cases/derivatives" --base-url "$url" \
+        --drill-urls "$(IFS=,; echo "${deriv_drill_urls[*]}")" --kept "$out/kept-cases" > "$plan" || return 1
+    python3 "$lib/deriv_parallel.py" check-gateways --urls "$(IFS=,; echo "${deriv_drill_urls[*]}")" --login "$login" \
+        --base-url "$url" || return 1
+    printf 'derivatives: %s groups, at most %s at once: %s\n' "$(cut -f1 "$plan" | sort -u | wc -l)" "$deriv_parallel" \
+        "$(cut -f1 "$plan" | awk '!seen[$0]++' | tr '\n' ' ')"
+    for group in $(cut -f1 "$plan" | awk '!seen[$0]++'); do
+        while [ "$(jobs -rp | wc -l)" -ge "$deriv_parallel" ]; do sleep 1; done
+        run_derivatives_group "$group" "$plan" "$login" &
+        gpids+=("$!")
+    done
+    for p in "${gpids[@]}"; do wait "$p" || code=1; done
+    return "$code"
+}
+# [command...] under a lock per instrument class the case at [case-dir] trades (lib/claim_lock.py).
+with_claims() {  # case-dir command...
+    local dir="$1" claims; shift
+    mapfile -t claims < <(python3 "$lib/deriv_parallel.py" claims --case "$dir")
+    python3 "$lib/claim_lock.py" hold --dir "$out/claims" "${claims[@]}" -- "$@"
 }
 gateway_lane() {  # lane url login key guardian
     local lane="$1" case_yaml name pending=0
@@ -217,6 +263,17 @@ gateway_lane() {  # lane url login key guardian
         [ -n "${kept[$name]:-}" ] || pending=1
     done
     [ "$pending" = 0 ] || ! runs_now "$lane" || launch "$lane" run_gateway_lane "$@"
+}
+# The derivatives lane in groups when the run has the gateways for it, else one case at a time as always.
+derivatives_lane() {  # url login key guardian
+    if [ "${#deriv_drill_urls[@]}" -eq 0 ]; then gateway_lane derivatives "$@"; return; fi
+    local case_yaml name pending=0
+    for case_yaml in "$repo_root/attestation/cases/derivatives"/*/case.yaml; do
+        [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] || continue
+        name="derivatives-$(basename "$(dirname "$case_yaml")")"; echo "$name" >> "$expected"
+        [ -n "${kept[$name]:-}" ] || pending=1
+    done
+    [ "$pending" = 0 ] || launch derivatives run_derivatives_groups "$@"
 }
 # The alpaca lane's longest path decides the catalog's wall-clock, and its shares trade only while the market is
 # open, so inside its window it starts first; outside it, it waits for its window after the other lanes (below).
@@ -291,8 +348,7 @@ done
 if [[ ",$lanes," == *,derivatives,* ]]; then
     [ -n "$deriv_gateway_url" ] && [ -n "$deriv_expected_login" ] ||
         fail "--lanes derivatives needs --deriv-gateway-url and --deriv-expected-login"
-    gateway_lane derivatives "$deriv_gateway_url" "$deriv_expected_login" "${QKT_DERIV_GATEWAY_KEY:-}" \
-        "${QKT_DERIV_GUARDIAN_KEY:-}"
+    derivatives_lane "$deriv_gateway_url" "$deriv_expected_login" "${QKT_DERIV_GATEWAY_KEY:-}" "${QKT_DERIV_GUARDIAN_KEY:-}"
 fi
 if [[ ",$lanes," == *,bybit,* ]]; then
     [ -n "$bybit_gateway_url" ] && [ -n "$bybit_expected_login" ] ||
@@ -306,7 +362,9 @@ fi
 # Each case reserves four magics, one per possible attempt.
 cross_attempt() {  # id base-magic --out DIR
     local n; n="$(ls -d "$4" "${4%-retry*}"-retry* 2>/dev/null | wc -l)"
-    python3 "$repo_root/scripts/live-validation/run-cross-lane-case.py" --case "$repo_root/attestation/cases/cross/$1" \
+    # Its Deribit leg trades an instrument a derivatives group may hold: it queues behind that group's lock.
+    with_claims "$repo_root/attestation/cases/cross/$1" \
+        python3 "$repo_root/scripts/live-validation/run-cross-lane-case.py" --case "$repo_root/attestation/cases/cross/$1" \
         --out "$4" "${common[@]}" --magic "$(($2 + n % 4))" --arm "$arm" "${cross_venues[@]}"
 }
 run_cross_lane() {  # id:magic ...
@@ -336,7 +394,11 @@ record_round() {
     again=(); longest=0
     for i in "${!pids[@]}"; do
         name="${names[$i]}"; code=0; wait "${pids[$i]}" || code=$?
-        case "$name" in derivatives|bybit|alpaca|cross) continue ;; esac  # recorded case by case as they ran
+        case "$name" in  # recorded case by case as they ran
+            derivatives|bybit|alpaca|cross)
+                [ "$code" = 0 ] || grep -h '^deriv-parallel:' "$out/logs/$name.log" 2>/dev/null || true  # why a plan did not start
+                continue ;;
+        esac
         flags=(); [ "$name" != shadow ] || flags=(--no-retry)
         cp "$out/logs/$name.log" "$out/logs/${case_dirname[$name]}.attempt.log" 2>/dev/null || true
         read -r status cause action delay < <(cases_tool record --out "$out" --name "$name" "${flags[@]}" \

@@ -5,6 +5,7 @@ why: 'A daemon stopped and started over a held position must adopt it from the v
   re-enters after the close or forgets the hold shows here as an extra venue order, a fill qkt never
   booked, or realized PnL off the venue deals net.'
 status: ready
+group: btc-perp
 symbols:
 - DERIBIT:BTC_USDC_PERPETUAL
 timeframes:
