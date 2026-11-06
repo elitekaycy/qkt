@@ -11,7 +11,22 @@ class PositionLegGuardsTest {
         role: LegRole,
         qty: String = "1",
         entry: String = "100",
-    ) = PositionLeg("l", "X", Side.BUY, BigDecimal(qty), BigDecimal(entry), 1L, role)
+    ) = PositionLeg(
+        legId = "l",
+        symbol = "X",
+        side = Side.BUY,
+        quantity = BigDecimal(qty),
+        entryPrice = BigDecimal(entry),
+        openedAt = 1L,
+        role = role,
+        parentLegId = if (role == LegRole.STACK) "parent" else null,
+    )
+
+    @Test
+    fun `a stack leg must name its parent leg`() {
+        assertThatThrownBy { PositionLeg("l", "X", Side.BUY, BigDecimal.ONE, BigDecimal.TEN, 1L, LegRole.STACK) }
+            .hasMessage("STACK leg must carry a parentLegId")
+    }
 
     @Test
     fun `a leg needs a positive size and entry price`() {
@@ -37,6 +52,6 @@ class PositionLegGuardsTest {
 
         assertThat(tracker.legById("s", "l")?.role).isEqualTo(LegRole.STACK)
         assertThat(tracker.closeLeg("s", "X", "l")?.legId).isEqualTo("l")
-        assertThat(tracker.legBookFor("s", "X")).isNull()
+        assertThat(tracker.legById("s", "l")).isNull()
     }
 }

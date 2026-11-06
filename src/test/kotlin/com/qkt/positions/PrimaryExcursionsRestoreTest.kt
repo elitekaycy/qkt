@@ -88,7 +88,7 @@ class PrimaryExcursionsRestoreTest {
     fun `without a primary the oldest parentless non-stack leg is measured`() {
         val tracker = StrategyPositionTracker()
         val intents = IntentBook()
-        val parentlessStack = LegIntent.Open("stack-leg", LegRole.STACK)
+        val parentlessStack = LegIntent.Open("stack-leg", LegRole.STACK, parentLegId = "p0")
         val stackFill = trackerFill("s", "st", symbol, Side.SELL, "1", "100", timestamp = 1L)
         tracker.applyFillDetailed(stackFill, parentlessStack)
         intents.independentOpen("s", "i1", "first")
