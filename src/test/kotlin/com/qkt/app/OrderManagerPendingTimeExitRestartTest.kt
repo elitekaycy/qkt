@@ -75,7 +75,7 @@ class OrderManagerPendingTimeExitRestartTest {
                     price = Money.of("99"),
                     quantity = Money.of("1"),
                     strategyId = sid,
-                    timestamp = venueMs,
+                    venueTimeMs = venueMs,
                 ),
             )
 

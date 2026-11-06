@@ -78,7 +78,7 @@ internal class TimeExits(
         return SubmitAck(req.id, req.id, accepted = true)
     }
 
-    /** Arms the fill-anchored exit whose entry is [clientOrderId], timed from the venue fill time [filledAtMs]. */
+    /** Arms the exit waiting on entry [clientOrderId], timed from venue fill time [filledAtMs] (0: unknown). */
     fun onFilled(
         clientOrderId: String,
         filledAtMs: Long = 0L,
