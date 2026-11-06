@@ -149,7 +149,8 @@ def run_of(test, venue, case_id, out=None):
     """The runner's own Run for a shipped case, as main() builds it, short of touching an account."""
     folder = os.path.join(CASES, case_id)
     import yaml
-    case = yaml.safe_load(open(os.path.join(folder, "case.yaml")))
+    with open(os.path.join(folder, "case.yaml")) as file:
+        case = yaml.safe_load(file)
     case["lane"] = "derivatives"
     run = object.__new__(lane().Run)
     run.args = types.SimpleNamespace(gateway_url=venue.gateway_url, case=folder, expected_login="t")
