@@ -71,7 +71,11 @@ class StateFileRejectionTest {
         val p = FileStatePersistor(tmp)
 
         assertThatThrownBy { p.loadTimedExits("alpha") }.hasMessageContaining("loadTimedExits parse failed for alpha")
-        assertThatThrownBy { p.loadOrderIdMarks("alpha") }.hasMessageContaining("loadOrderIdMarks parse failed for alpha")
+        assertThatThrownBy {
+            p.loadOrderIdMarks(
+                "alpha",
+            )
+        }.hasMessageContaining("loadOrderIdMarks parse failed for alpha")
     }
 
     @Test
@@ -79,7 +83,11 @@ class StateFileRejectionTest {
         @TempDir tmp: Path,
     ) {
         saveAll(tmp)
-        listOf("timed-exits.json", "order-ids.json", "exit-hooks.json").forEach { tmp.resolve("alpha/$it").bumpVersion() }
+        listOf(
+            "timed-exits.json",
+            "order-ids.json",
+            "exit-hooks.json",
+        ).forEach { tmp.resolve("alpha/$it").bumpVersion() }
         val p = FileStatePersistor(tmp)
 
         assertThatThrownBy { p.loadTimedExits("alpha") }.hasMessageContaining("loadTimedExits schema mismatch")

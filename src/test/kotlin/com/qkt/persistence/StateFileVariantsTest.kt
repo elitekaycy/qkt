@@ -40,7 +40,8 @@ class StateFileVariantsTest {
             strategyId = "alpha",
         )
 
-    private fun oco(request: OrderRequest) = PersistedOcoLeg(request.id, "b-${request.id}", "alpha", request, listOf("x"))
+    private fun oco(request: OrderRequest) =
+        PersistedOcoLeg(request.id, "b-${request.id}", "alpha", request, listOf("x"))
 
     private fun trail(request: OrderRequest) =
         PersistedTrailingStop(request.id, null, "alpha", request, armed = true, hwm = BigDecimal("4710"))

@@ -34,8 +34,14 @@ class StateFileRejectionMoreTest {
         p.saveOrderFills("alpha", mapOf("o-1" to PersistedOrderFill(BigDecimal("0.1"), BigDecimal("4700"), "77")))
         p.saveStructures("alpha", emptyList())
         p.saveSequences("alpha", emptyMap())
-        assertThat(p.loadOrderFills("alpha")).containsEntry("o-1", PersistedOrderFill(BigDecimal("0.1"), BigDecimal("4700"), "77"))
-        listOf("order-fills.json", "structures.json", "sequences.json").forEach { tmp.resolve("alpha/$it").bumpVersion() }
+        assertThat(
+            p.loadOrderFills("alpha"),
+        ).containsEntry("o-1", PersistedOrderFill(BigDecimal("0.1"), BigDecimal("4700"), "77"))
+        listOf(
+            "order-fills.json",
+            "structures.json",
+            "sequences.json",
+        ).forEach { tmp.resolve("alpha/$it").bumpVersion() }
 
         assertThatThrownBy { p.loadOrderFills("alpha") }.hasMessageContaining("loadOrderFills schema mismatch")
         assertThatThrownBy { p.loadStructures("alpha") }.hasMessageContaining("loadStructures schema mismatch")

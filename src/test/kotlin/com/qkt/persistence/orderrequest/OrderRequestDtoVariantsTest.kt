@@ -58,7 +58,9 @@ class OrderRequestDtoVariantsTest {
     fun `an unknown persisted order type is rejected by name`() {
         val dto = OrderRequestDto.fromDomain(market)!!.copy(type = "Iceberg")
 
-        assertThatThrownBy { dto.toDomain() }.hasMessageContaining("Unknown OrderRequest type in persisted state: Iceberg")
+        assertThatThrownBy { dto.toDomain() }.hasMessageContaining(
+            "Unknown OrderRequest type in persisted state: Iceberg",
+        )
     }
 
     @Test
