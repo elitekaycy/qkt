@@ -30,7 +30,15 @@ class ObserveCommandTest {
                 override fun dispatch(request: RecordedRequest): MockResponse =
                     when {
                         request.path.orEmpty().startsWith("/status/hs") ->
-                            MockResponse().setResponseCode(statusCode).setBody(if (statusCode == 200) status else "gone")
+                            MockResponse().setResponseCode(statusCode).setBody(
+                                if (statusCode ==
+                                    200
+                                ) {
+                                    status
+                                } else {
+                                    "gone"
+                                },
+                            )
                         request.path.orEmpty().startsWith("/logs/hs") -> MockResponse().setBody("")
                         else -> MockResponse().setResponseCode(404)
                     }
