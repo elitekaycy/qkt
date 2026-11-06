@@ -42,13 +42,16 @@ object QktVocabulary {
     /** Per-bar and instrument fields readable off a venue stream alias, e.g. `btc.close`, `btc.tick_size`. */
     val streamFields: List<String> = (DslVocabulary.candleFields + DslVocabulary.metaFields).sorted()
 
-    /** The fields a basket or series alias exposes: candle fields only, no instrument, contract, mark, option or flow fields. */
+    /**
+     * The fields a basket or series alias exposes: candle fields only, no instrument, contract, mark, option, flow or
+     * event fields.
+     */
     val syntheticStreamFields: List<String> =
         (
             DslVocabulary.candleFields -
                 (
                     DslVocabulary.contractFields + DslVocabulary.markFields + DslVocabulary.optionFields +
-                        DslVocabulary.flowFields
+                        DslVocabulary.flowFields + DslVocabulary.eventFields
                 ).toSet()
         ).sorted()
 
