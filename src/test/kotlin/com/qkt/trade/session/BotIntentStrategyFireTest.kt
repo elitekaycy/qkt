@@ -68,6 +68,8 @@ class BotIntentStrategyFireTest {
         return BotIntentStrategy("brain", inner)
     }
 
+    private fun BotIntentStrategy.fate() = ledger.fates().single()
+
     private fun BotIntentStrategy.tick(): List<Signal> {
         val out = mutableListOf<Signal>()
         onTick(Tick(gold, BigDecimal("2400"), 7_000L), testStrategyContext(clock = FixedClock(7_000L))) { out.add(it) }
@@ -87,10 +89,10 @@ class BotIntentStrategyFireTest {
         val s = strategy(Scripted())
 
         s.submit("int-1", action)
-        assertThat(s.ledger.fates().single().state).isEqualTo("queued")
+        assertThat(s.fate().state).isEqualTo("queued")
         s.tick()
 
-        val fate = s.ledger.fates().single()
+        val fate = s.fate()
         assertThat(fate.state).isEqualTo("skipped")
         assertThat(fate.reason).startsWith("the action built no order")
         assertThat(fate.atMs).isEqualTo(7_000L)
@@ -105,8 +107,8 @@ class BotIntentStrategyFireTest {
         val emitted = s.tick()
 
         assertThat(emitted).isEmpty()
-        assertThat(s.ledger.fates().single().state).isEqualTo("skipped")
-        assertThat(s.ledger.fates().single().reason).isEqualTo("Division by zero")
+        assertThat(s.fate().state).isEqualTo("skipped")
+        assertThat(s.fate().reason).isEqualTo("Division by zero")
     }
 
     @Test
@@ -117,8 +119,8 @@ class BotIntentStrategyFireTest {
         s.submit("int-1", action)
         s.tick()
 
-        assertThat(s.ledger.fates().single().reason).isEqualTo("gold is pending, not open")
-        assertThat(s.ledger.fates().single().state).isEqualTo("skipped")
+        assertThat(s.fate().reason).isEqualTo("gold is pending, not open")
+        assertThat(s.fate().state).isEqualTo("skipped")
     }
 
     @Test
@@ -128,7 +130,7 @@ class BotIntentStrategyFireTest {
         s.submit("int-1", action)
         s.tick()
 
-        assertThat(s.ledger.fates().single().reason).isEqualTo("no closed bar yet on s0_1m")
+        assertThat(s.fate().reason).isEqualTo("no closed bar yet on s0_1m")
     }
 
     @Test

@@ -69,7 +69,8 @@ class IntentReplayTest : IntentSessionFixture() {
         val early = journaled("int-1", intent("BUY x SIZING 0.01"), simMs = 10L)
         val result = p.replay().run(listOf(early), byArrivalTime = true)
 
-        assertThat(result.trades.single().trade.timestamp).isBetween(200_000L, 270_000L)
+        val trade = result.trades.single().trade
+        assertThat(trade.timestamp).isBetween(200_000L, 270_000L)
     }
 
     @Test
