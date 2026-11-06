@@ -8,14 +8,16 @@
 Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes (four hours for a
 `scheduled` case of a venue-gateway lane, run at a set time outside the catalog, e.g. across an expiry), a `proves`
 capability is not in the catalog, a catalog capability is neither proven by a ready case nor
-listed in gaps.yaml, a listed gap is already proven, a drill names an unknown kind, or a cross case's
-venues, fills or drill targets are unsound (scripts/live-validation/lib/cross_venue.py).
+listed in gaps.yaml, a listed gap is already proven, a drill names an unknown kind, a cross case's
+venues, fills or drill targets are unsound (scripts/live-validation/lib/cross_venue.py), or the derivatives lane's
+groups share an instrument class or a ready case has no group (lib/deriv_parallel.py).
 """
 import argparse, json, os, re, subprocess, sys
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/live-validation/lib"))
 import cross_venue  # noqa: E402
+import deriv_parallel  # noqa: E402
 import derivatives_roll  # noqa: E402
 
 REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "assertions")
@@ -119,6 +121,11 @@ def main():
                 if run.returncode != 0:
                     errors.append(f"{where}: strategy.qkt does not parse: {(run.stderr or run.stdout).strip().splitlines()[-1]}")
             cases.append((lane, doc))
+
+    # The derivatives lane runs its groups side by side on one account: they must trade disjoint instruments
+    # (scripts/live-validation/lib/deriv_parallel.py).
+    errors += [f"cases/derivatives/{problem}" for problem in
+               deriv_parallel.problems([(d["id"], d) for lane, d in cases if lane == "derivatives" and d.get("status") == "ready"])]
 
     proven = {p for _, d in cases if d.get("status") == "ready" for p in d.get("proves", []) if p in capabilities}
     gaps_path = f"{args.root}/gaps.yaml"
