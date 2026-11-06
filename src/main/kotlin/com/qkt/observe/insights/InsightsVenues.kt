@@ -3,6 +3,7 @@ package com.qkt.observe.insights
 import com.qkt.broker.Broker
 import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
+import com.qkt.instrument.EventTerms
 import com.qkt.instrument.FutureTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
@@ -88,6 +89,7 @@ class InsightsVenues(
             when (terms) {
                 is FutureTerms -> if (terms.perpetual) "perpetual" else "future"
                 is OptionTerms -> "option"
+                is EventTerms -> "event"
                 else -> venue?.kind
             }
         val option = terms as? OptionTerms
@@ -121,7 +123,7 @@ private fun quantityUnit(
     when (kind) {
         "cfd" -> "lots"
         "equity" -> "shares"
-        "perpetual", "future", "option" -> "contracts"
+        "perpetual", "future", "option", "event" -> "contracts"
         "spot" -> venue?.baseAsset
         else -> null
     }
