@@ -52,3 +52,13 @@ class SlotBooks {
         contract: String,
     ): BigDecimal = ctx.positions.positionFor(contract)?.quantity ?: BigDecimal.ZERO
 }
+
+/**
+ * A strategy whose event slots keep books of the contracts they opened ([slotBooks]), keyed by the aliases of its
+ * [declaredStreams]: a live restart rebuilds each slot's book from the contracts the strategy holds again.
+ */
+interface SlotBookOwner {
+    val slotBooks: SlotBooks
+
+    val declaredStreams: Map<String, HubKey>
+}

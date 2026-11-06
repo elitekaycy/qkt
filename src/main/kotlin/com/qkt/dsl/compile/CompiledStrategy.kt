@@ -44,7 +44,9 @@ internal class CompiledStrategy(
     private val sequenceRuntime: SequenceRuntime,
     private val exitHookCatalog: ExitHookCatalog,
     adHocContext: AdHocCompileContext,
+    override val slotBooks: SlotBooks,
 ) : DslCompiledStrategy,
+    SlotBookOwner,
     TradeFlowReader,
     EventFieldReader,
     com.qkt.strategy.PerStreamWarmable {

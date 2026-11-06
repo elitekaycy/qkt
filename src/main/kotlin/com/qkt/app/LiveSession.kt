@@ -290,7 +290,7 @@ class LiveSession(
     /** The strategy whose state holds what belongs to the whole session: its risk state and stream lanes. */
     private val stateOwner = strategies.firstOrNull()?.first ?: "session"
     private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock, persistor, stateOwner)
-    private val source: MarketSource = continuous.source
+    private val source: MarketSource = liveSlotSource(continuous.source, strategies, instrumentRegistry)
 
     /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
     private val brokers = SessionBrokers(strategies, symbols, brokerFactories, instrumentRegistry)
@@ -447,6 +447,7 @@ class LiveSession(
                 ignoreMismatches,
                 reconcileReadBackoffMs,
                 ticketAttribution,
+                instruments,
             ).run(strategyPositions, broker, downtimeCloses::onLegRetired)
 
         val engine = Engine(bus, priceTracker)
@@ -543,9 +544,7 @@ class LiveSession(
             )
         val trades = RecentTrades()
 
-        val pipelineCandleHub =
-            candleHub ?: com.qkt.dsl.compile
-                .CandleHub()
+        val pipelineCandleHub = candleHub ?: com.qkt.dsl.compile.CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
         val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
