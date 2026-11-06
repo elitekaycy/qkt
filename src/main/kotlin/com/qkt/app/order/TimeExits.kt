@@ -2,13 +2,9 @@ package com.qkt.app.order
 
 import com.qkt.broker.SubmitAck
 import com.qkt.common.Clock
-import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
-import com.qkt.execution.entryFillId
-import com.qkt.execution.exitLegIntent
-import com.qkt.execution.isTerminal
 import com.qkt.persistence.PersistedTimeExit
 import java.math.BigDecimal
 import org.slf4j.Logger
@@ -16,10 +12,11 @@ import org.slf4j.Logger
 /**
  * [OrderRequest.TimeExit] wrappers: a target order with a deadline. At the deadline an unfilled
  * target is cancelled; a filled one is either left alone (CANCEL) or closed at market
- * (CLOSE_AT_MARKET). A fill-anchored exit ([OrderRequest.TimeExit.holdMs]) is armed in [armed]
- * when its entry fills, persisted there, and re-armed by [restore] after a restart. Deadlines are
- * compared against the tick clock on the engine thread, so exits fire on the first tick at or
- * after the deadline in backtest and live. A fired exit stays armed until its close fills ([TimedCloseRetries]).
+ * (CLOSE_AT_MARKET). A fill-anchored exit ([OrderRequest.TimeExit.holdMs]) waits in [PendingTimeExits]
+ * until its entry fills, then is armed in [armed], timed from the venue's fill time; both are persisted
+ * and re-armed by [restore] after a restart. Deadlines are compared against the tick clock on the
+ * engine thread, so exits fire on the first tick at or after the deadline in backtest and live. A fired
+ * exit stays armed until its close fills ([TimedCloseRetries]).
  */
 internal class TimeExits(
     private val book: OrderBook,
@@ -39,7 +36,7 @@ internal class TimeExits(
     val retries = TimedCloseRetries(book, closer, ops, log, armed)
     private val byId: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
     private val deadlines: MutableMap<String, Long> = mutableMapOf()
-    private val awaitingFill: MutableMap<String, String> = mutableMapOf()
+    private val pending = PendingTimeExits(book, clock, ops, armed, log)
 
     // Set by a fill or a restore; the next tick re-checks that every armed leg is still open.
     private var legCheckDue = false
@@ -48,15 +45,17 @@ internal class TimeExits(
     private val expiredScratch = ArrayList<String>()
 
     /** True while any time exit is waiting for its fill or its deadline. */
-    fun isNotEmpty(): Boolean = byId.isNotEmpty() || !armed.isEmpty()
+    fun isNotEmpty(): Boolean = byId.isNotEmpty() || !pending.isEmpty() || !armed.isEmpty()
 
     /** True when a waiting time exit targets [id] or its entry, or [id] is an armed exit's last close: keep it. */
     fun targets(id: String): Boolean =
-        byId.values.any { it.target.id == id || it.entryFillId == id } || armed.values.any { it.closeId == id }
+        byId.values.any { it.target.id == id } || pending.targets(id) || armed.values.any { it.closeId == id }
 
     /** Starts [req]: tracks its target and dispatches it; the deadline is watched per tick. */
     fun submit(req: OrderRequest.TimeExit): SubmitAck {
         val now = clock.now()
+        // Registered first, so the snapshot taken when the target is tracked already holds it (#1660).
+        req.holdMs?.let { pending.add(req, it, closer.protectiveIdsFor(req.target)) }
         ops.update(req.id) {
             it.copy(state = OrderState.WORKING, childClientOrderIds = listOf(req.target.id), lastUpdatedAt = now)
         }
@@ -70,39 +69,26 @@ internal class TimeExits(
                 lastUpdatedAt = now,
             ),
         )
-        byId[req.id] = req
         if (req.holdMs == null) {
+            byId[req.id] = req
             deadlines[req.id] = req.deadline.toEpochMilli()
-        } else {
-            awaitingFill[req.entryFillId] = req.id
         }
         exposure.register(exposureEntryRequest(req.target))
         ops.dispatch(req.target)
         return SubmitAck(req.id, req.id, accepted = true)
     }
 
-    /** Arms the fill-anchored exit whose entry is [clientOrderId], timed from now. */
-    fun onFilled(clientOrderId: String) {
+    /** Arms the exit waiting on entry [clientOrderId], timed from venue fill time [filledAtMs] (0: unknown). */
+    fun onFilled(
+        clientOrderId: String,
+        filledAtMs: Long = 0L,
+    ) {
         if (!armed.isEmpty()) legCheckDue = true
-        if (awaitingFill.isEmpty()) return
-        val id = awaitingFill.remove(clientOrderId) ?: return
-        val te = byId.remove(id) ?: return
-        val hold = te.holdMs ?: return
-        val legId = (te.target.exitLegIntent() as? LegIntent.Close)?.legId
-        armed[id] =
-            PersistedTimeExit(
-                id = id,
-                strategyId = te.strategyId,
-                symbol = te.symbol,
-                side = te.target.side,
-                quantity = te.target.quantity,
-                legId = legId,
-                ticket = null,
-                deadlineMs = clock.now() + hold,
-                protectiveIds = closer.protectiveIdsFor(te.target),
-            )
+        if (pending.isEmpty()) return
+        val exit = pending.arm(clientOrderId, filledAtMs) ?: return
+        armed[exit.id] = exit
         legCheckDue = true
-        ops.update(te.id) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
+        ops.persistAll()
     }
 
     /** Re-arms exits persisted before a restart; overdue ones close on the first tick. */
@@ -110,6 +96,10 @@ internal class TimeExits(
         if (exits.isEmpty()) return
         val now = clock.now()
         for (exit in exits) {
+            if (exit.isPending) {
+                pending.restore(exit)
+                continue
+            }
             armed[exit.id] = exit
             if (exit.deadlineMs <= now) {
                 log?.warn(
@@ -131,13 +121,12 @@ internal class TimeExits(
 
     /** Fires every exit due at [now]; drops armed exits whose leg is gone and exits whose entry never filled. */
     fun expireDue(now: Long) {
-        if (byId.isEmpty() && armed.isEmpty()) return
+        if (byId.isEmpty() && pending.isEmpty() && armed.isEmpty()) return
         expireLegacy(now)
-        dropUnfilled()
-        var changed = false
+        var changed = pending.dropUnfilled()
         if (legCheckDue) {
             legCheckDue = false
-            changed = dropClosedLegs()
+            if (dropClosedLegs()) changed = true
         }
         if (armed.isEmpty()) {
             if (changed) ops.persistAll()
@@ -160,20 +149,6 @@ internal class TimeExits(
         for (i in expiredScratch.indices) {
             deadlines.remove(expiredScratch[i])
             byId.remove(expiredScratch[i])?.let(closer::expireLegacy)
-        }
-    }
-
-    private fun dropUnfilled() {
-        if (awaitingFill.isEmpty()) return
-        expiredScratch.clear()
-        for ((entryId, id) in awaitingFill) {
-            val entry = book[entryId] ?: continue
-            if (entry.state.isTerminal && entry.state != OrderState.FILLED) expiredScratch.add(id)
-        }
-        for (i in expiredScratch.indices) {
-            val te = byId.remove(expiredScratch[i]) ?: continue
-            awaitingFill.remove(te.entryFillId)
-            ops.update(te.id) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
         }
     }
 

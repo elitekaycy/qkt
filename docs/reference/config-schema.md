@@ -572,7 +572,7 @@ brokers:
 | `expected_account_login` | string | yes | none | Startup refuses a gateway logged into another account. |
 | `expected_trade_mode` | `demo` or `real` | yes | none | Startup refuses a gateway in the other mode. |
 | `http_timeout_ms` | long | no | `5000` | Per request. |
-| `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
+| `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout, `503` or `429`; a submit is idempotent on its client order id, so this never places a second order. A `503` or `429` backs off every request to that gateway (from 250 ms, doubling with jitter up to 15 s, or the gateway's `Retry-After`), shared by every strategy and account on it; unanswered orders are asked after on that pace until resolved. |
 | `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
 | `shared_account` | `true` or `false` | no | `false` | `true` when something besides this daemon also trades the account (another qkt daemon, a person). See [A shared gateway account](#a-shared-gateway-account). |
@@ -668,8 +668,11 @@ On a shared account the check changes in three ways:
 
 Two things only the account total knows cannot be split exactly on a shared account. Funding on a
 perpetual is booked per strategy as `amount × the strategy's holding / the account's position`, so
-other traders keep their part of it. The account's balance and equity include every trader's profit
-and loss, so they cannot check one daemon's realized P&L. Use the daemon's own trade history for that.
+other traders keep their part of it. The holding is the one the strategy had just before the record's
+time. A venue record that names no position (Deribit realizes funding on a trade) is shared by what
+qkt's sessions on the account held together then, so together they book the record exactly once. The
+account's balance and equity include every trader's profit and loss, so they cannot check one daemon's
+realized P&L. Use the daemon's own trade history for that.
 
 ## `market_data`
 
