@@ -17,6 +17,8 @@ import com.qkt.marketdata.source.SymbolPattern
  * the ask, a sell at the bid, netting, at any hour) and expiries settle at the catalogued outcome ([EventExpiry]),
  * recorded in the books' settlement log. Every event contract is routed, so contracts picked after start are tradable.
  * Empty when the run declares no event contract, so other runs build exactly what they built before.
+ * No liquidator is registered: an event position is fully collateralised (its premium at stake), so it can never fall
+ * below maintenance margin.
  */
 internal fun replayEventRoutes(
     executionConfig: ExecutionSimulationConfig,
@@ -46,6 +48,5 @@ internal fun replayEventRoutes(
         )
     val venue = EventVenue(fills, expiry, bus, clock, instruments)
     val pattern = SymbolPattern { s -> isEvent(s) }
-    books.liquidator.register(pattern, venue)
     return ReplayExchangeRoutes(listOf<Pair<SymbolPattern, Broker>>(pattern to venue), events)
 }
