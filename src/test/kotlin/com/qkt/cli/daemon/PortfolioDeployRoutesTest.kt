@@ -81,6 +81,7 @@ class PortfolioDeployRoutesTest : DaemonRouteFixture() {
         val (code, deployed) = post(p, "/deploy", body("book", file))
         val (planCode, plan) = post(p, "/resync", body("book", file, dryRun = true))
         val (resyncCode, resynced) = post(p, "/resync", body("book", file))
+        val (childCode, childStatus) = get(p, "/status/book/child")
         val (stopCode, _) = post(p, "/stop/book?flatten=false")
 
         assertThat(code).isEqualTo(200)
@@ -91,6 +92,8 @@ class PortfolioDeployRoutesTest : DaemonRouteFixture() {
         assertThat(plan).contains("\"state\":\"planned\"", "\"affected\":[\"book\"]")
         assertThat(resyncCode).isEqualTo(200)
         assertThat(resynced).contains("\"state\":\"running\"", "\"affected\":[\"book\",\"book/child\"]")
+        assertThat(childCode).isEqualTo(200)
+        assertThat(childStatus).contains("\"strategy\":\"book/child\"", "\"kind\":\"child\"", "\"parent\":\"book\"")
         assertThat(stopCode).isEqualTo(200)
         assertThat(registry.getPortfolio("book")).isNull()
     }

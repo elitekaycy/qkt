@@ -63,8 +63,8 @@ class StrategyReadRoutesTest : DaemonRouteFixture() {
                 override fun reconcile() =
                     ReconcileReport(
                         deltas = listOf(PositionDelta("X", BigDecimal.ONE, BigDecimal.ONE)),
-                        BigDecimal.TEN,
-                        null,
+                        engineEquity = BigDecimal.TEN,
+                        brokerEquity = null,
                     )
             }
         val registry = registry(stateDir).also { it.deploy("a", tmp.resolve("a.qkt")) }
@@ -149,5 +149,16 @@ class StrategyReadRoutesTest : DaemonRouteFixture() {
 
         assertThat(code).isEqualTo(200)
         assertThat(body).startsWith("{\"a\":").doesNotContain("\"b\":")
+    }
+
+    @Test
+    fun `list shows a child whose gate is closed as idle`() {
+        meta["book/x"] = childMeta("book", "x").also { it.gateActive.set(false) }
+        val registry = registry(stateDir).also { it.deploy("book/x", tmp.resolve("x.qkt")) }
+
+        val (code, body) = get(plane(registry, stateDir), "/list")
+
+        assertThat(code).isEqualTo(200)
+        assertThat(body).contains("\"book/x\"", "\"idle\"")
     }
 }

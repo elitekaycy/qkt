@@ -112,8 +112,8 @@ internal class BotMt5Stub : AutoCloseable {
 
     companion object {
         const val ACCOUNT =
-            """{"login":42,"server":"Exness-Demo","balance":9800,"equity":10000,"currency":"USD","leverage":500,""" +
-                """"margin_mode":2,"margin":120.5,"margin_free":9879.5,"margin_level":8298.7,"profit":200}"""
+            """{"login":42,"server":"Exness-Demo","trade_mode":0,"balance":9800,"equity":10000,""" +
+                """"currency":"USD","leverage":500,"margin_mode":2,"margin":120.5,"margin_free":9879.5,"margin_level":8298.7,"profit":200}"""
 
         fun position(
             ticket: Long,

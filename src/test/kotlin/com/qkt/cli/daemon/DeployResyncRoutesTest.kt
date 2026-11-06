@@ -63,6 +63,8 @@ class DeployResyncRoutesTest : DaemonRouteFixture() {
         assertThat(post(p, "/deploy", body("c"))).isEqualTo(409 to """{"error":"account busy"}""")
         assertThat(post(p, "/deploy", body("x"))).isEqualTo(500 to """{"error":"socket closed"}""")
         assertThat(post(p, "/deploy", body("bad name")).first).isEqualTo(400)
+        assertThat(post(p, "/deploy?waive=soak", body("w")))
+            .isEqualTo(400 to """{"error":"--waive requires a non-empty reason"}""")
         assertThat(registry.list()).isEmpty()
     }
 
