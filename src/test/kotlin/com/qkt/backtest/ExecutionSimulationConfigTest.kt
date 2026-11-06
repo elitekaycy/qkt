@@ -113,4 +113,40 @@ class ExecutionSimulationConfigTest {
         assertThat(cfg.toEvidence().stopLatencyModel).isEqualTo("fixed:9ms")
         assertThat(ExecutionSimulationConfig().toEvidence().stopLatencyModel).isEqualTo("on-trigger")
     }
+
+    @Test
+    fun `negative timings, sizes and counts are refused by name`() {
+        val mt5 = ExecutionPreset.MT5_BASIC
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, latencyMs = -1) }.hasMessageContaining("latencyMs")
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, orderSpacingMs = -1) }
+            .hasMessageContaining("orderSpacingMs")
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, stopLatencyMs = -1) }
+            .hasMessageContaining("stopLatencyMs")
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, candleCloseGraceMs = -1) }
+            .hasMessageContaining("candleCloseGraceMs")
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, heartbeatIntervalMs = 0) }
+            .hasMessageContaining("heartbeatIntervalMs")
+        assertThatThrownBy { ExecutionSimulationConfig(preset = mt5, slippagePoints = -1) }
+            .hasMessageContaining("slippagePoints")
+        assertThatThrownBy {
+            ExecutionSimulationConfig(
+                preset = mt5,
+                rejectEvery = 0,
+            )
+        }.hasMessageContaining("rejectEvery")
+    }
+
+    @Test
+    fun `the paper preset names each knob it cannot model`() {
+        assertThatThrownBy { ExecutionSimulationConfig(latencyMs = 5) }.hasMessageContaining("does not model latency;")
+        assertThatThrownBy { ExecutionSimulationConfig(stopLatencyMs = 5) }.hasMessageContaining("model stop latency;")
+        assertThatThrownBy {
+            ExecutionSimulationConfig(
+                orderSpacingMs = 5,
+            )
+        }.hasMessageContaining("model order spacing;")
+        assertThatThrownBy { ExecutionSimulationConfig(rejectEvery = 3) }.hasMessageContaining("model reject-every;")
+        assertThatThrownBy { ExecutionSimulationConfig(partialFillFraction = BigDecimal("0.5")) }
+            .hasMessageContaining("model partial fill;")
+    }
 }
