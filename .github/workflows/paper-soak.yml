@@ -1,7 +1,7 @@
 name: paper-soak
 
 # A trusted self-hosted runner retains the demo MT5 session evidence. This workflow
-# verifies that evidence against the exact testing image and publishes the immutable
+# verifies that evidence against the exact candidate image and publishes the immutable
 # artifact consumed by promote-to-main. It never accepts a moving :edge tag as proof.
 on:
   workflow_dispatch:
@@ -21,8 +21,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Require the testing promotion candidate
-        run: test "$GITHUB_REF" = refs/heads/testing
+        with:
+          fetch-depth: 0
+      # Dispatched on testing or on release/vX.Y.Z (pinned at the candidate by scripts/pin-release-branch.sh), so GITHUB_SHA is
+      # the candidate. Either way it must be a commit of testing: nothing outside testing's history is promoted.
+      - name: Require a testing promotion candidate
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in refs/heads/testing|refs/heads/release/v*) ;; *) echo "paper-soak runs on testing or release/v*, not $GITHUB_REF" >&2; exit 1 ;; esac
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/testing
       - name: Validate exact-image soak evidence
         env:
           ATTESTATION_PATH: ${{ inputs.attestation_path }}
@@ -32,6 +39,7 @@ jobs:
           python3 scripts/verify-paper-soak-attestation.py "$ATTESTATION_PATH" \
             --expected-git-sha "$GITHUB_SHA" \
             --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY" \
+            --repo-root . \
             --cases-root attestation/cases
           image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$ATTESTATION_PATH")"
           docker pull "$image"
@@ -47,7 +55,8 @@ jobs:
           install -m 0600 "$ATTESTATION_PATH" "$evidence_dir/paper-soak-attestation.json"
           python3 scripts/verify-paper-soak-attestation.py "$evidence_dir/paper-soak-attestation.json" \
             --expected-git-sha "$GITHUB_SHA" \
-            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY"
+            --expected-image-repository "$EXPECTED_IMAGE_REPOSITORY" \
+            --repo-root .
           run_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["runId"])' "$evidence_dir/paper-soak-attestation.json")"
           used_ids="/var/lib/qkt/soak/used-run-ids"
           install -d -m 0700 "$(dirname "$used_ids")"

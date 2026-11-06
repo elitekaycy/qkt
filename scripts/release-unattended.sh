@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # From "testing is green" to a tagged release with nobody at the keyboard:
 #
-#   attest testing live (run-attestation.sh --dispatch) -> paper-soak green -> promote-to-main ->
+#   attest a candidate commit of testing live (run-attestation.sh --dispatch) -> paper-soak green -> promote-to-main ->
 #   approve windows-ci -> wait for the promotion PR to be CLEAN on the attested commit ->
 #   approve + merge it (merge commit, head pinned) -> tag vX.Y.Z on the merge commit.
 #
@@ -9,6 +9,10 @@
 # hand and nothing is skipped. It is safe to run again after a stop: each stage looks at the state
 # it finds (on the same commit the attestation keeps what passed on this exact build and reruns the rest, see
 # scripts/live-validation/lib/attest_resume.py; an open promotion PR is reused; an existing tag stops it).
+#
+# A release names a CANDIDATE (--candidate SHA, default the testing tip when it starts). Everything below is for that commit:
+# CI, attestation, paper-soak, Windows validation, the promotion PR (release/vX.Y.Z pinned at it) and the merge. Testing and
+# dev may move on meanwhile; a candidate that is not an ancestor of testing stops the release.
 set -euo pipefail
 # This script checks out `testing` in its own clone, and bash reads a script as it runs it: a
 # checkout that rewrites this file would change the program mid-flight. Run from a private copy.
@@ -26,16 +30,20 @@ trap 'rm -f "$QKT_RELEASE_PRIVATE_COPY"' EXIT
 
 usage() {
     cat <<'USAGE'
-Usage: release-unattended.sh --profile FILE --key-file FILE [--repo OWNER/NAME] [--wait-for SHA]
+Usage: release-unattended.sh --profile FILE --key-file FILE [--repo OWNER/NAME] [--wait-for SHA] [--candidate SHA] [--no-carry]
 
   --profile FILE   attestation profile (see scripts/live-validation/attestation-profile.example)
   --key-file FILE  file holding the demo gateway API key (mode 0600; never passed on a command line)
   --repo           GitHub repository (default: the origin remote)
   --wait-for SHA   a dev commit that testing must contain before the release starts (optional)
+  --candidate SHA  the testing commit to release (default: the testing tip when the release starts). It must be an ancestor of
+                   testing and green on check, integration and docker; testing may move on while it is attested.
+  --no-carry       attest every case on the candidate even when an earlier commit with the same runtime fingerprint passed it
+                   (the scheduled full re-attestation that audits the carry rules)
 
   QKT_RELEASE_TESTING_POLLS  minutes to wait for testing to contain it and go green (default 90)
 
-The version released is the VERSION file of origin/testing. Needs `gh` authenticated with rights to
+The version released is the VERSION file of the candidate. Needs `gh` authenticated with rights to
 approve workflow runs and to review and merge the promotion PR, the paper-soak self-hosted runner
 online, and a clean checkout of its own (a dedicated worktree: it checks out testing, detached). Writes progress lines to stdout; exits non-zero at the first failed stage.
 USAGE
@@ -43,18 +51,21 @@ USAGE
 log() { printf '%s %s\n' "$(date -u +%T)" "$*"; }
 stop() { log "STOPPED: $*"; exit 1; }
 
-profile=""; key_file=""; repo=""; wait_for=""
+profile=""; key_file=""; repo=""; wait_for=""; candidate=""; no_carry=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --profile) profile="${2:-}"; shift 2 ;;
         --key-file) key_file="${2:-}"; shift 2 ;;
         --repo) repo="${2:-}"; shift 2 ;;
         --wait-for) wait_for="${2:-}"; shift 2 ;;
+        --candidate) candidate="${2:-}"; shift 2 ;;
+        --no-carry) no_carry="--no-carry"; shift ;;
         --help|-h) usage; exit 0 ;;
         *) usage >&2; echo "release-unattended: unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 [ -n "$profile" ] && [ -n "$key_file" ] || { usage >&2; exit 2; }
+[ -z "$candidate" ] || [[ "$candidate" =~ ^[0-9a-f]{40}$ ]] || { usage >&2; echo "release-unattended: --candidate must be a lowercase 40-character commit id" >&2; exit 2; }
 [ -f "$profile" ] || stop "profile not found: $profile"
 [ -f "$key_file" ] || stop "key file not found: $key_file"
 [ "$(stat -c %a "$key_file")" = 600 ] || stop "key file must be mode 0600: $key_file"
@@ -79,16 +90,21 @@ fi
 for _ in $(seq 1 "$((${QKT_RELEASE_TESTING_POLLS:-90} * 2))"); do
     git fetch -q origin
     testing="$(git rev-parse origin/testing)"
-    if [ -n "$wait_for" ] && ! git merge-base --is-ancestor "$wait_for" "$testing" 2> /dev/null; then
+    if [ -n "$candidate" ]; then
+        # The candidate, not the tip: testing moving on changes nothing here, but the candidate must be part of testing.
+        git cat-file -e "$candidate^{commit}" 2> /dev/null || stop "candidate ${candidate:0:8} is not in this clone"
+        git merge-base --is-ancestor "$candidate" "$testing" 2> /dev/null || stop "candidate ${candidate:0:8} is not an ancestor of testing ${testing:0:8}"
+        testing="$candidate"
+    elif [ -n "$wait_for" ] && ! git merge-base --is-ancestor "$wait_for" "$testing" 2> /dev/null; then
         log "testing ${testing:0:8} does not contain ${wait_for:0:8} yet"; sleep 30; continue
     fi
     runs="$(gh run list -R "$repo" --branch testing --commit "$testing" --json name,status,conclusion,headSha \
         -q ".[] | select(.headSha == \"$testing\") | .name + \":\" + .status + \":\" + (.conclusion // \"\")" | tr '\n' ' ')"
-    log "testing ${testing:0:8} [$runs]"
+    log "candidate ${testing:0:8} [$runs]"
     if grep -qE '(check|integration|docker):completed:(failure|cancelled)' <<<"$runs"; then
         # A job can fail for a third party's outage (the Gradle distribution download returned 5xx twice
         # on 2026-09-21). Nobody is here to press "re-run", so each failed run gets exactly one.
-        [ "${reran:-}" = "$testing" ] && stop "testing CI failed on $testing, again after one re-run"
+        [ "${reran:-}" = "$testing" ] && stop "CI failed on candidate $testing, again after one re-run"
         reran="$testing"
         gh run list -R "$repo" --branch testing --commit "$testing" --json databaseId,conclusion,headSha \
             -q ".[] | select(.headSha == \"$testing\" and (.conclusion == \"failure\" or .conclusion == \"cancelled\")) | .databaseId" |
@@ -109,13 +125,13 @@ git rev-parse -q --verify "refs/tags/$version" > /dev/null && stop "$version is 
 git ls-remote --exit-code --tags origin "$version" > /dev/null 2>&1 && stop "$version is already tagged on origin"
 online="$(gh api "repos/$repo/actions/runners" --jq '[.runners[] | select(.status == "online")] | length' 2> /dev/null || echo 0)"
 [ "$online" -gt 0 ] || stop "no self-hosted runner is online; paper-soak would queue forever"
-log "releasing $version from testing $testing"
+log "releasing $version from candidate $testing (testing is at $(git rev-parse --short=8 origin/testing))"
 git checkout -q --detach "$testing"
 
 # 2. live attestation, which also dispatches paper-soak with the evidence it assembled.
 started="$(date +%s)"
 QKT_BROKER_API_KEY="$(cat "$key_file")" QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY \
-    bash scripts/live-validation/run-attestation.sh --profile "$profile" --dispatch ||
+    bash scripts/live-validation/run-attestation.sh --profile "$profile" --dispatch ${no_carry:+"$no_carry"} ||
     stop "attestation failed: $(jq -r .detail "$(. "$profile"; echo "$wave_root")/attestation-run.json" 2>/dev/null | cut -c1-1000)"
 log "attested in $(( $(date +%s) - started ))s"
 
@@ -141,14 +157,15 @@ log "paper-soak $soak green"
 
 # 4. the promotion PR, on exactly the attested commit.
 dispatched="$(date -u -d '-60 seconds' +%FT%TZ)"
-gh workflow run promote-to-main.yml -R "$repo" --ref testing > /dev/null
+gh workflow run promote-to-main.yml -R "$repo" --ref testing -f candidate="$testing" > /dev/null
 promote="$(newest_run promote-to-main.yml "$dispatched")"; [ -n "$promote" ] || stop "promote-to-main was dispatched but no run appeared"
 for _ in $(seq 1 60); do
     state="$(gh run view "$promote" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
     case "$state" in completed*) break ;; esac; sleep 10
 done
 [ "$state" = "completed success" ] || stop "promote-to-main run $promote: $state"
-pr="$(gh pr list -R "$repo" --base main --head testing --state open --json number -q '.[0].number')"
+release_branch="release/$version"
+pr="$(gh pr list -R "$repo" --base main --head "$release_branch" --state open --json number -q '.[0].number')"
 [ -n "$pr" ] || stop "promote-to-main opened no PR"
 log "promotion PR #$pr"
 held="$(gh api "repos/$repo/actions/runs?head_sha=$testing&status=action_required" \
@@ -161,9 +178,9 @@ for _ in $(seq 1 135); do
 done
 [ "$merge_state" = CLEAN ] || stop "promotion PR #$pr is $merge_state, not CLEAN"
 [ "$(gh pr view "$pr" -R "$repo" --json headRefOid -q .headRefOid)" = "$testing" ] ||
-    stop "promotion PR #$pr moved off the attested commit; something was merged to dev during the release"
+    stop "promotion PR #$pr is not on the attested candidate ${testing:0:8}"
 gh pr review "$pr" -R "$repo" --approve \
-    --body "Promotion of testing $testing for $version: unattended live attestation passed, paper-soak green, all required checks green." > /dev/null
+    --body "Promotion of candidate $testing for $version: unattended live attestation passed, paper-soak green, all required checks green." > /dev/null
 gh pr merge "$pr" -R "$repo" --merge --match-head-commit "$testing" > /dev/null
 for _ in $(seq 1 12); do
     merged="$(gh pr view "$pr" -R "$repo" --json state,mergeCommit -q '.state + " " + (.mergeCommit.oid // "")')"

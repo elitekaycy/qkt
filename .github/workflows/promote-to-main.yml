@@ -1,13 +1,20 @@
 name: promote-to-main
 
 # Manual promotion: testing -> main. A maintainer triggers this from the
-# Actions tab (or `gh workflow run promote-to-main.yml`) after inspecting
-# testing. It verifies integration and exact-image paper-soak evidence for the
-# current testing SHA, then creates or reuses a promotion PR. Merging remains
-# subject to review and branch protection.
+# Actions tab (or `gh workflow run promote-to-main.yml -f candidate=SHA`) after
+# inspecting testing. It verifies CI and exact-image paper-soak evidence for the
+# candidate commit (default: the current testing tip; any ancestor of testing is
+# allowed, so testing can move while a release is attested), then creates or
+# reuses a promotion PR from release/vX.Y.Z pinned at the candidate. Merging
+# remains subject to review and branch protection.
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate:
+        description: Commit of testing to promote (40-character SHA; empty means the current testing tip)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -21,7 +28,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: testing
+          fetch-depth: 0
       - name: Prepare testing promotion PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROMOTE_CANDIDATE: ${{ inputs.candidate }}
         run: bash scripts/prepare-main-promotion.sh

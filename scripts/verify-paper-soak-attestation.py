@@ -205,7 +205,65 @@ def ready_cases(root: Path, lanes: list[str]) -> set[str]:
     return names
 
 
-def verify_catalog_evidence(document: dict[str, object], attestation: Path, expected_git_sha: str, cases_root: Path | None) -> None:
+def load_fingerprints():
+    """lib/runtime_fingerprint.py, the one definition of the runtime fingerprint and the case definition hash."""
+    import importlib.util
+    path = Path(__file__).resolve().parent / "live-validation" / "lib" / "runtime_fingerprint.py"
+    spec = importlib.util.spec_from_file_location("runtime_fingerprint", path)
+    if spec is None or spec.loader is None or not path.is_file():
+        fail("runtime fingerprint library is missing: cannot verify a v2 binding")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_v2_binding(binding: dict, expected_git_sha: str, repo_root: Path | None):
+    """A v2 binding keys evidence by what ships, not by the commit. Nothing it says about that is taken on trust: the fingerprint
+    is recomputed from git for the verified commit, and the environment must be named."""
+    if repo_root is None:
+        fail("a v2 binding (runtime fingerprint) can only be verified with --repo-root")
+    lib = load_fingerprints()
+    claimed = binding.get("runtimeFingerprint")
+    if not isinstance(claimed, str) or not re.fullmatch(r"[0-9a-f]{64}", claimed):
+        fail("binding.runtimeFingerprint must be a lowercase SHA-256")
+    actual = lib.runtime_fingerprint(str(repo_root), expected_git_sha)
+    if actual is None:
+        fail(f"cannot compute the runtime fingerprint of {expected_git_sha} in {repo_root}")
+    if actual != claimed:
+        fail(f"runtime fingerprint mismatch: the evidence is for {claimed[:12]}, {expected_git_sha[:8]} ships {actual[:12]}")
+    environment = binding.get("environment")
+    if not isinstance(environment, dict) or not environment.get("java") or not environment.get("gatewayImages"):
+        fail("a v2 binding must name the JDK and the gateway images")
+    if binding.get("carryMode") == "artifact+source":
+        if not re.fullmatch(r"[0-9a-f]{64}", str(binding.get("artifactHash"))):
+            fail("binding.artifactHash must be a lowercase SHA-256 in artifact+source mode")
+    elif binding.get("carryMode") != "source" or binding.get("artifactHash"):
+        fail("binding.carryMode must be artifact+source or source, matching artifactHash")
+    return lib
+
+
+def verify_carry(item: dict, name: str, binding: dict, expected_git_sha: str, repo_root: Path, lib) -> None:
+    """A case that ran on another commit stands only when that commit ships the same fingerprint and the case's definition
+    is unchanged. Both are recomputed from git for the commit the record says it ran on."""
+    ran_on = item.get("ranOnSha")
+    if not isinstance(ran_on, str) or not SHA_RE.fullmatch(ran_on):
+        fail(f"case {name} does not say which commit it ran on")
+    if lib.runtime_fingerprint(str(repo_root), ran_on) != binding["runtimeFingerprint"]:
+        fail(f"case {name} ran on {ran_on[:8]}, which does not ship the fingerprint of {expected_git_sha[:8]}")
+    recorded = item.get("definitionSha256")
+    here = lib.definition_sha(str(repo_root), expected_git_sha, name)
+    there = lib.definition_sha(str(repo_root), ran_on, name)
+    if here is None or recorded != here or recorded != there:
+        fail(f"case {name} was defined differently when it ran on {ran_on[:8]}: it must run again")
+    carried = item.get("carriedFrom")
+    if ran_on != expected_git_sha and not carried:
+        fail(f"case {name} ran on {ran_on[:8]} but the bundle does not log it as carried")
+    if carried and carried.get("sha") != ran_on:
+        fail(f"case {name} carry record disagrees with the commit it ran on")
+
+
+def verify_catalog_evidence(document: dict[str, object], attestation: Path, expected_git_sha: str, cases_root: Path | None,
+                            repo_root: Path | None = None) -> None:
     """A release needs every required case passed on this exact build, however many runs it took to get there."""
     artifacts = document["artifacts"]
     assert isinstance(artifacts, dict)
@@ -222,6 +280,11 @@ def verify_catalog_evidence(document: dict[str, object], attestation: Path, expe
     expected_binding = binding_sha(binding)
     if evidence.get("bindingSha256") != expected_binding:
         fail("catalog evidence's binding hash does not match its binding")
+    v2 = binding.get("schema") == "qkt-attestation-binding-v2"
+    lib = verify_v2_binding(binding, expected_git_sha, repo_root) if v2 else None
+    # Every case record carries the hash of its key: the whole exact-commit binding (v1), or for v2 only what ships, the
+    # profile, the account and the environment (never the commit, never the CLI's bytes).
+    case_key = lib.evidence_key_sha(binding) if v2 else expected_binding
     if evidence.get("waveRunId") != document.get("runId"):
         fail("catalog evidence belongs to another wave")
     assembled = parse_utc(evidence.get("assembledAtUtc"), "catalog.assembledAtUtc")
@@ -250,8 +313,10 @@ def verify_catalog_evidence(document: dict[str, object], attestation: Path, expe
         name = require_string(item.get("name"), "catalog case name")
         if item.get("status") != "passed":
             fail(f"case {name} did not pass")
-        if item.get("bindingSha256") != expected_binding:
+        if item.get("bindingSha256") != case_key:
             fail(f"case {name} passed on another build, profile or account")
+        if v2:
+            verify_carry(item, name, binding, expected_git_sha, repo_root, lib)
         attempts = item.get("attempts")
         if not isinstance(attempts, list) or not attempts or attempts[-1].get("status") != "passed":
             fail(f"case {name} does not end on a passed attempt")
@@ -277,6 +342,7 @@ def main() -> int:
     parser.add_argument("--min-continuous-hours", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--min-trading-days", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--max-dropped-ticks", type=int, default=0)
+    parser.add_argument("--repo-root", type=Path, help="a git checkout holding the verified commit (and any commit evidence ran on): required to verify a v2 binding")
     parser.add_argument("--cases-root", type=Path, help="attestation/cases at this commit: every ready case must be in the evidence")
     args = parser.parse_args()
 
@@ -292,7 +358,7 @@ def main() -> int:
         )
         assert isinstance(document, dict)
         verify_artifacts(document, args.attestation)
-        verify_catalog_evidence(document, args.attestation, args.expected_git_sha, args.cases_root)
+        verify_catalog_evidence(document, args.attestation, args.expected_git_sha, args.cases_root, args.repo_root)
     except (OSError, json.JSONDecodeError, ValueError) as error:
         print(f"paper-soak attestation invalid: {error}", file=sys.stderr)
         return 1
