@@ -100,6 +100,9 @@ The symbol is whatever the venue calls the instrument. **Different brokers may u
 
 The DSL uses the **qkt-side** name. The broker integration layer (Phase 17, Phase 7) translates to the venue's actual symbol via the broker profile's `symbolPolicy` (suffix, alias map). Exness adds `m` automatically; ICMarkets/FTMO/Pepperstone don't.
 
+A symbol is one name of letters, digits and `_`. It may carry one decimal strike, digits `.` digits with no
+spaces (`KALSHI:KXHIGHNY_26NOV06_B73.5`); it may not start with a digit or hold a `-`.
+
 If a venue rejects a symbol you wrote, check the actual venue name vs the qkt-side name. The [config schema](../config-schema.md) covers `symbolPolicy` overrides.
 
 ## Timeframes (`EVERY <window>`)
@@ -226,6 +229,48 @@ SYMBOLS
 RULES
     WHEN c.iv < 40 AND c.delta > 0.3 AND c.delta < 0.5 AND POSITION.c = 0   -- cheap vol, near the money
     THEN BUY c SIZING 0.1
+```
+
+### Event contract fields (`<alias>.minutes_left`, `.floor_strike`, ...)
+
+A binary event contract (a Kalshi-style "S&P 500 at 7,425 or above at 15:00" that pays 1 on YES and 0 on NO)
+trades at prices from 0 to its payout, so `close`, `bid` and `ask` read as the YES probability. Its stream also
+reads the contract's terms:
+
+```qkt
+k.floor_strike       -- the lower bound of the question ("7,425 or above": 7425); Undefined when it has none
+k.cap_strike         -- the upper bound ("below 73", or the top of "73 to 74"); Undefined when it has none
+k.close_at           -- when trading stops, epoch milliseconds
+k.expiry_at          -- when the result is expected, epoch milliseconds
+k.minutes_left       -- minutes until close_at, from the bar's close (fractions; negative once it passed)
+k.occurs_at          -- when the thing asked about happens (a game's start), epoch ms; Undefined when unknown
+k.minutes_to_occurs  -- minutes until occurs_at (negative once it started: in-game)
+k.taker_fee          -- the fee one contract pays buying at the current ask
+k.maker_fee          -- the fee one contract pays resting at the current bid
+k.title              -- the contract's label (a string: compare with = or !=)
+```
+
+All of them are read as of the bar's close, never the wall clock, so a backtest and a live run see the same
+`minutes_left`. The fees follow the contract's probability fee model, `rate × p × (1 − p)` per contract at price
+`p` (on a payout other than 1, `p` is the price's share of the payout and the fee is scaled back to money). They
+are **unrounded**: the venue rounds the fee of a whole order up to its unit, so one contract's share of an order
+is this value, not the rounded fee of a one-contract order. A model without a maker rate reads 0 for `maker_fee`;
+either fee is Undefined while the stream has no quote on that side.
+
+A strategy that reads any of these on a stream that is not a catalogued event contract does not start, and one
+that reads `taker_fee` or `maker_fee` on a contract whose fee model is unknown does not start either: a fee never
+reads as a silent zero. A field the strategy does not read costs nothing.
+
+Venue codes with a decimal strike keep the `.` in the symbol (see [symbol names](#symbol-names)):
+
+```qkt
+STRATEGY nyc_high_fade VERSION 1
+SYMBOLS
+    hi = KALSHI:KXHIGHNY_26NOV06_B73.5 EVERY 1m
+RULES
+    -- An expensive 73-74 bucket in the last half hour: sell it, if the taker fee leaves an edge.
+    WHEN hi.minutes_left < 30 AND hi.bid > 0.85 + hi.taker_fee AND POSITION.hi = 0
+    THEN SELL hi SIZING 10
 ```
 
 ### Trade flow and liquidations (`<alias>.buy_volume[1]`, ...)
