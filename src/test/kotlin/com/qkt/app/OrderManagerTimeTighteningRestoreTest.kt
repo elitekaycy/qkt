@@ -51,6 +51,7 @@ class OrderManagerTimeTighteningRestoreTest {
         persistor.savePendingOrders("alpha", mapOf(stop.id to stop))
         val manager = restore()
         assertThat(manager.getOrder("tt-1")!!.state).isEqualTo(OrderState.PENDING)
+        assertThat(manager.engineHeldProtectiveStopCount()).isEqualTo(1)
 
         bus.publish(TickEvent(Tick("XAUUSD", BigDecimal("1994.5"), 1L)))
         assertThat(broker.submits).isEmpty()
