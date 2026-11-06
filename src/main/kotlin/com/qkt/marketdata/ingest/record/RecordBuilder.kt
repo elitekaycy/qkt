@@ -63,7 +63,7 @@ class RecordBuilder(
         val quote = bid != null && ask != null
         val price = scaled(priceValue("price", row))?.takeUnless { quote && it.signum() == 0 }
         val volume = scaled(mapping.value("volume", row))?.takeUnless { quote && it.signum() == 0 }
-        require(price != null || quote) {
+        require(price != null || quote || (mapping.oneSidedQuotes && (bid != null || ask != null))) {
             if (bid != null ||
                 ask != null
             ) {
