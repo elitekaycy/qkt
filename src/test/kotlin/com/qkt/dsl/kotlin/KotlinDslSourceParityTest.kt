@@ -139,8 +139,16 @@ class KotlinDslSourceParityTest {
                     whenever(btc.close gt 0.bd)
                     then { sell(btc, orderType = market, tif = ioc) }
                 }
+                rule {
+                    whenever(btc.close gt 0.bd)
+                    then { buy(btc, tif = ioc) }
+                }
             }
-        val parsed = parsedRules("    WHEN btc.close > 0 THEN SELL btc ORDER_TYPE = MARKET TIF IOC")
+        val parsed =
+            parsedRules(
+                "    WHEN btc.close > 0 THEN SELL btc ORDER_TYPE = MARKET TIF IOC\n" +
+                    "    WHEN btc.close > 0 THEN BUY btc TIF IOC",
+            )
 
         assertThat(kotlin).isEqualTo(parsed)
     }
@@ -148,6 +156,12 @@ class KotlinDslSourceParityTest {
     @Test
     fun `a layer can carry its own order type and a sizing object`() {
         val l = layer(usdNotional(50.bd), orderType = limitAt(entryPrice - 5.bd), at = entryPrice - 5.bd)
+        assertThat(layer(2.bd)).isEqualTo(
+            StackLayer(
+                com.qkt.dsl.ast
+                    .SizeQty(2.bd),
+            ),
+        )
 
         val expected =
             StackLayer(
