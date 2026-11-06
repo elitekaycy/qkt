@@ -60,9 +60,9 @@ class EffectiveConfigTradingModeTest {
     @Test
     fun `a venue's identity is stated only when it is one qkt knows`() {
         val account = (resolve(id("A", "real"))["accounts"] as List<*>).single() as Map<*, *>
-        assertThat(
-            account,
-        ).containsEntry("connector", "mt5").containsEntry("adapter", "exness").containsEntry("environment", "real")
+        assertThat(account["connector"]).isEqualTo("mt5")
+        assertThat(account["adapter"]).isEqualTo("exness")
+        assertThat(account["environment"]).isEqualTo("real")
 
         val odd =
             (

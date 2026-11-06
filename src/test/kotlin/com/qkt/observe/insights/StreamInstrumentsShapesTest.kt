@@ -43,7 +43,7 @@ class StreamInstrumentsShapesTest {
             ).single()
 
         assertThat(stream).containsEntry("alias", "a").containsKey("venue").doesNotContainKey("instrument")
-        assertThat(stream["venue"] as Map<*, *>).containsEntry("label", "EXNESS")
+        assertThat((stream["venue"] as Map<*, *>)["label"]).isEqualTo("EXNESS")
     }
 
     @Test
