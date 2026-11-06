@@ -47,6 +47,8 @@ class ExprCompiler(
     val structures: StructureSupport = StructureSupport(),
     /** Hub field alias -> its record stream; see [HubFieldExpansion.recordGates]. */
     private val hubRecordGates: Map<String, String> = emptyMap(),
+    /** The contracts the strategy's event slots opened, read by `POSITION.<slot>` and traded by slot orders. */
+    val slots: SlotBooks = SlotBooks(),
 ) {
     private val structureFields = StructureFieldCompiler(structures)
     private val indicatorCalls = IndicatorCallCompiler(bindings, this, hubRecordGates)
@@ -55,7 +57,7 @@ class ExprCompiler(
         if (allowExitAccess) {
             this
         } else {
-            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true, structures = structures, hubRecordGates)
+            ExprCompiler(bindings, aggregates, baskets, true, structures, hubRecordGates, slots)
         }
 
     fun compile(
@@ -80,7 +82,7 @@ class ExprCompiler(
                 if (expr.stream in structures.aliases) {
                     structureFields.size(expr.stream)
                 } else {
-                    PositionRefCompiler.compile(expr, baskets)
+                    PositionRefCompiler.compile(expr, baskets, slots)
                 }
             is StateAccessor ->
                 if (expr.key in structures.aliases) structureFields.field(expr) else StateAccessorCompiler.compile(expr)
