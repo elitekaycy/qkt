@@ -64,7 +64,7 @@
 233 src/main/kotlin/com/qkt/app/OrderManager.kt
 233 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcher.kt
 232 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
-231 src/main/kotlin/com/qkt/cli/bot/BotQueryCommand.kt
+217 src/main/kotlin/com/qkt/cli/bot/BotQueryCommand.kt
 231 src/test/kotlin/com/qkt/dsl/compile/StackEngineTest.kt
 227 src/test/kotlin/com/qkt/dsl/compile/StackEnginePersistenceTest.kt
 223 src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt
