@@ -9,6 +9,7 @@ import com.qkt.dsl.compile.TradeFlowReader
 import com.qkt.instrument.EventTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.pnl.BookBalanceView
@@ -124,8 +125,11 @@ internal fun requireEventTerms(
     val reads = (strategy as? EventFieldReader)?.eventReads ?: return
     for (read in reads) {
         val terms = instruments.lookup(read.symbol)?.derivative as? EventTerms
+        // A slot reads the contract it follows at the time, so its terms and fee are known only then.
+        val slot = SlotSymbol.parse(read.symbol)?.takeIf { instruments.events()?.family(it.root) != null }
         val problem =
             when {
+                slot != null -> null
                 terms == null -> "it is not a catalogued event contract"
                 read.field in EventFieldCompiler.feeFields && terms.fee == null -> "its fee model is unknown"
                 else -> null

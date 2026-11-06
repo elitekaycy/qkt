@@ -1,16 +1,19 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.PositionRef
+import com.qkt.instrument.SlotSymbol
 import java.math.BigDecimal
 
 /**
- * Compiles `POSITION.<alias>`: the net quantity held on a stream's symbol, or, for a basket
- * alias, the direction sign shared by every constituent.
+ * Compiles `POSITION.<alias>`: the net quantity held on a stream's symbol, for a basket
+ * alias the direction sign shared by every constituent, and for an event slot the signed total of
+ * its book ([SlotBooks]).
  */
 internal object PositionRefCompiler {
     fun compile(
         ref: PositionRef,
         baskets: Map<String, List<String>>,
+        slots: SlotBooks,
     ): CompiledExpr {
         val constituents = baskets[ref.stream]
         if (constituents != null) {
@@ -18,6 +21,9 @@ internal object PositionRefCompiler {
         }
         return CompiledExpr { ctx ->
             val symbol = ctx.streams[ref.stream]?.qktSymbol ?: error("Unknown stream alias: ${ref.stream}")
+            if (SlotSymbol.isSlot(symbol)) {
+                return@CompiledExpr Value.Num(slots.total(ctx.strategyContext, ref.stream, ctx.nowMs()))
+            }
             val qty =
                 ctx.strategyContext.positions
                     .positionFor(symbol)
