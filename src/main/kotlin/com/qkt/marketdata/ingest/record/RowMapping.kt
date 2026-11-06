@@ -28,6 +28,8 @@ class RowMapping(
     /** Series: when each value became available, if the source says. */
     val available: RowTime? = null,
     val carryForward: Boolean = false,
+    /** Ticks only: a quote with one side is kept (event contracts), not refused. */
+    val oneSidedQuotes: Boolean = false,
     /** Prices are float32 values widened to a double; see [com.qkt.marketdata.ingest.plan.ImportDescriptor.float32]. */
     val float32: Boolean = false,
     val where: List<Pair<CellRef, String>> = emptyList(),

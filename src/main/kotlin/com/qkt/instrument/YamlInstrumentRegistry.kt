@@ -49,7 +49,7 @@ class YamlInstrumentRegistry private constructor(
             val text = Files.readString(path)
             val root = Load(LoadSettings.builder().build()).loadFromString(text)
             check(root is Map<*, *>) { "instruments.yaml: top-level must be a map (got ${root?.let { it::class }})" }
-            val derivativesOnly = root.containsKey("futures") || root.containsKey("options")
+            val derivativesOnly = listOf("futures", "options", "events").any { root.containsKey(it) }
             val list =
                 root["instruments"] as? List<*>
                     ?: if (derivativesOnly) emptyList<Any>() else error("instruments.yaml: missing 'instruments' list")

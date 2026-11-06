@@ -78,4 +78,23 @@ class OptionChainCoverageTest {
             )
         }.doesNotThrowAnyException()
     }
+
+    @Test
+    fun `an event family's chain stream beside option roots is not read as an option chain`(
+        @TempDir dir: Path,
+    ) {
+        val f = OptionChainFixture(dir)
+        f.store(Triple("2026-10-02T01:00:00Z", "100", 0L))
+        val symbols = listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", "CHAIN:KALSHI.KXINXU.implied_median.front")
+
+        assertThatCode {
+            OptionChainCoverage.ensure(
+                f.registry,
+                symbols,
+                day("2026-10-02"),
+                day("2026-10-02"),
+                allowIncomplete = false,
+            )
+        }.doesNotThrowAnyException()
+    }
 }

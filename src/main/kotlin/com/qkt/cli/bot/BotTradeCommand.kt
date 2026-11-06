@@ -6,8 +6,10 @@ import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
+import com.qkt.connectivity.DirectEventVenue
 import com.qkt.connectivity.DirectResult
 import com.qkt.connectivity.VenueRefusal
+import com.qkt.instrument.SlotSymbol
 import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
@@ -38,7 +40,8 @@ class BotTradeCommand(
     }
 
     private fun execute(json: Boolean): Int {
-        val intent = parseBotIntent(args, side)
+        // An event slot names the contract it follows now; a dry run sends nothing, so it is not resolved.
+        val intent = parseBotIntent(args, side).let { if (args.flag("dry-run")) it else followed(it) }
         val source = renderBotStrategy(intent)
         val action = parseBotStrategy(source)
         val asName = args.option("as") ?: "manual"
@@ -66,6 +69,7 @@ class BotTradeCommand(
         val ts = clock.now()
         val (order, result) =
             BotVenues.forSymbol(cfg, intent.qktSymbol).use { opened ->
+                (opened.venue as? DirectEventVenue)?.refusal(intent.qktSymbol)?.let { error(it) }
                 val ctx =
                     opened.venue
                         .facts(intent.qktSymbol)
@@ -131,6 +135,13 @@ class BotTradeCommand(
             System.err.println("REJECTED: ${result.error} (retcode ${result.retcode})")
         }
         return if (result.ok) ExitCodes.SUCCESS else ExitCodes.USER_ERROR
+    }
+
+    private fun followed(intent: BotIntent): BotIntent {
+        if (!SlotSymbol.isSlot(intent.qktSymbol)) return intent
+        return BotVenues.forSymbol(botConfig(args), intent.qktSymbol).use { opened ->
+            intent.copy(qktSymbol = followedContract(opened.venue, opened.broker, intent.qktSymbol))
+        }
     }
 }
 

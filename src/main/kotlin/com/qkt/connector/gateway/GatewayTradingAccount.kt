@@ -45,11 +45,22 @@ class GatewayTradingAccount internal constructor(
     private val client by lazy {
         GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal, throttle)
     }
+    /** The session's symbol map, which the event families also feed contracts listed between two listing reads. */
+    private val sessionSymbols = GatewaySymbols(config.symbolPrefix)
+
+    private val events =
+        GatewayEventFamilies(
+            config.symbolPrefix,
+            { filters -> client.instrumentPages(filters) },
+            sessionSymbols::include,
+            EVENT_POLL_MS,
+        )
+
     private val opened =
         lazy {
             GatewaySession(
                 client,
-                GatewaySymbols(config.symbolPrefix),
+                sessionSymbols,
                 clock,
                 identity,
                 strategies,
@@ -66,9 +77,14 @@ class GatewayTradingAccount internal constructor(
     override val tradingHours: SymbolCalendars =
         GatewaySettings.calendars(config).withInstrumentCategories(config.name) { instrumentSpec(it)?.meta }
 
-    /** A spot or equity instrument's spec from the venue's listing; derivatives keep their catalog terms (null here). */
+    /**
+     * A spot, equity or event instrument's spec from the venue's listing, found by its symbol (the code with `-`
+     * written `_`); futures and options keep their catalog terms (null here).
+     */
     override fun instrumentSpec(qktSymbol: String) =
-        client.instruments().firstOrNull { "${config.symbolPrefix}${it.code}" == qktSymbol }?.instrumentSpec(qktSymbol)
+        GatewaySymbols(config.symbolPrefix).let { symbols ->
+            client.instruments().firstOrNull { symbols.qkt(it.code) == qktSymbol }?.instrumentSpec(qktSymbol)
+        }
 
     private val quotes =
         GatewayMarketSource(
@@ -80,9 +96,12 @@ class GatewayTradingAccount internal constructor(
             bars = client::bars,
             capabilities = { client.health().capabilities },
             prints = { code, kind, fromMs, toMs -> historyClient.prints(code, kind, fromMs, toMs) },
+            events = events,
         )
 
     override val marketData: MarketSource = quotes
+
+    override val eventFamilies: InstrumentRegistry get() = events
 
     override val contractCatalogs: ContractCatalogSource
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
@@ -157,9 +176,13 @@ class GatewayTradingAccount internal constructor(
     /** Closes the account's gateway connection, if it was ever opened. */
     override fun close() {
         if (opened.isInitialized()) opened.value.close()
+        events.close()
         recording.close()
         journal?.close()
     }
 }
 
 private const val MARKS_TIMEOUT_MS = 60_000L
+
+/** How often a live event family is polled for listing changes: the gateway reads its venue's listing each minute. */
+private const val EVENT_POLL_MS = 60_000L

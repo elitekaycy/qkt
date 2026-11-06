@@ -47,7 +47,7 @@
       {"capabilities": ["ZSCORE"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/indicators/catalog/ZScoreTest.kt"]}
     ],
     "numericFunctions": [
-      {"capabilities": ["ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORMALIZE", "POW", "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/dsl/stdlib/FuncRegistryTest.kt"]}
+      {"capabilities": ["ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORM_CDF", "NORMALIZE", "POW", "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"], "strength": "exact_numeric", "evidence": ["src/test/kotlin/com/qkt/dsl/stdlib/FuncRegistryTest.kt"]}
     ]
   }
 }

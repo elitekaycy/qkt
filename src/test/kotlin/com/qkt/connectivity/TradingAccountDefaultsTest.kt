@@ -1,6 +1,7 @@
 package com.qkt.connectivity
 
 import com.qkt.common.SystemClock
+import com.qkt.instrument.StandardInstrumentRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -20,9 +21,18 @@ class TradingAccountDefaultsTest {
         assertThat(account.fundingRates).isNull()
         assertThat(account.markHistory).isNull()
         assertThat(account.printHistory).isNull()
+        assertThat(account.eventFamilies).isNull()
         assertThatThrownBy { account.directVenue() }
             .isInstanceOf(UnsupportedOperationException::class.java)
             .hasMessageContaining("brokers.prop (type mt5) cannot be driven one-shot")
+    }
+
+    @Test
+    fun `a session's registry gains no event layer when no account lists event families`() {
+        val accounts =
+            AccountDirectory.open(listOf(acct("prop")), ConnectorRegistry(listOf(FakeConnector("mt5"))), context)
+
+        assertThat(accounts.withEventFamilies(StandardInstrumentRegistry)).isSameAs(StandardInstrumentRegistry)
     }
 
     @Test

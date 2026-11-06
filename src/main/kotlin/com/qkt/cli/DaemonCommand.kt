@@ -251,7 +251,7 @@ class DaemonCommand(
                     stateDir = stateDir,
                     marketSourceProvider = effectiveSourceFactory,
                     brokerFactories = brokerFactories,
-                    instrumentRegistry = daemonInstrumentRegistry,
+                    instrumentRegistry = accounts.withEventFamilies(daemonInstrumentRegistry),
                     calendarFor = daemonCalendarFor,
                     persistor = statePersistor,
                     notifier = notifier,

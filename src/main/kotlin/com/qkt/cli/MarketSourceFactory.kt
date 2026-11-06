@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import com.qkt.derivatives.events.EventChainSymbol
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.hub.HubMarketSource
@@ -25,7 +26,8 @@ import java.nio.file.Path
  * Shared composite-source construction for `qkt daemon` and `qkt run`.
  *
  * Routes, first match wins: the data hub (`HUB:`) when a store is configured, the cataloged macro
- * policy-rate series, chain analytics streams (`CHAIN:`) when [instruments] declares option roots,
+ * policy-rate series, option chain analytics streams (`CHAIN:`) when [instruments] declares option roots (an event
+ * family's `CHAIN:` stream is its account's, which feeds the family),
  * then [accountRoutes] — one prefix route per trading account that supplies
  * its own prices, as built by [com.qkt.connectivity.AccountDirectory.marketDataRoutes]. How an
  * account's feed is built and shared (MT5 accounts on one gateway share one poller, for example)
@@ -77,7 +79,8 @@ object MarketSourceFactory {
         // Chain analytics streams are computed from the stored chains the live recorder appends to.
         if (instruments?.options() != null) {
             routes.add(
-                SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments, clock),
+                SymbolPattern { it.startsWith(ChainAnalyticsSymbol.PREFIX) && !EventChainSymbol.isEventChain(it) } to
+                    ChainAnalyticsMarketSource(instruments, clock),
             )
         }
         routes.addAll(accountRoutes)

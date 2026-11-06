@@ -1,7 +1,6 @@
 package com.qkt.connector.gateway
 
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.Response
@@ -28,6 +27,12 @@ internal class FakeGateway(
 
     /** Listing entries that replace the default option listing of their code (a future, say). */
     val instruments = java.util.concurrent.ConcurrentHashMap<String, WireInstrument>()
+
+    /** A filtered listing read's answer to `updated_since` ([listing]); null serves the whole filtered list. */
+    @Volatile var changes: ((since: Long) -> WireInstrumentPage)? = null
+
+    /** How many instruments one page of a filtered listing read holds. */
+    @Volatile var listingPage = 5000
 
     /** Closed bars by venue code and window; `GET /v1/bars` serves them [barsPage] at a time. */
     val bars = HashMap<Pair<String, Long>, List<WireBar>>()
@@ -113,16 +118,7 @@ internal class FakeGateway(
         return when {
             path == "/v1/health" -> FakeWire.ok(health())
             path == "/v1/account" -> FakeWire.ok(account)
-            path == "/v1/instruments" ->
-                FakeWire.ok(
-                    json.encodeToString(
-                        ListSerializer(WireInstrument.serializer()),
-                        codes.map {
-                            instruments[it]
-                                ?: FakeWire.instrument(it)
-                        },
-                    ),
-                )
+            path == "/v1/instruments" -> listing(url)
             path == "/v1/positions" ->
                 FakeWire.ok(
                     json.encodeToString(WirePositions.serializer(), WirePositions("netting", venue.positions())),

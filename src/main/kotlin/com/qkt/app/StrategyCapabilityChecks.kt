@@ -3,9 +3,13 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.EventFieldCompiler
+import com.qkt.dsl.compile.EventFieldReader
 import com.qkt.dsl.compile.TradeFlowReader
+import com.qkt.instrument.EventTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.pnl.BookBalanceView
@@ -105,6 +109,32 @@ internal fun requireOptionMarks(
         require(
             problem == null,
         ) { "Strategy '$strategyId' reads the implied volatility or Greeks of $symbol but $problem" }
+    }
+}
+
+/**
+ * Refuse to start a strategy that reads an event contract's fields (`<alias>.minutes_left`, `.floor_strike`, ...) on a
+ * symbol that is not a catalogued event contract, or its `taker_fee` / `maker_fee` on one whose fee model is unknown,
+ * so a rule never reads an Undefined that nothing will fill, nor a fee that silently reads as zero.
+ */
+internal fun requireEventTerms(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    instruments: InstrumentRegistry,
+) {
+    val reads = (strategy as? EventFieldReader)?.eventReads ?: return
+    for (read in reads) {
+        val terms = instruments.lookup(read.symbol)?.derivative as? EventTerms
+        // A slot reads the contract it follows at the time, so its terms and fee are known only then.
+        val slot = SlotSymbol.parse(read.symbol)?.takeIf { instruments.events()?.family(it.root) != null }
+        val problem =
+            when {
+                slot != null -> null
+                terms == null -> "it is not a catalogued event contract"
+                read.field in EventFieldCompiler.feeFields && terms.fee == null -> "its fee model is unknown"
+                else -> null
+            }
+        require(problem == null) { "Strategy '$strategyId' reads ${read.field} of ${read.symbol} but $problem" }
     }
 }
 

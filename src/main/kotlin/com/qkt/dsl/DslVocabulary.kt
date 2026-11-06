@@ -36,15 +36,28 @@ object DslVocabulary {
     val optionFields: List<String> = listOf("iv", "delta", "gamma", "vega", "theta")
 
     /**
+     * A binary event contract's terms: strike bounds, close and expiry times (epoch ms), minutes left to trade, the
+     * fee one contract pays at the current ask or bid, the occasion's time and the contract's label (a string).
+     * Refused on a stream that is not an event contract; the fee fields also when its fee is unknown.
+     */
+    val eventFields: List<String> =
+        listOf("floor_strike", "cap_strike", "close_at", "expiry_at", "minutes_left", "taker_fee", "maker_fee") +
+            listOf("occurs_at", "minutes_to_occurs", "title")
+
+    /**
      * A contract's volume per bar from its public tape: aggressor buys and sells, and longs and shorts liquidated.
      * Read only a bar back or more (`btc.buy_volume[1]`); refused on a feed that serves no tape.
      */
     val flowFields: List<String> = listOf("buy_volume", "sell_volume", "long_liq_volume", "short_liq_volume")
 
-    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, venue-series, option and flow fields. */
+    /**
+     * Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, venue-series, option, flow and event
+     * fields.
+     */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields + markFields + OpenInterestSymbol.FIELD + BookDepthSymbol.FIELDS + optionFields + flowFields
+            contractFields + markFields + OpenInterestSymbol.FIELD + BookDepthSymbol.FIELDS + optionFields +
+            flowFields + eventFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> =

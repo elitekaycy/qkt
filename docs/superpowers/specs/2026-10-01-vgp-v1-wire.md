@@ -87,8 +87,10 @@ A list (or one) of:
  "contract_size": "1", "tick_size": "5", "volume_step": "0.01", "volume_min": "0.01",
  "expiry": 1798185600000, "strike": "92000", "right": "call", "underlying": "BTC_USDC"}
 ```
-`kind` is `spot`, `perpetual`, `future`, `option` or `equity` (a share held outright); `expiry` is absent for
-spot, perpetuals and equities; `strike`, `right` and `underlying` only for options.
+`kind` is `spot`, `perpetual`, `future`, `option`, `equity` (a share held outright) or `event` (a binary event
+contract: it pays 1 per contract when its question resolves YES and 0 when NO, and is priced in [0, 1]); `expiry`
+is absent for spot, perpetuals and equities (for an event it is when the result is expected); `strike`, `right`
+and `underlying` only for options.
 `category` is the venue's own grouping of the instrument (`us_equity`), absent when it has none; qkt matches
 session calendars against it. `trading` is `long_only`, `short_only`, `close_only` or `disabled` for an
 instrument the account may not freely trade (a delisted share is `close_only`, one the venue will not lend
@@ -97,6 +99,32 @@ instrument the account may not freely trade (a delisted share is `close_only`, o
 P&L (`quantity × contract_size × price change`); `volume_step` is the increment a quantity moves in and
 `volume_min` the smallest. A venue that takes amounts in the base coin (Deribit's linear contracts) lists
 `contract_size` 1 and its minimum trade amount as both `volume_step` and `volume_min`.
+An `event` also carries its terms, all absent for every other kind:
+```json
+{"code": "KXINXU-26NOV06H1500-T7425", "kind": "event", "currency": "USD", "contract_size": "1",
+ "tick_size": "0.01", "volume_step": "0.01", "volume_min": "1", "expiry": 1794006000000,
+ "series": "KXINXU", "event": "KXINXU-26NOV06H1500", "strike_type": "greater_or_equal", "floor": "7425",
+ "open_at": 1794002400000, "close_at": 1794006000000, "occasion": "26NOV06H1500",
+ "can_close_early": false, "exclusive": false, "frequency": "1h", "title": "7,425 or above",
+ "fee_model": "probability", "taker_fee_rate": "0.07", "maker_fee_rate": "0.0175", "fee_rounding": "0.01"}
+```
+
+| Field | Meaning |
+|---|---|
+| `series` | the recurring question the contract belongs to (its family) |
+| `event` | one instance of the series: one close time, one game, one race |
+| `strike_type` | how the question reads its bounds: `greater`, `greater_or_equal`, `less`, `less_or_equal` (against `floor` / `cap`), `between` (both), `custom` (not a number: a team, a candidate), `none` (no strike) |
+| `floor`, `cap` | the bounds the strike type needs, and only those |
+| `open_at`, `close_at` | when trading opens, and the latest it stops (epoch ms) |
+| `occurs_at` | when the thing asked about happens (a game's start, a window's end), when known |
+| `occasion` | a key shared by series about the same occasion (one game's winner, spread and total), when the venue has one |
+| `can_close_early` | trading may stop before `close_at` (a game ends, a question resolves) |
+| `exclusive` | the event's contracts partition its outcomes: exactly one resolves YES |
+| `frequency` | the series' cadence: `15m`, `1h`, `1d`, `1w`, `1mo`, `1q`, `1y`, `custom` or `one_off` |
+| `title` | the contract's human label |
+| `outcome` | the settled value once known, in [0, 1] (`"0"` for a NO) |
+| `fee_model`, `taker_fee_rate`, `maker_fee_rate`, `fee_rounding` | the per-order fee shape: `probability` is rate × contracts × p × (1 − p), rounded up to `fee_rounding`; no `maker_fee_rate` means no maker fee. Charges still arrive on fills |
+
 A dated contract stays listed for at least **30 days after its expiry**, so a client restarting after
 a weekend still maps the contracts it held to their settlements. (The qkt client also maps an unlisted
 option by its name, which is exact; a dated future has no such rule.)

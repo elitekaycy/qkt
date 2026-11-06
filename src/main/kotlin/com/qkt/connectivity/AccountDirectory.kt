@@ -2,6 +2,8 @@ package com.qkt.connectivity
 
 import com.qkt.broker.BrokerFactory
 import com.qkt.common.TradingCalendar
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.marketdata.depth.BookDepth
 import com.qkt.marketdata.depth.BookDepthMarketSource
 import com.qkt.marketdata.depth.BookDepthSymbol
@@ -71,6 +73,16 @@ class AccountDirectory private constructor(
             account.openInterest
                 ?: error("${account.config.name} (type ${account.config.type}) does not read open interest")
         return source.figures(qktSymbol, fromMs, toMs)
+    }
+
+    /**
+     * [base] with the event families every account lists ([TradingAccount.eventFamilies]) behind it, so a live
+     * session resolves contracts its files do not catalog (listed after start, or never imported); [base] when no
+     * account lists any.
+     */
+    fun withEventFamilies(base: InstrumentRegistry): InstrumentRegistry {
+        val families = accounts.mapNotNull { it.eventFamilies }
+        return if (families.isEmpty()) base else LayeredInstrumentRegistry(listOf(base) + families)
     }
 
     /** The trading hours governing [qktSymbol] on its account, or null when no account serves it. */

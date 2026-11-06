@@ -32,6 +32,7 @@ internal class CompiledStrategy(
     override val markSymbols: Set<String>,
     override val optionMarkSymbols: Set<String>,
     override val flowReads: Set<FlowRead>,
+    override val eventReads: Set<EventRead>,
     override val usesBookSizing: Boolean,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
@@ -43,8 +44,11 @@ internal class CompiledStrategy(
     private val sequenceRuntime: SequenceRuntime,
     private val exitHookCatalog: ExitHookCatalog,
     adHocContext: AdHocCompileContext,
+    override val slotBooks: SlotBooks,
 ) : DslCompiledStrategy,
+    SlotBookOwner,
     TradeFlowReader,
+    EventFieldReader,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private val binding = StrategyHubBinding(streams)

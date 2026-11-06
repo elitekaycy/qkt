@@ -77,3 +77,47 @@ RULES
 - Contracts held to expiry get a settlement print at their intrinsic value, as with a declared
   contract.
 - The run checks the root's chain days the same way as for a chain analytics stream.
+
+## Event analytics (`CHAIN:<VENUE>.<FAMILY>.<metric>.<event>`)
+
+An event family (see event slots in [streams](streams.md)) has its own `CHAIN:` metrics,
+read over every contract of one event: `front` (the open event that stops trading first) or `next`. They follow
+the same rules as the option metrics above: read-only, observations, a value only where it can be computed
+honestly.
+
+<!-- qkt-doc: grammar -->
+```qkt
+<alias> = CHAIN:<VENUE>.<FAMILY>.<metric>.<front|next> EVERY <window>
+```
+
+```qkt
+STRATEGY ladder_median VERSION 1
+SYMBOLS
+    median = CHAIN:KALSHI.KXINXU.implied_median.front EVERY 1m,
+    breaks = CHAIN:KALSHI.KXINXU.ladder_breaks.front EVERY 1m,
+    atm = KALSHI:KXINXU@front.atm EVERY 1m
+RULES
+    -- A ladder whose quotes contradict each other: the coin-flip strike is mispriced against its neighbours.
+    WHEN breaks.close > 0 AND POSITION.atm = 0
+    THEN BUY atm SIZING 5
+```
+
+| Metric | Value | Events |
+|---|---|---|
+| `implied_median` | the strike where the ladder's YES mids cross 0.5, linear between strikes | ladders |
+| `implied_mean` | Σ bucket midpoint × YES mid, over Σ YES mid (the mids normalised to sum to 1) | exclusive, bounded buckets |
+| `overround` | Σ YES asks − 1 (negative: buying every bucket costs less than the payout) | exclusive |
+| `underround` | 1 − Σ YES bids, an absent bid counting 0 | exclusive |
+| `ladder_breaks` | adjacent strikes where the higher strike's YES bid exceeds the lower strike's YES ask | ladders |
+
+A ladder is an event of two or more non-exclusive contracts whose strikes are all "above" (`greater`,
+`greater_or_equal`) a floor; an exclusive event is one whose contracts partition the outcomes (range buckets,
+candidates, teams). A value is taken after every instant at which the family quotes, from each contract's latest
+quote. It is Undefined, and the instant has no tick, when the event does not have the shape the metric needs, when a
+mid is needed and a contract lacks a two-sided quote (`implied_mean`), when an ask is needed and one is absent
+(`overround`), when a contract has never quoted (`underround`), when no adjacent pair has both sides
+(`ladder_breaks`), or when the mids never cross 0.5 (`implied_median`). An open-ended tail bucket ("below 70") has no
+midpoint, so `implied_mean` is Undefined on an event that has one. Event streams run in backtests, from the family's
+stored quote ticks, and live on a gateway account, from the family's quotes (valued after each quote of a contract
+of the family), with no warmup bars. A backtest that also declares option roots checks chain coverage for the option
+streams only.

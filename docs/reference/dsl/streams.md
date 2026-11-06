@@ -100,7 +100,81 @@ The symbol is whatever the venue calls the instrument. **Different brokers may u
 
 The DSL uses the **qkt-side** name. The broker integration layer (Phase 17, Phase 7) translates to the venue's actual symbol via the broker profile's `symbolPolicy` (suffix, alias map). Exness adds `m` automatically; ICMarkets/FTMO/Pepperstone don't.
 
+A symbol is one name of letters, digits and `_`. It may carry one decimal strike, digits `.` digits with no
+spaces (`KALSHI:KXHIGHNY_26NOV06_B73.5`); it may not start with a digit or hold a `-`.
+
 If a venue rejects a symbol you wrote, check the actual venue name vs the qkt-side name. The [config schema](../config-schema.md) covers `symbolPolicy` overrides.
+
+## Event slots (`KALSHI:KXINXU@front.p70`)
+
+An event family (a series of yes/no contracts, such as the hourly S&P 500 ladder `KALSHI:KXINXU`) lists new
+contracts every hour and retires old ones. A **slot** is one stable stream of the family that follows whichever
+contract its selectors pick, so a strategy never names a contract code and never goes stale:
+
+```qkt
+STRATEGY spx_ladder VERSION 1
+SYMBOLS
+    p70 = KALSHI:KXINXU@front.p70 EVERY 1m,
+    atm = KALSHI:KXINXU@front.atm EVERY 1m,
+    up2 = KALSHI:KXINXU@next.above2 EVERY 1m
+RULES
+    -- Buy the strike priced nearest 70% when it trades below 0.72 after the fee; sell what is held above 0.85.
+    WHEN p70.ask + p70.taker_fee < 0.72 AND POSITION.p70 = 0
+    THEN BUY p70 SIZING 10
+    WHEN p70.bid > 0.85 AND POSITION.p70 > 0
+    THEN CLOSE p70
+```
+
+<!-- qkt-doc: grammar -->
+```qkt
+<alias> = <VENUE>:<FAMILY>@<event>.<strike> EVERY <window>
+```
+
+| Part | Selector | Picks |
+|---|---|---|
+| event | `front` | the open event that stops trading first |
+| event | `next` | the one after it |
+| strike | `pNN` (`p05` … `p95`) | the contract whose YES mid is nearest NN %, ties to the lower strike |
+| strike | `atm` | `p50` |
+| strike | `aboveN`, `belowN` | N strikes above / below `atm` in strike order |
+| strike | `topN` (`top1` …) | the contract with the Nth highest YES mid (the favourite), ties to the lower strike |
+
+An event with one contract (a 15-minute up/down window, a single question) resolves every strike selector to it;
+`@front.atm` is the usual spelling. A future's continuous stream (`CME:ES@front`) never has the `.<strike>` part,
+which is how the two are told apart. The family must be declared under `events:` in `instruments.yaml` with its event
+catalog imported ([backtest data](../../how-to/backtest-data.md)); a slot of an undeclared family does not start.
+
+**Selection.** At each close of the slot's `EVERY` window the selectors read the family's quotes as they stood just
+before that instant and pick a contract; the pick holds until the next close. Only contracts with a two-sided quote
+(a bid at or below the ask) are candidates. Same data, same pick. The slot's bars are the followed contract's YES
+prices, never back-adjusted: when the pick changes, the next bar is the new contract's, so `p70` is a
+constant-probability series and its indicators keep their history across events. `p70.contract` names the contract
+a bar came from (its code, `KXINXU_26NOV06H1500_T7425`), and the event contract fields below
+(`floor_strike`, `minutes_left`, `taker_fee`, …) read that contract's terms.
+
+**Orders land on real contracts.** `BUY p70` is placed, when the rule fires, on the contract whose prices the rule
+just read. The slot keeps a book of the contracts it opened, and a contract stays held after the slot moves on,
+until it settles at its outcome or the strategy closes it.
+
+- An order opposite to what the slot holds reduces first: `SELL p70` while long closes its held contracts oldest
+  first at their own quotes, and only what is left opens NO on the contract the slot follows now. A slot therefore
+  never holds YES on one contract and NO on another, and while a held contract has stopped trading (awaiting its
+  result) no opposite remainder opens.
+- `POSITION.p70` is the signed total of the book: positive long YES, negative long NO, 0 when it holds nothing, so
+  `POSITION.p70 = 0` does not re-enter while an earlier entry is still held.
+- `CLOSE p70` closes every contract in the book and cancels their working orders.
+- Market and limit orders translate; any other order type on a slot is suppressed with the reason.
+
+Slots run in backtests and live. In a backtest a slot reads its family's stored quote ticks; it has no bars of its
+own, so warmup starts cold, and `--tick-fills` is refused. Live, on a gateway account, a slot subscribes its whole
+family (the gateway's `roots=<series>` quote subscription, every contract of the series including ones listed after
+start) and picks the same way at each close of its window; the family is the gateway's `kind: event` listing of the
+series, polled for changes each minute, so a live slot needs no `events:` declaration or imported catalog (one that
+is declared still resolves its catalogued contracts from the file). A contract the venue has paused (`trading:
+disabled`) or closes out only is not picked, and orders on it are refused. Live warmup starts cold too. After a
+restart, the contracts a slot held come back into its book from the venue's positions, oldest first (two slots of
+one family share a netting position per contract, which returns to the first of them). The family's contracts are
+traded and settled like any event contract, and trades and settlements report the real contract symbols.
 
 ## Timeframes (`EVERY <window>`)
 
@@ -226,6 +300,48 @@ SYMBOLS
 RULES
     WHEN c.iv < 40 AND c.delta > 0.3 AND c.delta < 0.5 AND POSITION.c = 0   -- cheap vol, near the money
     THEN BUY c SIZING 0.1
+```
+
+### Event contract fields (`<alias>.minutes_left`, `.floor_strike`, ...)
+
+A binary event contract (a Kalshi-style "S&P 500 at 7,425 or above at 15:00" that pays 1 on YES and 0 on NO)
+trades at prices from 0 to its payout, so `close`, `bid` and `ask` read as the YES probability. Its stream also
+reads the contract's terms:
+
+```qkt
+k.floor_strike       -- the lower bound of the question ("7,425 or above": 7425); Undefined when it has none
+k.cap_strike         -- the upper bound ("below 73", or the top of "73 to 74"); Undefined when it has none
+k.close_at           -- when trading stops, epoch milliseconds
+k.expiry_at          -- when the result is expected, epoch milliseconds
+k.minutes_left       -- minutes until close_at, from the bar's close (fractions; negative once it passed)
+k.occurs_at          -- when the thing asked about happens (a game's start), epoch ms; Undefined when unknown
+k.minutes_to_occurs  -- minutes until occurs_at (negative once it started: in-game)
+k.taker_fee          -- the fee one contract pays buying at the current ask
+k.maker_fee          -- the fee one contract pays resting at the current bid
+k.title              -- the contract's label (a string: compare with = or !=)
+```
+
+All of them are read as of the bar's close, never the wall clock, so a backtest and a live run see the same
+`minutes_left`. The fees follow the contract's probability fee model, `rate × p × (1 − p)` per contract at price
+`p` (on a payout other than 1, `p` is the price's share of the payout and the fee is scaled back to money). They
+are **unrounded**: the venue rounds the fee of a whole order up to its unit, so one contract's share of an order
+is this value, not the rounded fee of a one-contract order. A model without a maker rate reads 0 for `maker_fee`;
+either fee is Undefined while the stream has no quote on that side.
+
+A strategy that reads any of these on a stream that is not a catalogued event contract does not start, and one
+that reads `taker_fee` or `maker_fee` on a contract whose fee model is unknown does not start either: a fee never
+reads as a silent zero. A field the strategy does not read costs nothing.
+
+Venue codes with a decimal strike keep the `.` in the symbol (see [symbol names](#symbol-names)):
+
+```qkt
+STRATEGY nyc_high_fade VERSION 1
+SYMBOLS
+    hi = KALSHI:KXHIGHNY_26NOV06_B73.5 EVERY 1m
+RULES
+    -- An expensive 73-74 bucket in the last half hour: sell it, if the taker fee leaves an edge.
+    WHEN hi.minutes_left < 30 AND hi.bid > 0.85 + hi.taker_fee AND POSITION.hi = 0
+    THEN SELL hi SIZING 10
 ```
 
 ### Trade flow and liquidations (`<alias>.buy_volume[1]`, ...)
