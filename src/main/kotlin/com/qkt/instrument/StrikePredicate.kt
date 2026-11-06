@@ -33,8 +33,9 @@ data class StrikePredicate(
         require((floor != null) == needs.first && (cap != null) == needs.second) {
             "StrikePredicate $type takes ${bounds(needs)}: floor=$floor cap=$cap"
         }
-        require(floor == null || cap == null || floor < cap) {
-            "StrikePredicate floor must be below cap: $floor >= $cap"
+        // An exact-count bucket ("exactly 45 seats") carries the same floor and cap.
+        require(floor == null || cap == null || floor <= cap) {
+            "StrikePredicate floor must not be above cap: $floor > $cap"
         }
     }
 

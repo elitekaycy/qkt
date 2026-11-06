@@ -53,7 +53,7 @@ class GatewayEventRefusalTest {
     @Test
     fun `terms that disagree are refused`() {
         refused(valid.copy(cap = null), "a floor and a cap")
-        refused(valid.copy(floor = "7425", cap = "7400"), "below cap")
+        refused(valid.copy(floor = "7425", cap = "7400"), "not be above cap")
         refused(valid.copy(closeAt = 1_794_002_399_999L), "closeAtMs")
         refused(valid.copy(outcome = "2"), "outcome")
         refused(valid.copy(contractSize = "100"), "contract_size")
