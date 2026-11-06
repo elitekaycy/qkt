@@ -165,10 +165,16 @@ until it settles at its outcome or the strategy closes it.
 - `CLOSE p70` closes every contract in the book and cancels their working orders.
 - Market and limit orders translate; any other order type on a slot is suppressed with the reason.
 
-Slots run in backtests. A slot reads its family's stored quote ticks; it has no bars of its own, so warmup starts
-cold, and `--tick-fills` is refused. Live slots (the family's quotes through the gateway's `roots=` subscription)
-are not wired yet. The family's contracts are traded and settled like any event contract,
-and trades and settlements report the real contract symbols.
+Slots run in backtests and live. In a backtest a slot reads its family's stored quote ticks; it has no bars of its
+own, so warmup starts cold, and `--tick-fills` is refused. Live, on a gateway account, a slot subscribes its whole
+family (the gateway's `roots=<series>` quote subscription, every contract of the series including ones listed after
+start) and picks the same way at each close of its window; the family is the gateway's `kind: event` listing of the
+series, polled for changes each minute, so a live slot needs no `events:` declaration or imported catalog (one that
+is declared still resolves its catalogued contracts from the file). A contract the venue has paused (`trading:
+disabled`) or closes out only is not picked, and orders on it are refused. Live warmup starts cold too. After a
+restart, the contracts a slot held come back into its book from the venue's positions, oldest first (two slots of
+one family share a netting position per contract, which returns to the first of them). The family's contracts are
+traded and settled like any event contract, and trades and settlements report the real contract symbols.
 
 ## Timeframes (`EVERY <window>`)
 
