@@ -40,8 +40,8 @@ object TickAssembler {
         receivedMs: Long? = null,
     ): Tick {
         check(symbol.isNotEmpty()) { "${location()}: empty symbol" }
-        check(price != null || (bid != null && ask != null)) {
-            "${location()}: row needs price OR (bid AND ask)"
+        check(price != null || bid != null || ask != null) {
+            "${location()}: row needs price OR bid OR ask"
         }
         if (bid != null && ask != null) {
             if (bid > ask) {
@@ -57,12 +57,15 @@ object TickAssembler {
         if (volume != null && volume.signum() < 0) error("${location()}: negative volume: $volume")
         if (bidVolume != null && bidVolume.signum() < 0) error("${location()}: negative bidVolume: $bidVolume")
         if (askVolume != null && askVolume.signum() < 0) error("${location()}: negative askVolume: $askVolume")
+        // A quote with one side (an event contract nobody bids or offers) is priced at the side it has; only an
+        // event import writes one, so every other stored tick has a price or both sides as before.
         val finalPrice =
             price
-                ?: bid!!
-                    .add(ask!!, Money.CONTEXT)
-                    .divide(TWO, Money.CONTEXT)
-                    .setScale(Money.SCALE, Money.ROUNDING)
+                ?: when {
+                    bid != null && ask != null ->
+                        bid.add(ask, Money.CONTEXT).divide(TWO, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+                    else -> bid ?: checkNotNull(ask)
+                }
         // Older Dukascopy cache rows left aggregate volume blank even though both side volumes
         // were stored. Derive it at read time so existing datasets gain the same capability as
         // newly fetched rows without requiring a destructive backfill.

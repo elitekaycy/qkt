@@ -17,6 +17,7 @@ import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.EquityCostCommission
 import com.qkt.pnl.PerLotCommission
 import com.qkt.pnl.PnLCalculator
+import com.qkt.pnl.ProbabilityFeeCommission
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.StrategyPositionTracker
 
@@ -24,9 +25,9 @@ import com.qkt.positions.StrategyPositionTracker
  * The marks, positions and money books one replay writes into: the price tracker, account and
  * per-strategy positions, the accounting engine, account and per-strategy PnL, commissions, the
  * futures roll ledger, the option settlement and structure logs, and the margin liquidator with its
- * log, and what the run's fills rested on ([execution]). Each is the single writer of its quantity for the run; PnL marks at [markTimestamp]. Futures
- * fees are not commissions here: the exchange simulator reports them on each fill, as a live venue
- * does.
+ * log, and what the run's fills rested on ([execution]). Each is the single writer of its quantity for the run; PnL marks at [markTimestamp]. Event
+ * contracts' fees are commissions ([ProbabilityFeeCommission]). Futures fees are not commissions here: the
+ * exchange simulator reports them on each fill, as a live venue does.
  */
 internal class ReplayBooks(
     val instruments: InstrumentRegistry,
@@ -36,7 +37,10 @@ internal class ReplayBooks(
     val priceTracker = MarketPriceTracker()
     val strategyPositions = StrategyPositionTracker()
     val positions = strategyPositions.account
-    val commissionBook = CommissionBook(EquityCostCommission(instruments, PerLotCommission(instruments)))
+    val commissionBook =
+        CommissionBook(
+            ProbabilityFeeCommission(instruments, EquityCostCommission(instruments, PerLotCommission(instruments))),
+        )
     val rolls = RollLedger()
     val contractFills = ContractFillLog()
     val settlements = SettlementLog()
