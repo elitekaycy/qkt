@@ -5,6 +5,8 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.flow.TradeFlow
+import com.qkt.marketdata.marks.MarkPrices
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -14,6 +16,8 @@ import java.time.Instant
  */
 internal class DelegationProbe(
     override val name: String = "probe",
+    private val marks: MarkPrices? = null,
+    private val flow: TradeFlow? = null,
 ) : MarketSource,
     AutoCloseable {
     override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.BARS)
@@ -31,6 +35,10 @@ internal class DelegationProbe(
         calls += "capabilitiesFor:$symbol"
         return setOf(MarketSourceCapability.TICKS)
     }
+
+    override fun marksFor(symbol: String): MarkPrices? = marks
+
+    override fun tradeFlowFor(symbol: String): TradeFlow? = flow
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         calls += "liveTicks:$symbols"
