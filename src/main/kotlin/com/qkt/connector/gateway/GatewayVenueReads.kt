@@ -145,17 +145,16 @@ internal class GatewayVenueReads(
     ): BrokerDeal {
         val base = reads.deal(fill)
         val costs = WireValues.costsOf(fill.costs, fill.time)
+        val symbol = symbols.qkt(fill.symbol)
 
-        fun paid(vararg kinds: CostKind): BigDecimal? =
-            costs.filter { it.kind in kinds }.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ZERO) { s, c ->
-                s - c.amount.amount
-            }
+        // In the account currency, a coin fee priced at the fill; the typed costs keep each as paid.
+        fun paid(vararg kinds: CostKind): BigDecimal? = GatewayDealCosts.paid(costs, symbol, base.price, *kinds)
         return BrokerDeal(
             broker = venue.label,
             dealTicket = base.dealTicket,
             positionTicket = fact.leg.positionId,
             orderTicket = fill.venueOrderId,
-            symbol = symbols.qkt(fill.symbol),
+            symbol = symbol,
             side = Side.valueOf(base.side),
             entry = fact.leg.entry,
             qty = base.lots,
