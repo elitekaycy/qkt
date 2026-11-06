@@ -9,6 +9,7 @@ internal object EventContracts {
     fun terms(
         payout: BigDecimal = BigDecimal.ONE,
         outcome: BigDecimal? = null,
+        fee: ProbabilityFee? = null,
     ) = EventTerms(
         root = "KALSHI:KXINXU",
         event = "KXINXU-26NOV06H1500",
@@ -18,6 +19,7 @@ internal object EventContracts {
         expiryMs = 1_794_006_000_000L,
         payout = payout,
         outcome = outcome,
+        fee = fee,
     )
 
     fun meta(
