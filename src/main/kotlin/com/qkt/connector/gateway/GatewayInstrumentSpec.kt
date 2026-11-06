@@ -8,11 +8,12 @@ import java.math.BigDecimal
 
 /**
  * This listed instrument as the engine's [InstrumentMeta] for [qktSymbol]: the one place a VGP instrument's fields
- * become qkt's. Only a `spot` or `equity` instrument is described this way; a future or option needs exchange terms
- * (expiry, margin, fees) its listing does not carry, so it is left to its contract catalog (null). Commission and
- * swap are not on the listing and are reported unset.
+ * become qkt's. A `spot` or `equity` instrument is described this way, and an `event` contract with its terms
+ * ([eventSpec]); a future or option needs exchange terms (expiry, margin, fees) its listing does not carry, so it is
+ * left to its contract catalog (null). A spot or equity listing's commission and swap are reported unset.
  */
 internal fun WireInstrument.instrumentSpec(qktSymbol: String): VenueInstrumentSpec? {
+    if (kind == "event") return eventSpec(qktSymbol)
     if (kind != "spot" && kind != "equity") return null
     val tick = BigDecimal(tickSize)
     val meta =
