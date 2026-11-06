@@ -116,6 +116,14 @@ Backtests are unchanged: the simulators fill every market close.
 leg that fires after a restart still gets `EXIT AFTER`, timed from its own fill
 (`StackExitAfterRestoreTest`).
 
+A resting entry (`LIMIT`/`STOP`, `DAY`/`GTC`) keeps its hold across a restart taken while it is still
+working: the waiting timer is saved in `timed-exits.json` with the armed ones and re-attaches to the
+restored entry, so its fill arms the exit as usual (#1660). The hold runs from the venue's fill time
+when the venue reports it, so a fill qkt hears late (gateway down, daemon restarted) closes at once if
+its hold has already passed. A saved timer whose entry was not restored is logged at error level at
+start, naming the strategy and symbol. MT5 recovery paths report a recovered fill at the time qkt finds
+it, so there the hold still runs from that moment.
+
 ## Known limitations
 
 - The close is a market order sent on the first tick after the deadline. In live trading it

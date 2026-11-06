@@ -100,7 +100,9 @@ internal class OrderWorkflows(
             openLegQuantity = s.openLegQuantity,
             strategyNetQty = s.strategyNetQty,
             closeGuard = closeGuard,
-        ).also { exits -> s.bus.subscribe<BrokerEvent.OrderFilled> { e -> exits.onFilled(e.clientOrderId) } }
+        ).also { exits ->
+            s.bus.subscribe<BrokerEvent.OrderFilled> { e -> exits.onFilled(e.clientOrderId, e.timestamp) }
+        }
     val cancellation: OrderCancellation =
         OrderCancellation(
             book,
