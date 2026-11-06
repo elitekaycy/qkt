@@ -15,6 +15,15 @@ kover {
         filters {
             excludes {
                 annotatedBy("com.qkt.common.coverage.ExcludeFromCoverage")
+                // Hand-run harnesses registered in qkt.dev-tasks (runDemo, runLiveDemo, runMaxAudit,
+                // runParity*, runStateDemo): mains against live feeds that no product code calls.
+                classes(
+                    "com.qkt.app.MainKt",
+                    "com.qkt.app.LiveDemoKt",
+                    "com.qkt.app.MaxAuditKt",
+                    "com.qkt.app.MaxAuditStrategy*",
+                    "com.qkt.tools.*",
+                )
             }
         }
         verify {
