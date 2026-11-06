@@ -44,7 +44,16 @@ class AstDeclarationInvariantsTest {
     fun `strategy-level names must be unique and present`() {
         val params = listOf(ParamDecl("p", one), ParamDecl("p", one))
         rejects("duplicate PARAM name") {
-            StrategyAst("s", 1, emptyList(), emptyList(), emptyList(), params = params, defaults = null, rules = emptyList())
+            StrategyAst(
+                "s",
+                1,
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                params = params,
+                defaults = null,
+                rules = emptyList(),
+            )
         }
         rejects("LetDecl.name must not be blank") { LetDecl("", one) }
     }

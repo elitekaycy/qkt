@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Test
 /** Located parse errors for malformed order types, TIFs, latch prices and PARAM literals. */
 class OrderClauseErrorsTest {
     private fun parse(rule: String) =
-        Dsl.parse("STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\nPARAM flag = FALSE\nRULES\n    $rule\n")
+        Dsl.parse(
+            "STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\nPARAM flag = FALSE\nRULES\n    $rule\n",
+        )
 
     private fun errors(rule: String): List<String> = (parse(rule) as ParseResult.Failure).errors.map { it.message }
 
@@ -35,9 +37,15 @@ class OrderClauseErrorsTest {
     fun `a boolean PARAM literal parses and cannot be negated`() {
         val ok = parse("WHEN flag THEN BUY b SIZING 1") as ParseResult.Success
 
-        assertThat(ok.value.params.single().value).isEqualTo(BoolLit(false))
+        assertThat(
+            ok.value.params
+                .single()
+                .value,
+        ).isEqualTo(BoolLit(false))
         val negated =
-            Dsl.parse("STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\nPARAM flag = -FALSE\n") as ParseResult.Failure
+            Dsl.parse(
+                "STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\nPARAM flag = -FALSE\n",
+            ) as ParseResult.Failure
         assertThat(negated.errors.map { it.message }).contains("cannot negate a boolean")
     }
 }

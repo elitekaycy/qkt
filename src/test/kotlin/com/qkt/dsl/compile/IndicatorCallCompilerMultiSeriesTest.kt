@@ -17,7 +17,16 @@ import org.junit.jupiter.api.Test
 /** `resid(...)` and `confirm_ratio(...)` compile to k-series bindings whose value the compiled expression reads. */
 class IndicatorCallCompilerMultiSeriesTest {
     private val streams = mapOf("b" to HubKey("BACKTEST", "BTCUSDT", "1m"))
-    private val bars = listOf("10" to "9", "12" to "10", "11" to "13", "15" to "12", "14" to "16", "18" to "15", "17" to "19")
+    private val bars =
+        listOf(
+            "10" to "9",
+            "12" to "10",
+            "11" to "13",
+            "15" to "12",
+            "14" to "16",
+            "18" to "15",
+            "17" to "19",
+        )
 
     private fun num(v: String) = NumLit(BigDecimal(v))
 
@@ -39,7 +48,7 @@ class IndicatorCallCompilerMultiSeriesTest {
         return EvalContext(candle, streams, emptyMap(), testStrategyContext())
     }
 
-    /** Compiles [expr], feeds every bar, and returns the compiled value after each bar beside the reference indicator's. */
+    /** Feeds every bar and pairs the compiled value after each bar with the reference indicator's. */
     private fun replay(
         expr: IndicatorCall,
         reference: MultiIndicator,

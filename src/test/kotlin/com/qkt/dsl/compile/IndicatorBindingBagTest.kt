@@ -93,7 +93,12 @@ class IndicatorBindingBagTest {
             }
         var second: Value = Value.Num(BigDecimal.ONE)
         val bag = IndicatorBinding.Bag()
-        bag.bindMulti(call("RESID"), multi, listOf(CompiledExpr { Value.Num(it.candle.close) }, CompiledExpr { second }), "b")
+        bag.bindMulti(
+            call("RESID"),
+            multi,
+            listOf(CompiledExpr { Value.Num(it.candle.close) }, CompiledExpr { second }),
+            "b",
+        )
 
         bag.updateAll(ctx("5", "5"))
         second = Value.Undefined
@@ -110,8 +115,11 @@ class IndicatorBindingBagTest {
 
     @Test
     fun `binding rejects an arithmetic series and a non-literal constant argument`() {
-        assertThatThrownBy { IndicatorBinding.Bag().bind(call("EMA", BinaryOp(BinOp.ADD, field("close"), num(1)), num(3))) }
-            .hasMessageContaining("series arg must be a stream field, another indicator call")
+        assertThatThrownBy {
+            IndicatorBinding.Bag().bind(
+                call("EMA", BinaryOp(BinOp.ADD, field("close"), num(1)), num(3)),
+            )
+        }.hasMessageContaining("series arg must be a stream field, another indicator call")
         assertThatThrownBy { IndicatorBinding.Bag().bind(call("EMA", field("close"), field("open"))) }
             .hasMessageContaining("Indicator EMA non-series arg must be a numeric literal")
     }
@@ -136,7 +144,12 @@ class IndicatorBindingBagTest {
             .hasMessageContaining("two-series binding only supports NUMERIC_SERIES")
         assertThatThrownBy { IndicatorBinding.Bag().bindExpression(call("EMA", field("close")), series, "b") }
             .hasMessageContaining("Indicator EMA expects 2 args, got 1")
-        assertThatThrownBy { IndicatorBinding.Bag().bindExpression(call("EMA", field("close"), field("open")), series, "b") }
-            .hasMessageContaining("Indicator EMA non-series arg must be a numeric literal")
+        assertThatThrownBy {
+            IndicatorBinding.Bag().bindExpression(
+                call("EMA", field("close"), field("open")),
+                series,
+                "b",
+            )
+        }.hasMessageContaining("Indicator EMA non-series arg must be a numeric literal")
     }
 }

@@ -30,7 +30,12 @@ class StackAtCompilerArithmeticTest {
     private fun clause(
         sizing: ExprAst = num("1"),
         stopLoss: ExprAst = num("2"),
-    ) = StackAtClause(num("10"), DurationAst(60_000L), SizeQty(sizing), BracketAst(ChildBy(stopLoss), ChildBy(num("20"))))
+    ) = StackAtClause(
+        num("10"),
+        DurationAst(60_000L),
+        SizeQty(sizing),
+        BracketAst(ChildBy(stopLoss), ChildBy(num("20"))),
+    )
 
     @Test
     fun `sizing subtracts and negates relative to the parent quantity`() {
@@ -41,7 +46,10 @@ class StackAtCompilerArithmeticTest {
 
     @Test
     fun `bracket distances fold subtraction and division of literals`() {
-        val tier = StackAtCompiler.compile(clause(stopLoss = op(BinOp.DIV, op(BinOp.SUB, num("10"), num("4")), num("3"))))
+        val tier =
+            StackAtCompiler.compile(
+                clause(stopLoss = op(BinOp.DIV, op(BinOp.SUB, num("10"), num("4")), num("3"))),
+            )
 
         assertThat(tier.slDistance).isEqualByComparingTo("2")
     }

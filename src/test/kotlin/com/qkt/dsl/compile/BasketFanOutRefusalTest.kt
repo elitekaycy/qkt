@@ -26,8 +26,9 @@ class BasketFanOutRefusalTest {
 
         assertThatThrownBy { actions.compile(Buy("pair", ActionOpts(sizing = notional, stack = stack))) }
             .hasMessageContaining("BASKET order on 'pair' cannot carry STACK/STACK_AT")
-        assertThatThrownBy { actions.compile(Buy("pair", ActionOpts(sizing = notional, orderType = Limit(NumLit(BigDecimal.ONE))))) }
-            .hasMessageContaining("BASKET order on 'pair' must be a market order")
+        assertThatThrownBy {
+            actions.compile(Buy("pair", ActionOpts(sizing = notional, orderType = Limit(NumLit(BigDecimal.ONE)))))
+        }.hasMessageContaining("BASKET order on 'pair' must be a market order")
     }
 
     @Test

@@ -75,10 +75,19 @@ class UnboundCandleStateTest {
 
     @Test
     fun `an OPEN snapshot is cleared when the position closes`() {
-        val src = "LET e = b.close\nRULES\n    WHEN POSITION.b = 0 AND b.close > 100 THEN BUY b SIZING 1\n" +
-            "    WHEN b.close < e@OPEN - 5 THEN SELL b SIZING 1"
+        val src =
+            "LET e = b.close\nRULES\n    WHEN POSITION.b = 0 AND b.close > 100 THEN BUY b SIZING 1\n" +
+                "    WHEN b.close < e@OPEN - 5 THEN SELL b SIZING 1"
 
-        val stillOpen = run(compile(src), listOf(candle(0, "101") to "0", candle(1, "100") to "1", candle(2, "90") to "1"))
+        val stillOpen =
+            run(
+                compile(src),
+                listOf(
+                    candle(0, "101") to "0",
+                    candle(1, "100") to "1",
+                    candle(2, "90") to "1",
+                ),
+            )
         val closed = run(compile(src), listOf(candle(0, "101") to "0", candle(1, "100") to "1", candle(2, "90") to "0"))
 
         assertThat(stillOpen).containsExactly(listOf("Buy"), emptyList(), listOf("Sell"))
@@ -102,7 +111,9 @@ class UnboundCandleStateTest {
                 ),
             )
 
-        assertThat(fired).containsExactly(emptyList(), emptyList(), listOf("Sell"), emptyList(), emptyList(), emptyList())
+        assertThat(
+            fired,
+        ).containsExactly(emptyList(), emptyList(), listOf("Sell"), emptyList(), emptyList(), emptyList())
     }
 
     @Test
@@ -131,7 +142,11 @@ class UnboundCandleStateTest {
             ).run()
 
         assertThat(result.trades.map { it.trade.side }).containsExactly(Side.BUY)
-        assertThat(result.trades.single().trade.timestamp).isGreaterThanOrEqualTo(3 * 60_000L)
+        assertThat(
+            result.trades
+                .single()
+                .trade.timestamp,
+        ).isGreaterThanOrEqualTo(3 * 60_000L)
     }
 
     private companion object {

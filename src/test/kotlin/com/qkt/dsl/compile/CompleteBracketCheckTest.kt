@@ -18,11 +18,19 @@ class CompleteBracketCheckTest {
     private fun ast(
         body: String,
         defaults: String = "",
-    ) = (Dsl.parse("STRATEGY s VERSION 1\n${defaults}SYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\n$body\n") as ParseResult.Success).value
+    ) = (
+        Dsl.parse(
+            "STRATEGY s VERSION 1\n${defaults}SYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\n$body\n",
+        ) as ParseResult.Success
+    ).value
 
     @Test
     fun `a latch entry bracket with only a stop loss is incomplete`() {
-        val strategy = ast("RULES\n    WHEN b.close > 0 THEN LATCH b OFFSET 1 ARM 5m { ENTER MARKET BRACKET { STOP LOSS AGAINST 8 } }")
+        val strategy =
+            ast(
+                "RULES\n    WHEN b.close > 0 THEN LATCH b OFFSET 1 ARM 5m " +
+                    "{ ENTER MARKET BRACKET { STOP LOSS AGAINST 8 } }",
+            )
 
         assertThatThrownBy { validateCompleteBrackets(strategy) }
             .hasMessageContaining("BRACKET requires both STOP LOSS and TAKE PROFIT; missing TAKE PROFIT")

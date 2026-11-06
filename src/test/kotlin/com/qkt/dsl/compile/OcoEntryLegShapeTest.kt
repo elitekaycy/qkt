@@ -64,7 +64,9 @@ class OcoEntryLegShapeTest {
     @Test
     fun `a leg that is not an entry is rejected when the pair fires`() {
         assertThatThrownBy { fire(Close("b"), sellStop)(ctx) }
-            .hasMessageContaining("OCO_ENTRY leg1 must compile to exactly one Signal.Submit, got [CancelPendingForSymbol")
+            .hasMessageContaining(
+                "OCO_ENTRY leg1 must compile to exactly one Signal.Submit, got [CancelPendingForSymbol",
+            )
     }
 
     @Test

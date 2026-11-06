@@ -87,6 +87,8 @@ class StackAndOcoExitSkipTest {
 
         assertThat(fire(entry(OcoAst(ChildAt(bid), ChildAt(num("110")))))).isEmpty()
         assertThat(fire(entry(OcoAst(ChildAt(num("90")), ChildAt(bid))))).isEmpty()
-        assertThat(fire(entry(OcoAst(ChildAt(num("90")), ChildAt(num("110"))))).single()).isInstanceOf(Signal.Submit::class.java)
+        assertThat(
+            fire(entry(OcoAst(ChildAt(num("90")), ChildAt(num("110"))))).single(),
+        ).isInstanceOf(Signal.Submit::class.java)
     }
 }

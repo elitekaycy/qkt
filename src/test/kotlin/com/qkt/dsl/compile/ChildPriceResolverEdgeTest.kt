@@ -40,8 +40,13 @@ class ChildPriceResolverEdgeTest {
 
         assertThat(trail.evaluate(ec, Side.BUY, entry, null)).isEqualByComparingTo("96")
         assertThat(trail.evaluate(ec, Side.SELL, entry, null)).isEqualByComparingTo("104")
-        assertThat(resolver.compile(ChildArmedTrail(undefined, num("10")), ChildKind.STOP_LOSS).evaluate(ec, Side.BUY, entry, null))
-            .isNull()
+        assertThat(
+            resolver
+                .compile(
+                    ChildArmedTrail(undefined, num("10")),
+                    ChildKind.STOP_LOSS,
+                ).evaluate(ec, Side.BUY, entry, null),
+        ).isNull()
     }
 
     @Test
@@ -73,5 +78,6 @@ class ChildPriceResolverEdgeTest {
     }
 
     private operator fun StreamFieldRef.minus(v: Int) =
-        com.qkt.dsl.ast.BinaryOp(com.qkt.dsl.ast.BinOp.SUB, this, num(v.toString()))
+        com.qkt.dsl.ast
+            .BinaryOp(com.qkt.dsl.ast.BinOp.SUB, this, num(v.toString()))
 }

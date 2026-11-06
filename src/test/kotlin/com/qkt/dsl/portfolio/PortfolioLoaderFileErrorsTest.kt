@@ -79,7 +79,11 @@ class PortfolioLoaderFileErrorsTest {
         tmp.resolve("child.qkt").writeText(child)
         val path = portfolio(tmp, "IMPORT 'child.qkt' AS c\nRULES\n    RUN c OVERRIDE { riskPct = 0.02 }")
 
-        val params = PortfolioLoader.load(path).children.single().ast.params.associate { it.name to (it.value as NumLit).value }
+        val params =
+            PortfolioLoader.load(path).children.single().ast.params.associate {
+                it.name to
+                    (it.value as NumLit).value
+            }
 
         assertThat(params["riskPct"]).isEqualByComparingTo(BigDecimal("0.02"))
         assertThat(params["fast"]).isEqualByComparingTo(BigDecimal("9"))

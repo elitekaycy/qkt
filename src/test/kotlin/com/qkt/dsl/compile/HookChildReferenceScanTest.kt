@@ -29,7 +29,10 @@ class HookChildReferenceScanTest {
                 ActionOpts(
                     sizing = SizeQty(NumLit(BigDecimal.ONE)),
                     onFill = listOf(log(StreamFieldRef("silver", "tick_size")), Close("gold")),
-                    exitHooks = ExitHooksAst(onClose = listOf(log(StreamFieldRef("oil", "contract_size")), Close("gold"))),
+                    exitHooks =
+                        ExitHooksAst(
+                            onClose = listOf(log(StreamFieldRef("oil", "contract_size")), Close("gold")),
+                        ),
                 ),
             ),
         )

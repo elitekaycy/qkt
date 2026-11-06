@@ -36,9 +36,18 @@ class CompileGuardsTest {
     fun `a sync group needs two named members and a positive timeout`() {
         val silver = HubKey("BACKTEST", "XAGUSD", "1m")
 
-        assertThatThrownBy { SyncGroupKey(mapOf("g" to gold), null) }.hasMessageContaining("needs at least 2 members, got 1")
-        assertThatThrownBy { SyncGroupKey(mapOf("g" to gold, " " to silver), null) }.hasMessageContaining("alias keys must not be blank")
-        assertThatThrownBy { SyncGroupKey(mapOf("g" to gold, "s" to silver), 0L) }.hasMessageContaining("timeoutMs must be positive")
+        assertThatThrownBy {
+            SyncGroupKey(
+                mapOf("g" to gold),
+                null,
+            )
+        }.hasMessageContaining("needs at least 2 members, got 1")
+        assertThatThrownBy {
+            SyncGroupKey(mapOf("g" to gold, " " to silver), null)
+        }.hasMessageContaining("alias keys must not be blank")
+        assertThatThrownBy {
+            SyncGroupKey(mapOf("g" to gold, "s" to silver), 0L)
+        }.hasMessageContaining("timeoutMs must be positive")
     }
 
     @Test

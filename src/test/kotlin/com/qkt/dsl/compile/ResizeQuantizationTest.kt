@@ -92,8 +92,18 @@ class ResizeQuantizationTest {
 
     @Test
     fun `a delta that quantizes below the venue minimum is suppressed`() {
-        val below = resize("1.17", legs(leg(LegRole.PRIMARY)), registry(step = "0.1", min = "0.15")).single() as Signal.Suppressed
-        val zero = resize("1.05", legs(leg(LegRole.PRIMARY)), registry(step = "0.1", min = "0.01")).single() as Signal.Suppressed
+        val below =
+            resize(
+                "1.17",
+                legs(leg(LegRole.PRIMARY)),
+                registry(step = "0.1", min = "0.15"),
+            ).single() as Signal.Suppressed
+        val zero =
+            resize(
+                "1.05",
+                legs(leg(LegRole.PRIMARY)),
+                registry(step = "0.1", min = "0.01"),
+            ).single() as Signal.Suppressed
 
         assertThat(below.reason).isEqualTo("RESIZE delta 0.17 quantized below venue minimum 0.15")
         assertThat(zero.reason).isEqualTo("RESIZE delta 0.05 quantized below venue minimum 0.01")

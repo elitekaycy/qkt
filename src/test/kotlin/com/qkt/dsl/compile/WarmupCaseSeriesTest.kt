@@ -11,7 +11,8 @@ class WarmupCaseSeriesTest {
         WarmupRequirements.compute(
             (
                 Dsl.parse(
-                    "STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\nRULES\n    WHEN $cond THEN BUY b SIZING 1\n",
+                    "STRATEGY s VERSION 1\nSYMBOLS\n    b = BACKTEST:BTCUSDT EVERY 1m\n" +
+                        "RULES\n    WHEN $cond THEN BUY b SIZING 1\n",
                 ) as ParseResult.Success
             ).value,
         )

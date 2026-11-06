@@ -14,7 +14,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/** PARAM values reach SEQUENCE stage conditions, DEFAULTS keep a trailing order type, and rule errors carry the rule's line. */
+/** PARAMs reach SEQUENCE stages, DEFAULTS keep a trailing order type, rule errors carry the rule's line. */
 class ParamInSequenceTest {
     private fun parse(source: String) = (Dsl.parse(source.trimIndent()) as ParseResult.Success).value
 

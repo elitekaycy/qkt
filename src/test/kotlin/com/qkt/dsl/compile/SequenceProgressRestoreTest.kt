@@ -17,7 +17,8 @@ class SequenceProgressRestoreTest {
             CompiledSequenceStage("go", null, CompiledExpr { Value.of(false) }),
         )
 
-    private fun runtime() = SequenceRuntime(listOf(CompiledSequence("sweep", "gold", "BACKTEST:XAUUSD", stages, setOf("gold"))))
+    private fun runtime() =
+        SequenceRuntime(listOf(CompiledSequence("sweep", "gold", "BACKTEST:XAUUSD", stages, setOf("gold"))))
 
     @Test
     fun `persisted stage, snapshots and completion pulse are restored for a known sequence`() {

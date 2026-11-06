@@ -89,7 +89,12 @@ class KotlinDslSourceParityTest {
                 rule {
                     whenever(btc.close gt 0.bd)
                     then {
-                        buy(btc, usdNotional(100.bd), orderType = stopAt(btc.high), bracket = bracket(childAt(btc.low), childPct(2.bd)))
+                        buy(
+                            btc,
+                            usdNotional(100.bd),
+                            orderType = stopAt(btc.high),
+                            bracket = bracket(childAt(btc.low), childPct(2.bd)),
+                        )
                     }
                 }
                 rule {
@@ -98,7 +103,14 @@ class KotlinDslSourceParityTest {
                 }
                 rule {
                     whenever(btc.close gt 0.bd)
-                    then { buy(btc, pctBalance("0.05".bd), orderType = trailingBy(10.bd), oco = oco(childAt(btc.low), childAt(btc.high))) }
+                    then {
+                        buy(
+                            btc,
+                            pctBalance("0.05".bd),
+                            orderType = trailingBy(10.bd),
+                            oco = oco(childAt(btc.low), childAt(btc.high)),
+                        )
+                    }
                 }
                 rule {
                     whenever(btc.close gt 0.bd)
@@ -109,7 +121,8 @@ class KotlinDslSourceParityTest {
             parsedRules(
                 "    WHEN btc.close > 0 THEN BUY btc SIZING 100 USD ORDER_TYPE = STOP AT btc.high " +
                     "BRACKET { STOP_LOSS AT btc.low, TAKE_PROFIT BY 2 PCT }\n" +
-                    "    WHEN btc.close > 0 THEN SELL btc SIZING 5 PCT OF EQUITY ORDER_TYPE = STOP AT btc.low LIMIT AT btc.low - 1\n" +
+                    "    WHEN btc.close > 0 THEN SELL btc SIZING 5 PCT OF EQUITY " +
+                    "ORDER_TYPE = STOP AT btc.low LIMIT AT btc.low - 1\n" +
                     "    WHEN btc.close > 0 THEN BUY btc SIZING 5 PCT OF BALANCE ORDER_TYPE = TRAILING BY 10 " +
                     "OCO { STOP AT btc.low, LIMIT AT btc.high }\n" +
                     "    WHEN btc.close > 0 THEN SELL btc SIZING 1 ORDER_TYPE = TRAILING PCT 2",
@@ -136,7 +149,14 @@ class KotlinDslSourceParityTest {
     fun `a layer can carry its own order type and a sizing object`() {
         val l = layer(usdNotional(50.bd), orderType = limitAt(entryPrice - 5.bd), at = entryPrice - 5.bd)
 
-        val expected = StackLayer(com.qkt.dsl.ast.SizeNotional(50.bd), com.qkt.dsl.ast.Limit(entryPrice - 5.bd), entryPrice - 5.bd)
+        val expected =
+            StackLayer(
+                com.qkt.dsl.ast
+                    .SizeNotional(50.bd),
+                com.qkt.dsl.ast
+                    .Limit(entryPrice - 5.bd),
+                entryPrice - 5.bd,
+            )
         assertThat(l).isEqualTo(expected)
     }
 

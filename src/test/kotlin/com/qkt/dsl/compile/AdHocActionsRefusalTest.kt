@@ -14,9 +14,12 @@ class AdHocActionsRefusalTest {
     private fun parse(src: String) = (Dsl.parse(src) as ParseResult.Success).value
 
     private val adHoc =
-        requireNotNull((AstCompiler().compile(parse("$header  WHEN 1 > 2 THEN BUY s0 SIZING 0.01")) as DslCompiledStrategy).adHoc)
+        requireNotNull(
+            (AstCompiler().compile(parse("$header  WHEN 1 > 2 THEN BUY s0 SIZING 0.01")) as DslCompiledStrategy).adHoc,
+        )
 
-    private fun action(text: String): ActionAst = (parse("$header  WHEN TRUE\n  THEN $text").rules.single() as WhenThen).action
+    private fun action(text: String): ActionAst =
+        (parse("$header  WHEN TRUE\n  THEN $text").rules.single() as WhenThen).action
 
     @Test
     fun `an intent cannot open an option structure`() {

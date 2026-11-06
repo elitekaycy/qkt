@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test
 class ForEachExpansionEquivalenceTest {
     private fun rules(body: String): List<Pair<Any, Any>> {
         val source =
-            "STRATEGY s VERSION 1\nSYMBOLS\n    btc = BACKTEST:BTCUSDT EVERY 1h\n    eth = BACKTEST:ETHUSDT EVERY 1h\n" +
+            "STRATEGY s VERSION 1\nSYMBOLS\n    btc = BACKTEST:BTCUSDT EVERY 1h\n" +
+                "    eth = BACKTEST:ETHUSDT EVERY 1h\n" +
                 "RULES\n$body\n"
         val ast = (Dsl.parse(source) as ParseResult.Success).value
         return ast.rules.map { (it as WhenThen).cond to it.action }
@@ -71,7 +72,8 @@ class ForEachExpansionEquivalenceTest {
     fun `exit-hook relative orders and an armed trailing stop are rewritten`() {
         assertExpandsLikeHandWritten(
             "s.close > 0",
-            "BUY s SIZING 1 BRACKET { STOP LOSS TRAILING s.close * 0.01 AFTER MFE >= s.close * 0.02, TAKE_PROFIT BY 9 } " +
+            "BUY s SIZING 1 BRACKET { STOP LOSS TRAILING s.close * 0.01 AFTER MFE >= s.close * 0.02, " +
+                "TAKE_PROFIT BY 9 } " +
                 "ON_STOP { SELL s SIZING 1 ORDER_TYPE = LIMIT AGAINST s.close * 0.01 } " +
                 "ON_TP { BUY s SIZING 1 ORDER_TYPE = STOP WITH s.close * 0.01 } " +
                 "ON_CLOSE { CLOSE s } ON_FILL { SELL s SIZING 1 }",
@@ -94,7 +96,8 @@ class ForEachExpansionEquivalenceTest {
         assertExpandsLikeHandWritten(
             "s.close > 0",
             "LATCH s OFFSET s.close * 0.001 FROM s.high ARM 10m CONFIRM RETEST_HOLD 2 WITHIN 5m { " +
-                "ENTER STOP WITH s.close * 0.001 SIZING 0.5 BRACKET { STOP LOSS AGAINST s.close * 0.002, TAKE PROFIT WITH 20 } ; " +
+                "ENTER STOP WITH s.close * 0.001 SIZING 0.5 " +
+                "BRACKET { STOP LOSS AGAINST s.close * 0.002, TAKE PROFIT WITH 20 } ; " +
                 "ENTER ON eth MARKET SIZING 0.5 } ; " +
                 "RESIZE s TO 0.01 / atr(s, 14) MIN_STEP s.close * 0.0001 ; RESIZE eth TO 1",
         )
@@ -107,8 +110,10 @@ class ForEachExpansionEquivalenceTest {
             "BUY eth SIZING 1 PCT RISK BRACKET { STOP_LOSS BY s.close * 0.01, TAKE_PROFIT BY 9 } ; " +
                 "BUY s SIZING 0.2 BRACKET { STOP LOSS BY 25, TAKE PROFIT BY 60 } " +
                 "STACK_AT MFE >= s.close * 0.01 WITHIN 1h SIZING 0.1 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 } ; " +
-                "OCO_ENTRY { BUY s SIZING 1 ORDER_TYPE = STOP AT s.high, SELL eth SIZING 1 ORDER_TYPE = STOP AT s.low } ; " +
-                "LATCH eth OFFSET s.close * 0.001 ARM 10m { ENTER ON s LIMIT AGAINST 5 SIZING 0.5 BRACKET { STOP LOSS AGAINST 8 } }",
+                "OCO_ENTRY { BUY s SIZING 1 ORDER_TYPE = STOP AT s.high, " +
+                "SELL eth SIZING 1 ORDER_TYPE = STOP AT s.low } ; " +
+                "LATCH eth OFFSET s.close * 0.001 ARM 10m " +
+                "{ ENTER ON s LIMIT AGAINST 5 SIZING 0.5 BRACKET { STOP LOSS AGAINST 8 } }",
         )
     }
 }

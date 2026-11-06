@@ -25,7 +25,8 @@ class ExitRefEvaluationTest {
             exitContext = exit,
         )
 
-    private val takeProfit = ExitContext(BigDecimal("105.5"), Side.SELL, BigDecimal("2"), BigDecimal("11"), ExitReason.TAKE_PROFIT)
+    private val takeProfit =
+        ExitContext(BigDecimal("105.5"), Side.SELL, BigDecimal("2"), BigDecimal("11"), ExitReason.TAKE_PROFIT)
 
     private fun read(
         field: ExitField,

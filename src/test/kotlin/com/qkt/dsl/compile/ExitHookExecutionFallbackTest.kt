@@ -12,7 +12,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/** An exit hook runs against a flat candle at the exit price before any bar closed, and refuses stale or unbound runs. */
+/** An exit hook prices off the exit fill before any bar closed, and refuses stale or unbound runs. */
 class ExitHookExecutionFallbackTest {
     private val strategy =
         AstCompiler().compile(

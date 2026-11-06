@@ -1,8 +1,8 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.AccountRef
-import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.AggFn
+import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
@@ -100,7 +100,8 @@ class SequenceCompilerTest {
                     ),
                 ),
             )
-        val runtime = compile(SequenceDecl("setup", "gold", listOf(stage("a", composite), stage("b", gt(field("gold"))))))
+        val runtime =
+            compile(SequenceDecl("setup", "gold", listOf(stage("a", composite), stage("b", gt(field("gold"))))))
 
         assertThat(warmGate(runtime))
             .containsExactlyInAnyOrder("gold", "silver", "eur", "oil", "btc", "eth", "spx", "ndx", "dax")
@@ -135,8 +136,19 @@ class SequenceCompilerTest {
 
     @Test
     fun `an aggregate's series stream joins the warm-up gate`() {
-        val parsed = (com.qkt.dsl.parse.Dsl.parse(AGG_SOURCE) as com.qkt.dsl.parse.ParseResult.Success).value
-        val aggregate = (parsed.sequences.single().stages.first().condition as CmpOp).lhs as Aggregate
+        val parsed =
+            (
+                com.qkt.dsl.parse.Dsl
+                    .parse(AGG_SOURCE) as com.qkt.dsl.parse.ParseResult.Success
+            ).value
+        val aggregate =
+            (
+                parsed.sequences
+                    .single()
+                    .stages
+                    .first()
+                    .condition as CmpOp
+            ).lhs as Aggregate
         assertThat(aggregate.fn).isEqualTo(AggFn.MAX)
         val runtime = SequenceCompiler.compile(parsed.sequences, streams, ExprCompiler(), LetResolver(parsed.lets))
 

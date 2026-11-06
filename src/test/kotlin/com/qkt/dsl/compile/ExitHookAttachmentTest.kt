@@ -36,8 +36,11 @@ class ExitHookAttachmentTest {
     fun `an OCO parent cannot carry exit hooks`() {
         val oco = OcoAst(ChildAt(one), ChildAt(one))
 
-        assertThatThrownBy { ExitHookAttachment.validate(hooked(parent = ActionOpts(sizing = SizeQty(one), oco = oco))) }
-            .hasMessageContaining("OCO and STACK_AT are not supported")
+        assertThatThrownBy {
+            ExitHookAttachment.validate(
+                hooked(parent = ActionOpts(sizing = SizeQty(one), oco = oco)),
+            )
+        }.hasMessageContaining("OCO and STACK_AT are not supported")
     }
 
     @Test
@@ -53,7 +56,13 @@ class ExitHookAttachmentTest {
     @Test
     fun `every order the parent emits carries the hook reference`() {
         val one = BigDecimal.ONE
-        val ctx = EvalContext(Candle("S", one, one, one, one, BigDecimal.ZERO, 0L, 1L), emptyMap(), emptyMap(), testStrategyContext())
+        val ctx =
+            EvalContext(
+                Candle("S", one, one, one, one, BigDecimal.ZERO, 0L, 1L),
+                emptyMap(),
+                emptyMap(),
+                testStrategyContext(),
+            )
         val submit = Signal.Submit(OrderRequest.Market("o", "S", Side.BUY, one, TimeInForce.GTC, 0L))
         val stamped = ExitHookAttachment.attach({ listOf(Signal.Sell("S", one), submit) }, ref)(ctx)
 

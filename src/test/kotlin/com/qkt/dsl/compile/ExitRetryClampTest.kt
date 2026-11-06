@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test
 class ExitRetryClampTest {
     private fun holding(qty: String?) =
         object : StrategyPositionView {
-            override fun positionFor(symbol: String): Position? = qty?.let { Position(symbol, BigDecimal(it), BigDecimal.TEN) }
+            override fun positionFor(symbol: String): Position? =
+                qty?.let { Position(symbol, BigDecimal(it), BigDecimal.TEN) }
 
             override fun allPositions(): Map<String, Position> = emptyMap()
         }

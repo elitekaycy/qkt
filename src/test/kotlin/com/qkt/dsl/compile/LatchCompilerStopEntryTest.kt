@@ -44,7 +44,10 @@ class LatchCompilerStopEntryTest {
 
     @Test
     fun `a STOP entry is placed beyond the anchor in the break direction with its expiry`() {
-        val req = build(LatchEntry(LatchStop(DirRel(DirSense.WITH, num("3"))), expire = DurationAst(60_000L))) as OrderRequest.Stop
+        val req =
+            build(
+                LatchEntry(LatchStop(DirRel(DirSense.WITH, num("3"))), expire = DurationAst(60_000L)),
+            ) as OrderRequest.Stop
 
         assertThat(req.side).isEqualTo(Side.BUY)
         assertThat(req.stopPrice).isEqualByComparingTo("2003")
@@ -104,7 +107,11 @@ class LatchCompilerStopEntryTest {
 
         assertThatThrownBy { LatchCompilerFixture.compile(latch(LatchEntry(LatchMarket), confirm = retest)) }
             .hasMessageContaining("LATCH RETEST_HOLD distance must be compile-time constant")
-        assertThat(LatchCompilerFixture.compile(latch(LatchEntry(LatchMarket), confirm = retest.copy(distance = num("2")))).confirm)
-            .isEqualTo(retest.copy(distance = num("2")))
+        assertThat(
+            LatchCompilerFixture
+                .compile(
+                    latch(LatchEntry(LatchMarket), confirm = retest.copy(distance = num("2"))),
+                ).confirm,
+        ).isEqualTo(retest.copy(distance = num("2")))
     }
 }

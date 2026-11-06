@@ -17,7 +17,14 @@ class PositionPnlAccessorTest {
         object : StrategyPnLView {
             override fun realized(): BigDecimal = BigDecimal("12.5")
 
-            override fun unrealizedFor(symbol: String): BigDecimal = if (symbol == "BACKTEST:BTCUSDT") BigDecimal("-3") else BigDecimal.ZERO
+            override fun unrealizedFor(symbol: String): BigDecimal =
+                if (symbol ==
+                    "BACKTEST:BTCUSDT"
+                ) {
+                    BigDecimal("-3")
+                } else {
+                    BigDecimal.ZERO
+                }
 
             override fun unrealizedTotal(): BigDecimal = BigDecimal("-3")
 
@@ -35,7 +42,8 @@ class PositionPnlAccessorTest {
             testStrategyContext(pnl = pnl),
         )
 
-    private fun read(source: StateSource) = (StateAccessorCompiler.compile(StateAccessor(source, "b")).evaluate(ctx) as Value.Num).v
+    private fun read(source: StateSource) =
+        (StateAccessorCompiler.compile(StateAccessor(source, "b")).evaluate(ctx) as Value.Num).v
 
     @Test
     fun `realized reads the strategy total and unrealized reads the stream's symbol`() {
