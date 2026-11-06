@@ -5,7 +5,12 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.RiskEvent
+import com.qkt.marketdata.Tick
 import com.qkt.observe.OrderJournal
+import com.qkt.strategy.Signal
+import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -95,11 +100,11 @@ class OrderJournalWiringTest {
         val journal = OrderJournal(tmp, clock)
         val owner =
             "owner" to
-                object : com.qkt.strategy.Strategy {
+                object : Strategy {
                     override fun onTick(
-                        tick: com.qkt.marketdata.Tick,
-                        ctx: com.qkt.strategy.StrategyContext,
-                        emit: (com.qkt.strategy.Signal) -> Unit,
+                        tick: Tick,
+                        ctx: StrategyContext,
+                        emit: (Signal) -> Unit,
                     ) {}
                 }
         OrderJournalWiring(listOf(owner)).wire(bus, journal)
@@ -136,10 +141,10 @@ class OrderJournalWiringTest {
         OrderJournalWiring(emptyList()).wire(bus, journal)
 
         bus.publish(protection(strategyId = ""))
-        bus.publish(com.qkt.events.RiskEvent.Halted(reason = "account dd", strategyId = null))
-        bus.publish(com.qkt.events.RiskEvent.Resumed(strategyId = null))
-        bus.publish(com.qkt.events.RiskEvent.Halted(reason = "own dd", strategyId = "s1"))
-        bus.publish(com.qkt.events.RiskEvent.Resumed(strategyId = "s1"))
+        bus.publish(RiskEvent.Halted(reason = "account dd", strategyId = null))
+        bus.publish(RiskEvent.Resumed(strategyId = null))
+        bus.publish(RiskEvent.Halted(reason = "own dd", strategyId = "s1"))
+        bus.publish(RiskEvent.Resumed(strategyId = "s1"))
         journal.close()
 
         val unattributed = lines(tmp, "_unattributed")

@@ -111,8 +111,10 @@ class CompositeRestoreTest {
         )
 
         assertThat(manager.getOrder("entry-1")!!.state).isEqualTo(OrderState.FILLED)
-        assertThat(fake.submits.filterIsInstance<OrderRequest.Limit>().single().limitPrice).isEqualByComparingTo("120")
-        assertThat(fake.submits.filterIsInstance<OrderRequest.Stop>().single().stopPrice).isEqualByComparingTo("90")
+        val target = fake.submits.filterIsInstance<OrderRequest.Limit>().single()
+        val stop = fake.submits.filterIsInstance<OrderRequest.Stop>().single()
+        assertThat(target.limitPrice).isEqualByComparingTo("120")
+        assertThat(stop.stopPrice).isEqualByComparingTo("90")
     }
 
     @Test
