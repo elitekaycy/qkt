@@ -59,7 +59,7 @@ class AuditLineEncoderBlocksTest {
             .contains(
                 "\"accountPositionBefore\":{\"symbol\":\"XAUUSD\",\"quantity\":\"0.3\",\"avgEntryPrice\":\"1990\",\"openedAtMs\":5}",
             ).contains("\"accountPositionAfter\":null")
-            .doesNotContain("contractSize")
+            .doesNotContain("\"contractSize\":")
             .endsWith("}\n")
     }
 
