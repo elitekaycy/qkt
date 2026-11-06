@@ -97,4 +97,45 @@ class AuditLineEncoderBlocksTest {
     fun `json strings escape quotes backslashes and control characters`() {
         assertThat(jsonString("say \"hi\"\\\n\r\t!")).isEqualTo("\"say \\\"hi\\\"\\\\\\n\\r\\t!\"")
     }
+
+    @Test
+    fun `an accounted fill without leg or conversion writes nulls and its contract size`() {
+        val plain =
+            accounted.copy(
+                cumulativeFilled = null,
+                conversionRate = null,
+                conversionTimestampMs = null,
+                conversionSource = null,
+                contractSize = BigDecimal("100"),
+                legId = null,
+                legAction = null,
+                accountPositionBefore = Position("XAUUSD", BigDecimal("0.3"), BigDecimal("1990")),
+            )
+
+        val line = encodeAuditLine(plain)
+
+        assertThat(line)
+            .contains("\"legId\":null,\"legAction\":null", "\"contractSize\":\"100\"")
+            .contains(
+                "\"accountPositionBefore\":{\"symbol\":\"XAUUSD\",\"quantity\":\"0.3\",\"avgEntryPrice\":\"1990\"}",
+            ).doesNotContain("\"cumulativeFilled\":", "\"conversionRate\":")
+    }
+
+    @Test
+    fun `a full fill without a broker id records an empty one`() {
+        val line =
+            encodeAuditLine(
+                BrokerEvent.OrderFilled(
+                    "o-1",
+                    null,
+                    "XAUUSD",
+                    Side.BUY,
+                    BigDecimal("2000"),
+                    BigDecimal("0.1"),
+                    strategyId = "alpha",
+                ),
+            )
+
+        assertThat(line).contains("\"brokerOrderId\":\"\",\"partial\":false}")
+    }
 }

@@ -66,4 +66,33 @@ class TelegramClientEdgeTest {
             .isEqualTo(UpdatesOutcome.Received(listOf(TelegramUpdate(updateId = 9L, chatId = null, text = null))))
         assertThat(client.getUpdates(offset = 10L, timeoutSeconds = 1)).isEqualTo(UpdatesOutcome.Received(emptyList()))
     }
+
+    @Test
+    fun `messages without a chat or with a non numeric chat id keep their text`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"result":[{"update_id":1,"message":{"text":"hi"}},""" +
+                    """{"update_id":2,"message":{"chat":{"id":"abc"}}},{"update_id":3,"message":{"chat":{"id":5},"text":"/status"}}]}""",
+            ),
+        )
+
+        assertThat(client.getUpdates(offset = 0L, timeoutSeconds = 1)).isEqualTo(
+            UpdatesOutcome.Received(
+                listOf(
+                    TelegramUpdate(1L, null, "hi"),
+                    TelegramUpdate(2L, null, null),
+                    TelegramUpdate(3L, 5L, "/status"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a poll without ok or with a non list result fails`() {
+        server.enqueue(MockResponse().setBody("""{"result":[]}"""))
+        server.enqueue(MockResponse().setBody("""{"ok":true,"result":{"update_id":1}}"""))
+
+        assertThat(client.getUpdates(offset = 0L, timeoutSeconds = 1)).isEqualTo(UpdatesOutcome.Failed)
+        assertThat(client.getUpdates(offset = 0L, timeoutSeconds = 1)).isEqualTo(UpdatesOutcome.Failed)
+    }
 }

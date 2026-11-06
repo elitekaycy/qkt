@@ -43,4 +43,35 @@ class JournalRetentionCompressFailureTest {
         assertThat(Files.readString(file)).isEqualTo("{}\n")
         assertThat(file.resolveSibling("audit-2023-11-01.jsonl.gz")).doesNotExist()
     }
+
+    @Test
+    fun `missing roots, impossible dates and other names are left alone`(
+        @TempDir tmp: Path,
+    ) {
+        val dir = Files.createDirectories(tmp.resolve("alpha"))
+        val impossible = Files.writeString(dir.resolve("audit-2023-02-30.jsonl"), "{}")
+        val other = Files.writeString(dir.resolve("audit-2023-01-01.txt"), "{}")
+        val retention =
+            JournalRetention(
+                listOf(tmp.resolve("missing"), tmp),
+                retentionDays = 3,
+                clock = clock,
+                compressAfterDays = 1,
+            )
+
+        assertThat(retention.sweep()).isEqualTo(JournalRetention.Result(removed = 0, compressed = 0))
+        assertThat(impossible).exists()
+        assertThat(other).exists()
+    }
+
+    @Test
+    fun `old day files are removed before they would be compressed`(
+        @TempDir tmp: Path,
+    ) {
+        val old = dayFile(tmp)
+        val retention = JournalRetention(listOf(tmp), retentionDays = 7, clock = clock, compressAfterDays = 2)
+
+        assertThat(retention.sweep()).isEqualTo(JournalRetention.Result(removed = 1, compressed = 0))
+        assertThat(old).doesNotExist()
+    }
 }

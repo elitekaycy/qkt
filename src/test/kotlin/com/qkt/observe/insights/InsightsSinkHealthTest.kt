@@ -110,4 +110,27 @@ class InsightsSinkHealthTest {
         assertThat(s.dropped.get()).isZero
         assertThat(bodies).hasSize(2).allMatch { it.contains("\"id\":\"e1\"") }
     }
+
+    @Test
+    fun `an envelope offered after close is ignored`() {
+        answer { _, _ -> 200 }
+        val s = sink(healthIntervalMs = 0L)
+        s.close()
+        s.offer(envelope())
+
+        assertThat(s.sent.get()).isZero
+        assertThat(s.dropped.get()).isZero
+        assertThat(bodies).isEmpty()
+    }
+
+    @Test
+    fun `a best effort sink drops a batch once its attempts run out`() {
+        answer { _, _ -> 500 }
+        val s = sink(healthIntervalMs = 0L, maxPostAttempts = 2)
+        s.offer(envelope())
+
+        assertThat(awaitUntil { s.dropped.get() == 1L }).isTrue
+        s.close()
+        assertThat(s.failed.get()).isEqualTo(2L)
+    }
 }
