@@ -133,7 +133,8 @@ class MT5PlacementResultsTest {
     @Test
     fun `a partial fill reply that names no residual is settled from the venue position`() {
         gateway.on("/orders", "[]")
-        val held = Mt5RoutedGateway.position(500, "1.00", priceOpen = "2401", comment = "entry-1", clientOrderId = "cid-1")
+        val held =
+            Mt5RoutedGateway.position(500, "1.00", priceOpen = "2401", comment = "entry-1", clientOrderId = "cid-1")
         gateway.on("/get_positions", "[$held]")
 
         val partial = reply(10010, 900L, 7001L, "2400", volume = null)
