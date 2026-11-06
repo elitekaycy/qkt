@@ -40,7 +40,11 @@ class TimeContextWeeksTest {
 
     @Test
     fun `today and yesterday sessions use the clock's date in the zone`() {
-        val ny = TimeContext(FixedClock(time = Instant.parse("2024-01-17T03:00:00Z").toEpochMilli()), ZoneId.of("America/New_York"))
+        val ny =
+            TimeContext(
+                FixedClock(time = Instant.parse("2024-01-17T03:00:00Z").toEpochMilli()),
+                ZoneId.of("America/New_York"),
+            )
         val today = ny.sessionToday(9, 16)
         assertThat(today.from).isEqualTo(Instant.parse("2024-01-16T14:00:00Z"))
         assertThat(today.to).isEqualTo(Instant.parse("2024-01-16T21:00:00Z"))

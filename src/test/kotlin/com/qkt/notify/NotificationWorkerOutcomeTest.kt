@@ -14,7 +14,15 @@ class NotificationWorkerOutcomeTest {
         val metrics = AtomicNotifierMetrics()
         val w =
             NotificationWorker(
-                send = { _ -> if (attempts.incrementAndGet() == 1) throw IllegalStateException("socket") else Outcome.Ok },
+                send = { _ ->
+                    if (attempts.incrementAndGet() ==
+                        1
+                    ) {
+                        throw IllegalStateException("socket")
+                    } else {
+                        Outcome.Ok
+                    }
+                },
                 metrics = metrics,
                 backoffMs = listOf(1L),
             )

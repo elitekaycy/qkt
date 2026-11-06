@@ -23,7 +23,9 @@ class PerSymbolCalendarDelegationTest {
         val t = Instant.parse("2024-06-12T12:00:00Z")
         val epoch = cal.anchorEpochFor(SessionAnchor.PreviousDay, t)
 
-        assertThat(cal.rangeFor(SessionAnchor.PreviousDay, epoch)).isEqualTo(crypto.rangeFor(SessionAnchor.PreviousDay, epoch))
+        assertThat(
+            cal.rangeFor(SessionAnchor.PreviousDay, epoch),
+        ).isEqualTo(crypto.rangeFor(SessionAnchor.PreviousDay, epoch))
         assertThat(cal.hasShortSessions).isEqualTo(crypto.hasShortSessions)
     }
 

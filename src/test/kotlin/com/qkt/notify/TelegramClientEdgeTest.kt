@@ -16,7 +16,12 @@ class TelegramClientEdgeTest {
             baseUrl = server.url("/").toString().trimEnd('/'),
             botToken = "TOKEN",
             chatId = "CHAT",
-            http = OkHttpClient.Builder().retryOnConnectionFailure(false).followRedirects(false).build(),
+            http =
+                OkHttpClient
+                    .Builder()
+                    .retryOnConnectionFailure(false)
+                    .followRedirects(false)
+                    .build(),
         )
 
     @AfterEach

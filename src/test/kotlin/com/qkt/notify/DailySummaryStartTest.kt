@@ -30,7 +30,12 @@ class DailySummaryStartTest {
         }
     }
 
-    private val summary = NotificationEvent.DailySummary(asOfUtc = "2026-05-17", strategies = emptyList(), timestamp = 1L)
+    private val summary =
+        NotificationEvent.DailySummary(
+            asOfUtc = "2026-05-17",
+            strategies = emptyList(),
+            timestamp = 1L,
+        )
 
     private class Recording : Notifier {
         val seen = mutableListOf<NotificationEvent>()

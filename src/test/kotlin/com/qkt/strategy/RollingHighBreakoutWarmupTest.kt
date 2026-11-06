@@ -11,7 +11,8 @@ class RollingHighBreakoutWarmupTest {
     @Test
     fun `warmup asks for one bar per window in the lookback and at least one`() {
         val daily = RollingHighBreakoutStrategy("XAUUSD", lookback = Duration.ofDays(3), window = TimeWindow.ONE_HOUR)
-        val short = RollingHighBreakoutStrategy("XAUUSD", lookback = Duration.ofMinutes(5), window = TimeWindow.ONE_HOUR)
+        val short =
+            RollingHighBreakoutStrategy("XAUUSD", lookback = Duration.ofMinutes(5), window = TimeWindow.ONE_HOUR)
 
         assertThat(daily.warmup).isEqualTo(WarmupSpec.Bars(TimeWindow.ONE_HOUR, 72))
         assertThat(short.warmup).isEqualTo(WarmupSpec.Bars(TimeWindow.ONE_HOUR, 1))
