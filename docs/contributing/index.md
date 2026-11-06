@@ -52,6 +52,14 @@ qkt treats every commit as if it'll be read by a stranger years from now — bec
 
     [:octicons-arrow-right-24: Stress tests](stress-tests.md)
 
+- :material-check-all:{ .lg .middle } **Test coverage**
+
+    ---
+
+    Every changed line runs under a test; the whole-codebase floor only rises. How to read the report.
+
+    [:octicons-arrow-right-24: Test coverage](test-coverage.md)
+
 </div>
 
 The single source of truth for project conventions is the [qkt skill](https://github.com/elitekaycy/qkt/blob/main/.claude/skills/qkt/SKILL.md). Pages here surface the parts contributors hit most often.

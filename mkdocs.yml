@@ -37,6 +37,7 @@ theme:
         name: Switch to dark mode
   font: false
   features:
+    - announce.dismiss
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.sections
@@ -230,6 +231,7 @@ nav:
       - Phase workflow: contributing/phase-workflow.md
       - Adding a connector: contributing/adding-a-broker.md
       - Stress tests: contributing/stress-tests.md
+      - Test coverage: contributing/test-coverage.md
       - Release changelogs:
           - phases/index.md
           - Phase 23 — DSL catalog expansion: phases/phase-23.md
@@ -281,4 +283,7 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/elitekaycy/qkt
+    - icon: octicons/heart-fill-16
+      link: https://github.com/sponsors/elitekaycy
+      name: Sponsor qkt
   generator: false

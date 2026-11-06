@@ -156,6 +156,21 @@ class InsightsFillFactsTest {
         timestamp = 1,
     )
 
+    @Test
+    fun `a trade the venue never reported takes its leg from accounting's positions`() {
+        val before = Position(symbol, BigDecimal("0.5"), BigDecimal("100000"), 1_000)
+
+        val closed =
+            facts().closedFields(
+                Trade("manual", symbol, BigDecimal("96000"), BigDecimal("0.5"), Side.SELL, 3_000),
+                "a",
+                FillState(before, null, before, null),
+            )
+
+        assertThat(closed["legEntry"]).isEqualTo("OUT")
+        assertThat(closed["positionId"]).isEqualTo("$symbol#1000")
+    }
+
     private companion object {
         val LEG = setOf("positionId", "legEntry", "closeReason", "strategyId", "attribution")
     }

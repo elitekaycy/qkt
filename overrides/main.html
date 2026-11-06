@@ -26,3 +26,12 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://docs.tryqkt.com/assets/og-image.png">
 {% endblock %}
+
+{#- Sponsor line: one dismissible bar (theme feature announce.dismiss remembers the close). -#}
+{% block announce %}
+  <span class="qkt-sponsor">
+    <span class="qkt-sponsor__heart">{% include ".icons/octicons/heart-fill-16.svg" %}</span>
+    qkt is built by one person, in the open.
+    <a href="https://github.com/sponsors/elitekaycy">Sponsor on GitHub</a>, any amount, monthly or once.
+  </span>
+{% endblock %}

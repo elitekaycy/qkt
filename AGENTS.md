@@ -103,6 +103,9 @@ risk, and accounting dispatch.
 - Prefer real project types and small anonymous objects over mocking libraries.
 - Do not delete or disable failing tests without an issue-backed reason.
 - Every production class with behavior should have focused tests.
+- Every line a PR adds or edits under `src/main` runs under a test (CI diff-coverage gate), and the
+  whole-codebase Kover floor in `config/coverage-floor.properties` only rises; see
+  `docs/contributing/test-coverage.md`.
 - Run targeted tests while working, then run the appropriate pre-push checks.
 
 ## Required Checks

@@ -1,6 +1,9 @@
 package com.qkt.app
 
 import com.qkt.cli.daemon.routes.renderEngineStallFields
+import com.qkt.events.RiskEvent
+import com.qkt.marketdata.Tick
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -33,5 +36,16 @@ class EngineStallWatchTest {
         assertThat(renderEngineStallFields(EngineStalls.NONE)).isEqualTo(""""engineStalls":0,"engineWorstHold":null,""")
         assertThat(renderEngineStallFields(EngineStalls(2, 1_500, "event OrderFilled")))
             .isEqualTo(""""engineStalls":2,"engineWorstHold":{"ms":1500,"what":"event OrderFilled"},""")
+    }
+
+    @Test
+    fun `every engine message names itself for the stall log`() {
+        val tick = Tick("XAUUSD", BigDecimal.ONE, 0L)
+
+        assertThat(Inbound.FeedTick(tick).kind()).isEqualTo("tick XAUUSD")
+        assertThat(Inbound.BusEvent(RiskEvent.Resumed(null)).kind()).isEqualTo("event Resumed")
+        assertThat(Inbound.PersistenceHealthCheck.kind()).isEqualTo("persistence health check")
+        assertThat(Inbound.FeedEnded(unexpected = true, reason = "eof").kind()).isEqualTo("feed end")
+        assertThat(Inbound.GracefulStop(deadlineNanos = 0L).kind()).isEqualTo("graceful stop")
     }
 }

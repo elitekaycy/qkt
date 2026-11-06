@@ -496,6 +496,9 @@ This section will grow when Phase 5 begins.
 - **One assertion per behavior, multiple assertions per setup.** Don't compress unrelated checks into one test; don't blow up one behavior into ten micro-tests.
 - **Tests live in `src/test/kotlin/com/qkt/<package>/...`** mirroring the production tree.
 - **Every production class with behavior has a dedicated test class.** Trivial value types (data classes, enums) are exercised indirectly.
+- **100% coverage of changed lines.** Every line a PR adds or edits under `src/main` runs under a test (CI diff-coverage gate), and the
+  whole-codebase Kover floor in `config/coverage-floor.properties` only rises; see
+  `docs/contributing/test-coverage.md`.
 - **Tests are deterministic.** No `Thread.sleep`, no time-dependent assertions without `FixedClock`.
 - **No tests of mocked behavior.** A test that asserts "we called `broker.execute` with this Order" instead of "the order ended up at the broker" is testing implementation, not behavior.
 - **Failing tests are bugs.** Fix them, escalate them, but never delete them or `@Disabled` them without an issue link.
