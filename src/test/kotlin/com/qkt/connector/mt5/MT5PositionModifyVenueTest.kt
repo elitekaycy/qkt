@@ -73,7 +73,7 @@ class MT5PositionModifyVenueTest {
         assertThat(ack.rejectReason).isNull()
         assertThat(books.positionBook.meta(42L)?.protection)
             .isEqualTo(MT5PositionProtection(BigDecimal("2395"), BigDecimal("2450")))
-        assertThat(gateway.requests.single().second).contains("\"ticket\":42").contains("\"sl\":2395")
+        assertThat(gateway.requests.single().second).contains("\"position\":42").contains("\"sl\":2395")
     }
 
     @Test

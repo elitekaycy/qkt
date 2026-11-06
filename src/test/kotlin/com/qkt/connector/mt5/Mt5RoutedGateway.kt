@@ -40,6 +40,15 @@ internal class Mt5RoutedGateway : AutoCloseable {
         routes[path] = CopyOnWriteArrayList(bodies.map { MockResponse().setBody(it) })
     }
 
+    /** Answers [path] with each (status, body) reply in turn, repeating the last. */
+    fun respond(
+        path: String,
+        vararg replies: Pair<Int, String>,
+    ) {
+        routes[path] =
+            CopyOnWriteArrayList(replies.map { (status, body) -> MockResponse().setResponseCode(status).setBody(body) })
+    }
+
     /** Answers [path] with HTTP [status]. */
     fun fail(
         path: String,
