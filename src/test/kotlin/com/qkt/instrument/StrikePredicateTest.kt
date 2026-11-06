@@ -22,10 +22,10 @@ class StrikePredicateTest {
     }
 
     @Test
-    fun `a range needs both bounds with the floor below the cap`() {
+    fun `a range needs both bounds with the floor not above the cap`() {
         assertThatThrownBy { StrikePredicate(StrikeType.BETWEEN, low, null) }.hasMessageContaining("a floor and a cap")
-        assertThatThrownBy { StrikePredicate(StrikeType.BETWEEN, high, low) }.hasMessageContaining("below cap")
-        assertThatThrownBy { StrikePredicate(StrikeType.BETWEEN, low, low) }.hasMessageContaining("below cap")
+        assertThatThrownBy { StrikePredicate(StrikeType.BETWEEN, high, low) }.hasMessageContaining("not be above cap")
+        assertThat(StrikePredicate(StrikeType.BETWEEN, low, low).cap).isEqualTo(low)
     }
 
     @Test
