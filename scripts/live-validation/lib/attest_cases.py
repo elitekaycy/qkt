@@ -16,6 +16,7 @@ import argparse, datetime as dt, hashlib, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import attest_classify as classify  # noqa: E402
+import runtime_fingerprint as fingerprint  # noqa: E402
 
 MAX_EVIDENCE_AGE_HOURS = 24  # the verifier's limit too (scripts/verify-paper-soak-attestation.py)
 NEVER_REUSED = {"shadow"}  # one daemon's session is the evidence of all its cases: it reruns whole, never in part
@@ -36,6 +37,11 @@ def sha256_file(path):
 
 def binding_sha(binding):
     return hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def evidence_key_sha(binding):
+    """What a case record's bindingSha256 is: see runtime_fingerprint.evidence_key_sha."""
+    return fingerprint.evidence_key_sha(binding)
 
 
 def attempts_of(out, name):
@@ -109,7 +115,13 @@ def record(a):
              "resultSha256": sha256_file(result_path) if os.path.exists(result_path) else None}
     binding_path = os.path.join(a.out, "binding.json")
     if os.path.exists(binding_path):
-        entry["bindingSha256"] = binding_sha(json.load(open(binding_path)))
+        binding = json.load(open(binding_path))
+        entry["bindingSha256"] = evidence_key_sha(binding)
+        if binding.get("schema") == fingerprint.BINDING_V2:
+            # What ran, and on which commit: the verifier recomputes both from git, so a carry is never self-declared.
+            repo = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.."))
+            entry["ranOnSha"] = binding.get("testingSha")
+            entry["definitionSha256"] = fingerprint.definition_sha(repo, binding.get("testingSha"), a.name)
     venue = venue_evidence(read_result(a.dir))
     if venue:
         entry["venue"] = venue
@@ -141,7 +153,7 @@ def is_reusable(out, name, binding, now, max_age_hours=MAX_EVIDENCE_AGE_HOURS):
         return False
     last = attempts[-1]
     result = os.path.join(out, last["dir"], "result.json")
-    if last.get("bindingSha256") != binding_sha(binding) or not os.path.exists(result):
+    if last.get("bindingSha256") != evidence_key_sha(binding) or not os.path.exists(result):
         return False
     if sha256_file(result) != last.get("resultSha256") or read_problems(os.path.dirname(result))[0] != "passed":
         return False
