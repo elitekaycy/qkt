@@ -9,6 +9,18 @@ internal fun closingFill(
     strategy: String,
     symbol: String,
     before: String,
+) = movingFill(strategy, symbol, before, null).copy(accountPositionBefore = null)
+
+/**
+ * [strategy]'s fill, accounted at [atMs] (0: when published), that took its holding of [symbol] from [before] to
+ * [after] (null: flat), its session's holding moving alike, as the pipeline accounts it.
+ */
+internal fun movingFill(
+    strategy: String,
+    symbol: String,
+    before: String,
+    after: String?,
+    atMs: Long = 0L,
 ) = FillAccountedEvent(
     orderId = "c-$strategy",
     strategyId = strategy,
@@ -31,10 +43,11 @@ internal fun closingFill(
     conversionTimestampMs = null,
     conversionSource = null,
     contractSize = BigDecimal.ONE,
-    accountPositionBefore = null,
-    accountPositionAfter = null,
+    accountPositionBefore = Position(symbol, BigDecimal(before), BigDecimal("120")),
+    accountPositionAfter = after?.let { Position(symbol, BigDecimal(it), BigDecimal("120")) },
     strategyPositionBefore = Position(symbol, BigDecimal(before), BigDecimal("120")),
-    strategyPositionAfter = null,
-    reducedExposure = true,
+    strategyPositionAfter = after?.let { Position(symbol, BigDecimal(it), BigDecimal("120")) },
+    reducedExposure = after == null,
     partial = false,
+    executedAt = atMs,
 )

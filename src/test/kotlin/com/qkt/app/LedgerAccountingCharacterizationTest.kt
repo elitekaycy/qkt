@@ -171,7 +171,7 @@ class LedgerAccountingCharacterizationTest {
     @Test
     fun `a boot reconcile books lifetime realized but stays out of today's loss budget`() {
         val h = Harness()
-        h.pipeline.applyReconciledRealized("alpha", BigDecimal("12.25"), legId = "leg-7")
+        h.pipeline.applyReconciledRealized("alpha", BigDecimal("12.25"), legId = "leg-7", symbol = "XAUUSD")
 
         assertThat(h.pnl.realizedTotal()).isEqualByComparingTo("12.25")
         assertThat(h.strategyPnl.realizedFor("alpha")).isEqualByComparingTo("12.25")
@@ -181,6 +181,7 @@ class LedgerAccountingCharacterizationTest {
         assertThat(reconcile.kind).isEqualTo(com.qkt.events.FillAccountingKind.RECONCILE)
         assertThat(reconcile.legId).isEqualTo("leg-7")
         assertThat(reconcile.orderId).isEqualTo("reconcile:leg-7")
+        assertThat(reconcile.symbol).isEqualTo("XAUUSD")
     }
 
     @Test
