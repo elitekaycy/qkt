@@ -67,6 +67,30 @@ class StateFileVariantsTest {
     }
 
     @Test
+    fun `a trailing stop and an oco leg keep their runtime progress across a restart`(
+        @TempDir tmp: Path,
+    ) {
+        val stop =
+            PersistedTrailingStop(
+                clientOrderId = "m-1",
+                brokerOrderId = "b-9",
+                strategyId = "alpha",
+                request = market,
+                armed = false,
+                hwm = BigDecimal("4712.5"),
+                stepIndex = 2,
+                elapsedIntervals = 5L,
+                stopLevel = BigDecimal("4705"),
+            )
+        val leg = oco(market).copy(executed = true)
+        FileStatePersistor(tmp).saveTrailingStops("alpha", listOf(stop))
+        FileStatePersistor(tmp).saveOcoLegs("alpha", listOf(leg))
+
+        assertThat(FileStatePersistor(tmp).loadTrailingStops("alpha")).containsExactly(stop)
+        assertThat(FileStatePersistor(tmp).loadOcoLegs("alpha")).containsExactly(leg)
+    }
+
+    @Test
     fun `unreadable oco and trailing stop files fail the load loudly`(
         @TempDir tmp: Path,
     ) {
