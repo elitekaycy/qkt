@@ -46,7 +46,7 @@ class BrokersCommandTest {
         assertThat(
             ic.split(Regex("\\s+")),
         ).containsExactly("ic", "mt5", "http://gw-b:5002", ".r", "Europe/Athens", "4242")
-        assertThat(lines.single { it.startsWith("exness ") }.split(Regex("\\s+"))[3]).isEqualTo("-")
+        assertThat(lines.single { it.startsWith("exness ") }.split(Regex("\\s+"))[3]).isEqualTo("m")
     }
 
     @Test

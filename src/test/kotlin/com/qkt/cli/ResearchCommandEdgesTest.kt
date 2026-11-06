@@ -89,6 +89,7 @@ class ResearchCommandEdgesTest : SweepCommandFixture() {
 
     @Test
     fun `a dukascopy script fetcher is accepted while the injected fetcher serves the run`() {
+        val script = dir.resolve("fetch.py").also { Files.writeString(it, "# never run\n") }
         val (run, repl) =
             research(
                 strategy(dir),

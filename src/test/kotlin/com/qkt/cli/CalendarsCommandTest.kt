@@ -37,7 +37,7 @@ class CalendarsCommandTest {
         val lines = run.out.lines()
         assertThat(lines[0]).matches("symbol\\s+calendar\\s+source")
         assertThat(lines[1]).matches("BACKTEST:EURUSD\\s+fx\\s+built-in default")
-        assertThat(lines[2]).matches("BACKTEST:BTCUSDT\\s+crypto\\s+built-in '\\*USDT'")
+        assertThat(lines[2]).matches("BACKTEST:BTCUSDT\\s+crypto\\s+built-in 'BTC\\*'")
         assertThat(run.out).contains("samples a year at 1h:")
         val runSamples = BigDecimal(Regex("run sharpe .*?\\s([0-9.]+)\\n").find(run.out)!!.groupValues[1])
         val bookSamples = BigDecimal(Regex("book risk .*?\\s([0-9.]+)\\n").find(run.out)!!.groupValues[1])
@@ -54,7 +54,7 @@ class CalendarsCommandTest {
             .startsWith(
                 "{\"schema\":\"qkt-calendars-v1\",\"symbols\":[" +
                     "{\"symbol\":\"BACKTEST:EURUSD\",\"calendar\":\"fx\",\"source\":\"built-in default\"}," +
-                    "{\"symbol\":\"BACKTEST:BTCUSDT\",\"calendar\":\"crypto\",\"source\":\"built-in '*USDT'\"}]," +
+                    "{\"symbol\":\"BACKTEST:BTCUSDT\",\"calendar\":\"crypto\",\"source\":\"built-in 'BTC*'\"}]," +
                     "\"timeframe\":\"1h\",\"runSamplesPerYear\":",
             ).contains("\"bookSamplesPerYear\":")
     }

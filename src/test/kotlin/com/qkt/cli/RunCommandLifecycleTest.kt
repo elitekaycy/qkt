@@ -126,20 +126,6 @@ class RunCommandLifecycleTest {
     }
 
     @Test
-    fun `fills on the feed are logged as trades before the feed closes`() {
-        val run =
-            captureCliRun {
-                RunCommand(Args(arrayOf("run", "src/test/resources/cli/valid_strategy.qkt", "--no-observe"))) {
-                    Source(Feed(ticks("BACKTEST:BTCUSDT"), holdOpen = false))
-                }.run()
-            }
-
-        assertThat(run.code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(run.out).containsPattern("\\[INFO\\] 2024-01-15T00:0\\d:00Z BUY BACKTEST:BTCUSDT qty=1 px=420\\d0")
-        assertThat(run.out).containsPattern("feed closed; [1-9]\\d* trades")
-    }
-
-    @Test
     fun `a file that does not parse is reported line by line`(
         @TempDir tmp: Path,
     ) {

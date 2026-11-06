@@ -69,4 +69,23 @@ class DataSnapshotVerifyUsageTest {
         assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(run.err).contains("qkt: error: cannot read snapshot $bad:")
     }
+
+    @Test
+    fun `build-bars needs a symbol a valid timeframe and cached ticks`() {
+        val noSymbol = data("build-bars")
+        assertThat(noSymbol.code).isEqualTo(ExitCodes.ARG_ERROR)
+        assertThat(noSymbol.err).contains("qkt: missing symbol. usage: qkt data build-bars <symbol>")
+
+        val noTf = data("build-bars", "XAUUSD")
+        assertThat(noTf.code).isEqualTo(ExitCodes.ARG_ERROR)
+        assertThat(noTf.err).contains("qkt: missing --tf (e.g. --tf 15m)")
+
+        val badTf = data("build-bars", "XAUUSD", "--tf", "0m")
+        assertThat(badTf.code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(badTf.err).startsWith("qkt: error: ")
+
+        val noTicks = data("build-bars", "XAUUSD", "--tf", "15m")
+        assertThat(noTicks.code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(noTicks.err).contains("qkt: no cached tick data for 'XAUUSD'")
+    }
 }

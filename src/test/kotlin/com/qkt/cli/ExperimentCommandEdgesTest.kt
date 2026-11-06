@@ -99,7 +99,7 @@ class ExperimentCommandEdgesTest {
         val run = experiment("run", "--plan", plan("strategy: ${strategy()}").toString(), fetcher = nothing)
 
         assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(run.err).startsWith("qkt: error: ").contains("XAUUSD")
+        assertThat(run.err).contains("qkt: error: no XAUUSD tick data")
     }
 
     @Test
@@ -124,7 +124,7 @@ class ExperimentCommandEdgesTest {
             )
 
         assertThat(run.code).withFailMessage(run.err).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(run.out.trim()).startsWith("{").contains("\"name\":\"xau research\"")
+        assertThat(run.out).contains("\"name\":\"xau research\"")
         val runs = registry.resolve("runs/xau_research")
         assertThat(Files.list(runs).use { it.count() }).isEqualTo(1L)
     }

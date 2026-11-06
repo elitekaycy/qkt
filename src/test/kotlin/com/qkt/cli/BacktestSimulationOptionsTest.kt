@@ -16,7 +16,7 @@ class BacktestSimulationOptionsTest {
     private fun args(vararg argv: String) = Args(arrayOf("backtest", "s.qkt", *argv))
 
     private fun execution(vararg argv: String) =
-        BacktestSimulationOptions.executionConfig(args(*argv), defaults, BrokerKind.PAPER)
+        BacktestSimulationOptions.executionConfig(args(*argv), defaults, BrokerKind.MT5_SIM)
 
     @Test
     fun `fx symbols from the command line join the configured conversions`() {

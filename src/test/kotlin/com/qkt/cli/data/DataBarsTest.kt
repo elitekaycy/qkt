@@ -80,13 +80,13 @@ class DataBarsTest {
     }
 
     @Test
-    fun `the bars tier with nothing built reads the series directly`() {
+    fun `the bars tier with nothing built reads no bars even when ticks exist`() {
         seedDay()
 
         val run = bars("--tf", "1h", "--bars")
 
-        assertThat(run.code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(run.err).doesNotContain("rolled up")
+        assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(run.err).doesNotContain("rolled up").contains("qkt: no 1h bars for XAUUSD")
     }
 
     @Test
@@ -104,7 +104,7 @@ class DataBarsTest {
         assertThat(missing.code).isEqualTo(ExitCodes.ARG_ERROR)
         assertThat(missing.err).contains("qkt: usage: qkt data bars")
 
-        val badTf = bars("--tf", "7x")
+        val badTf = bars("--tf", "0m")
         assertThat(badTf.code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(badTf.err).startsWith("qkt: error: ")
     }

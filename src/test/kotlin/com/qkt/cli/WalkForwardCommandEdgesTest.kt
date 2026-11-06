@@ -90,6 +90,6 @@ class WalkForwardCommandEdgesTest : SweepCommandFixture() {
         val run = walkforward(strategy(dir), train = "30d")
 
         assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(run.err).startsWith("qkt: error: ")
+        assertThat(run.err).contains("qkt: error: totalRange duration").contains("too short for trainSize + testSize")
     }
 }

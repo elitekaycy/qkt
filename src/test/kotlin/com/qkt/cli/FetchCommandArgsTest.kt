@@ -87,8 +87,8 @@ class FetchCommandArgsTest {
                 )
 
             assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
-            assertThat(run.out).contains("[1/2] 2026-07-09 skipped (already on disk)")
-            assertThat(run.err).contains("[2/2] 2026-07-10 FAILED:")
+            assertThat(run.out).containsPattern("\\[1/2] 2026-07-09\\s+skipped \\(already on disk\\)")
+            assertThat(run.err).containsPattern("\\[2/2] 2026-07-10\\s+FAILED:")
         } finally {
             gateway.shutdown()
         }
