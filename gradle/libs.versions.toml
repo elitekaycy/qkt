@@ -11,7 +11,7 @@ snakeyaml-engine = "2.7"
 dokka = "1.9.20"
 lsp4j = "0.23.1"
 apache-poi = "5.5.1"
-kover = "0.9.1"
+kover = "0.9.11"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }

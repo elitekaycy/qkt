@@ -14,7 +14,9 @@ import org.slf4j.LoggerFactory
  * sent; then it is resolved by id: its fills, then the order as the gateway reports it, or, when the
  * gateway answers that it never placed it (an id it then refuses for ever), the order is [reject]ed. A
  * cancel that finds no order while its submit is still being sent is held and sent once the order is
- * placed; one the gateway cannot take is sent again until it can. No failure is dropped unlogged.
+ * placed; one the gateway cannot take is sent again until it can. Every retry waits at least [retryMs] and
+ * at least the gateway's rate-limit backoff ([GatewayThrottle], shared by every order on the gateway), and
+ * its warnings are paced ([PacedWarnings]): no failure is dropped unlogged, none floods the log.
  */
 internal class GatewayPlacement(
     private val client: GatewayClient,
@@ -25,6 +27,7 @@ internal class GatewayPlacement(
     private val retryMs: Long = 1_000,
 ) {
     private val log = LoggerFactory.getLogger(GatewayPlacement::class.java)
+    private val warnings = PacedWarnings(log)
     private val executor =
         Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "gateway-orders").apply { isDaemon = true } }
     private val sending: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -66,19 +69,20 @@ internal class GatewayPlacement(
             when {
                 e.code == "not_found" && clientOrderId in sending -> cancelOnPlace += clientOrderId
                 e.code == "not_found" -> Unit
-                e.status >= SERVER_ERROR -> retryCancel(clientOrderId, e.message)
+                e.status >= SERVER_ERROR -> return retryCancel(clientOrderId, e.message)
                 else -> log.warn("cancel {} refused: {}", clientOrderId, e.message)
             }
         } catch (e: GatewayUnavailableException) {
-            retryCancel(clientOrderId, e.message)
+            return retryCancel(clientOrderId, e.message)
         }
+        warnings.forget("cancel:$clientOrderId")
     }
 
     private fun retryCancel(
         clientOrderId: String,
         why: String?,
     ) {
-        log.warn("cancel {} not delivered ({}); sending it again", clientOrderId, why)
+        warnings.warn("cancel:$clientOrderId", "cancel {} not delivered ({}); sending it again", clientOrderId, why)
         later { cancelNow(clientOrderId) }
     }
 
@@ -106,12 +110,13 @@ internal class GatewayPlacement(
         deadline: Long,
         why: String?,
     ) {
-        log.warn("submit {} unanswered: {}", body.clientOrderId, why)
+        warnings.warn("submit:${body.clientOrderId}", "submit {} unanswered: {}", body.clientOrderId, why)
         if (clock.now() < deadline) later { attempt(body, reject, deadline) } else resolve(body.clientOrderId, reject)
     }
 
     private fun placed(order: WireOrder) {
         sending -= order.clientOrderId
+        done(order.clientOrderId)
         onOrder(order)
         if (cancelOnPlace.remove(order.clientOrderId)) cancelNow(order.clientOrderId)
     }
@@ -123,7 +128,13 @@ internal class GatewayPlacement(
     ) {
         sending -= clientOrderId
         cancelOnPlace -= clientOrderId
+        done(clientOrderId)
         reject(reason)
+    }
+
+    private fun done(clientOrderId: String) {
+        warnings.forget("submit:$clientOrderId")
+        warnings.forget("resolve:$clientOrderId")
     }
 
     /** Asks the gateway what became of [clientOrderId], until it can answer: its fills first, then the order. */
@@ -138,20 +149,29 @@ internal class GatewayPlacement(
             client.dealsOf(clientOrderId).forEach(onFill)
             placed(order)
         } catch (e: GatewayUnavailableException) {
-            log.warn("submit {} still unresolved: {}", clientOrderId, e.message)
-            later { resolve(clientOrderId, reject) }
+            unresolved(clientOrderId, reject, e.message)
         } catch (e: GatewayException) {
-            log.warn("submit {} still unresolved: {}", clientOrderId, e.message)
-            later { resolve(clientOrderId, reject) }
+            unresolved(clientOrderId, reject, e.message)
         }
+    }
+
+    private fun unresolved(
+        clientOrderId: String,
+        reject: (String) -> Unit,
+        why: String?,
+    ) {
+        warnings.warn("resolve:$clientOrderId", "submit {} still unresolved: {}", clientOrderId, why)
+        later { resolve(clientOrderId, reject) }
     }
 
     private fun run(action: () -> Unit) {
         if (!executor.isShutdown) executor.execute(logged(action))
     }
 
+    /** Runs [action] again after [retryMs], or after the gateway's rate-limit backoff when that is longer. */
     private fun later(action: () -> Unit) {
-        if (!executor.isShutdown) executor.schedule(logged(action), retryMs, TimeUnit.MILLISECONDS)
+        val delay = maxOf(retryMs, client.backoffMs())
+        if (!executor.isShutdown) executor.schedule(logged(action), delay, TimeUnit.MILLISECONDS)
     }
 
     private fun logged(action: () -> Unit) =

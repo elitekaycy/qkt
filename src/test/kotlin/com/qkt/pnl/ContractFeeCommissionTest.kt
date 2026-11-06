@@ -67,4 +67,9 @@ class ContractFeeCommissionTest {
     fun `a notional fee without a price is refused`() {
         assertThatThrownBy { model.cost("BINANCE_UM:BTCUSDT@front", BigDecimal("0.5")) }.hasMessageContaining("price")
     }
+
+    @Test
+    fun `a per-contract fee needs no price`() {
+        assertThat(model.cost("CME:ES@front", BigDecimal("3"))).isEqualByComparingTo("3.87")
+    }
 }

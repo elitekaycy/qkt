@@ -287,14 +287,14 @@ class TradingPipeline(
     ) = nonExecution.publish(strategyId, amount, FillAccountingKind.FINANCING, "financing:$strategyId")
 
     /**
-     * Book what the venue realized on a leg that closed while the daemon was down. Same fold,
-     * same accumulators, same audit trail as an execution the engine saw itself.
+     * Book the venue's realized amount on a leg of [symbol] that closed while down with no priced closing deal.
      */
     fun applyReconciledRealized(
         strategyId: String,
         amount: BigDecimal,
         legId: String,
-    ) = nonExecution.publish(strategyId, amount, FillAccountingKind.RECONCILE, "reconcile:$legId", legId)
+        symbol: String,
+    ) = nonExecution.publish(strategyId, amount, FillAccountingKind.RECONCILE, "reconcile:$legId", legId, symbol)
 
     /**
      * Live-only quiet-market heartbeat from a 1Hz `LiveSession` timer: schedules fire and a quiet

@@ -8,7 +8,9 @@ import java.math.BigDecimal
  * venue charged on. It is not about any order: each strategy holding [symbol] books its own part,
  * `amount × holding / basis`, so strategies long and short on one account, or a position another tool
  * holds on it, each keep their own funding. [fundingId] is the venue's record id: a record heard twice is
- * booked once.
+ * booked once. A record the venue named no position for is [positionless]: a venue that realizes funding on a
+ * trade stamps it at that trade, so [basis] is what qkt's sessions held together just before [fundedAtMs], and
+ * each strategy books by what it held then, never by what it holds when the record is heard.
  */
 data class FundingCharged(
     val fundingId: String,
@@ -17,6 +19,7 @@ data class FundingCharged(
     val currency: String,
     val basis: BigDecimal,
     val fundedAtMs: Long,
+    val positionless: Boolean = false,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : BrokerEvent

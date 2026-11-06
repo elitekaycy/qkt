@@ -2,8 +2,11 @@
 spends one of a case's attempts and never passes one either.
 
 A venue is available when its gateway answers `/v1/health` with `venue_connected: true` and, where the lane knows the
-venue's own instrument state (a Deribit gateway, with QKT_ATTEST_DERIBIT_URL set), every instrument the case's strategy
-names that the gateway still lists unexpired is `open` on the venue's `public/ticker` with a fresh timestamp. Anything
+venue's own instrument state (a Deribit gateway, with QKT_ATTEST_DERIBIT_URL set), every instrument the case will
+trade is `open` on the venue's `public/ticker` with a fresh timestamp: what its strategy names that the gateway still
+lists unexpired, and what the case picks at run time, resolved as the runner and the daemon resolve it
+(lib/venue_instruments.py: a `@front` stream's current and next contract, the dated contract the runner picks, each
+option structure's legs). Anything
 else - the gateway refusing connections or answering 5xx, the link down, an instrument `locked`, a stale ticker, the
 venue's own API answering 5xx - is unavailable, with the reason recorded. A 4xx from the gateway is a real error
 (a wrong token, a wrong path), never an outage: it is raised.
@@ -14,7 +17,9 @@ Used by the gateway lane runners (run-derivatives-lane-case.py, each gateway leg
     VenueUnavailable (`venue unavailable for Xh: <reason>`), which the catalog records as `venue-unavailable`;
   - `Watch` while the case runs: samples every QKT_ATTEST_VENUE_WATCH_S and keeps every unavailable sample. Only those
     samples - never a failure's text alone - let the catalog rerun a failed attempt without spending its budget
-    (attest_classify.venue_class).
+    (attest_classify.venue_class). A failed attempt also records each order the venue refused because its book or
+    instrument was closed (`11030 orderbook_disabled`, `instrument_not_open`, `10019 locked_by_admin`, from the daemon
+    log), with a state sample taken then (`Watch.record_refusals`): the venue's own word that it would not trade.
 Waits and outages are logged to stderr (the case log) and, when QKT_ATTEST_NOTICE_FD names an open descriptor (the
 release's own log, set by run-attestation.sh), there too.
 """
@@ -25,6 +30,12 @@ DEFAULT_POLL_S = 60
 DEFAULT_WATCH_S = 30
 TICKER_FRESH_MS = 120_000
 MAX_KEPT_SAMPLES = 200
+MAX_KEPT_REFUSALS = 20
+# A venue refusal that says the book or instrument is closed (Deribit: 11030 other_reject orderbook_disabled, 10019
+# locked_by_admin, instrument_not_open), as the engine logs it: `Order rejected: <id> reason=<venue's reason>`.
+CLOSED_BOOK = re.compile(r"orderbook_disabled|orderbook_closed|instrument_not_open|locked_by_admin|\berror 10019\b",
+                         re.I)
+REFUSED = re.compile(r"Order rejected: (\S+) reason=(.*)$")
 
 
 def env_seconds(name, default):
@@ -86,10 +97,27 @@ class Probe:
     """One gateway venue's availability. [codes] are refreshed lazily from the strategy's [names] and the gateway's
     listing; [deribit_url] (QKT_ATTEST_DERIBIT_URL by default) enables the instrument-state check on a Deribit gateway."""
 
-    def __init__(self, label, gateway_url, key, names=(), deribit_url=None):
+    def __init__(self, label, gateway_url, key, names=(), deribit_url=None, resolve=None):
+        """[resolve](instruments, at_ms, quotes_of) gives the codes the case picks at run time beyond [names]
+        (lib/venue_instruments.py); quotes_of(currency) reads the venue's option quotes."""
         self.label, self.gateway_url, self.key, self.names = label, gateway_url, key, set(names)
         self.deribit_url = deribit_url if deribit_url is not None else os.environ.get("QKT_ATTEST_DERIBIT_URL")
-        self.codes = None
+        self.resolve, self.codes, self.tracked, self.adapter = resolve, None, set(), None
+
+    def track(self, codes):
+        """Adds what the case picked once it ran (a roll's pair) to what every later sample checks."""
+        self.tracked |= set(codes)
+        if self.codes is not None:
+            self.codes = sorted(set(self.codes) | self.tracked)
+
+    def option_quotes(self, currency):
+        """The venue's option quotes of [currency] (instrument_name, mark_iv, underlying_price); none when unreadable,
+        and a leg then falls back to its expiry's median strike."""
+        query = urllib.parse.urlencode({"currency": currency, "kind": "option"})
+        try:
+            return http_json(f"{self.deribit_url}/public/get_book_summary_by_currency?{query}")["result"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return []
 
     def sample(self):
         """{time, available, reason[, instruments]}: one look at the venue now."""
@@ -102,16 +130,21 @@ class Probe:
             return {"time": at, "available": False, "reason": f"gateway /v1/health answered HTTP {error.code}"}
         except (OSError, ValueError) as error:
             return {"time": at, "available": False, "reason": f"gateway /v1/health unreachable: {error}"}
+        self.adapter = health.get("adapter")
         if not health.get("venue_connected"):
             return {"time": at, "available": False, "reason": "gateway has no venue link (venue_connected false)"}
-        if health.get("adapter") == "deribit" and self.deribit_url and self.names:
+        if health.get("adapter") == "deribit" and self.deribit_url and (self.names or self.resolve):
             return self.deribit_sample(at)
         return {"time": at, "available": True, "reason": "venue_connected"}
 
     def deribit_sample(self, at):
         try:
             if self.codes is None:
-                self.codes = venue_codes(self.names, http_json(self.gateway_url + "/v1/instruments", self.key), at)
+                listing = http_json(self.gateway_url + "/v1/instruments", self.key)
+                codes = venue_codes(self.names, listing, at)
+                if self.resolve:
+                    codes += self.resolve(listing, at, self.option_quotes)
+                self.codes = sorted(set(codes) | self.tracked)
         except urllib.error.HTTPError as error:
             if error.code < 500:
                 raise
@@ -137,6 +170,25 @@ class Probe:
                 return {"time": at, "available": False, "instruments": states,
                         "reason": f"Deribit {code} ticker is stale ({(at - stamp) // 1000}s old)"}
         return {"time": at, "available": True, "reason": "venue_connected; instruments open", "instruments": states}
+
+
+def closed_book_refusals(log_text):
+    """The engine's log lines of orders the venue refused because the book or instrument was closed, each once."""
+    seen, lines = set(), []
+    for line in log_text.splitlines():
+        refused = REFUSED.search(line)
+        if refused and CLOSED_BOOK.search(refused.group(2)) and refused.group(1) not in seen:
+            seen.add(refused.group(1))
+            lines.append(line.strip()[:400])
+    return lines
+
+
+def refusal_reason(lines):
+    """`venue refused N order(s): the book is closed (11030 orderbook_disabled)`, from the first refusal."""
+    first = lines[0]
+    code = re.search(r"\berror (\d+)", first)
+    return (f"venue refused {len(lines)} order(s): the book is closed "
+            f"({(code.group(1) + ' ') if code else ''}{CLOSED_BOOK.search(first).group(0)})")
 
 
 def await_available(probes, max_s=None, poll_s=None, sleep=None):
@@ -178,7 +230,7 @@ class Watch:
     def __init__(self, probes, every_s=None):
         self.probes = probes
         self.every_s = env_seconds("QKT_ATTEST_VENUE_WATCH_S", DEFAULT_WATCH_S) if every_s is None else every_s
-        self.samples, self.down, self.errors = 0, [], []
+        self.samples, self.down, self.errors, self.refused = 0, [], [], 0
         self._stop = threading.Event()
         self._thread = None
 
@@ -195,6 +247,26 @@ class Watch:
                     notice(f"{probe.label} became unavailable during the case: {sample['reason']}")
                 if len(self.down) < MAX_KEPT_SAMPLES:
                     self.down.append(dict(sample, venue=probe.label))
+
+    def record_refusals(self, log_text):
+        """Records each order the venue refused because its book was closed ([log_text]: the daemon log) as outage
+        evidence, beside a state sample of the venue's instruments taken now. A refusal is attributed to the probes
+        whose adapter it names (`deribit error ...`), to every probe when it names none of them."""
+        lines = closed_book_refusals(log_text)
+        if not lines:
+            return
+        named = [p for p in self.probes if p.adapter and any(p.adapter in line.lower() for line in lines)]
+        for probe in named or self.probes:
+            mine = [line for line in lines if not named or probe.adapter in line.lower()]
+            try:
+                state = probe.sample()
+            except Exception as error:  # a 4xx: the refusal is still the venue's own word
+                state = {"error": str(error)[:200]}
+            reason = refusal_reason(mine)
+            notice(f"{probe.label}: {reason}")
+            self.refused += len(mine)
+            self.down.append({"time": now_ms(), "available": False, "venue": probe.label, "reason": reason,
+                              "refusals": mine[:MAX_KEPT_REFUSALS], "refusedOrders": len(mine), "stateSample": state})
 
     def start(self):
         def loop():
@@ -214,6 +286,9 @@ class Watch:
         """The evidence of an outage during the case ({samples, unavailable: [...], from, to}), or None."""
         if not self.down:
             return None
-        return {"samplesTaken": self.samples, "unavailableSamples": len(self.down), "unavailable": self.down,
-                "from": utc(self.down[0]["time"]), "to": utc(self.down[-1]["time"]),
-                "venues": sorted({d["venue"] for d in self.down}), "reason": self.down[-1]["reason"]}
+        found = {"samplesTaken": self.samples, "unavailableSamples": len(self.down), "unavailable": self.down,
+                 "from": utc(self.down[0]["time"]), "to": utc(self.down[-1]["time"]),
+                 "venues": sorted({d["venue"] for d in self.down}), "reason": self.down[-1]["reason"]}
+        if self.refused:
+            found["closedBookRefusals"] = self.refused
+        return found

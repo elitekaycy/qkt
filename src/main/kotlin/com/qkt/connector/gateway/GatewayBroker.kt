@@ -56,8 +56,8 @@ class GatewayBroker internal constructor(
     private val venueReads = session.venueReads(positions, strategy)
 
     init {
-        // The account's deals carry none of qkt's accounting; it is kept as this session books each fill.
-        bus.subscribe<FillAccountedEvent> { e -> if (session.symbols.owns(e.symbol)) session.legs.record(e) }
+        // The deals carry none of qkt's accounting (kept per fill), nor what was held when (funding without a basis).
+        bus.subscribe<FillAccountedEvent> { e -> if (session.symbols.owns(e.symbol)) attachment.moved(e, session.legs) }
     }
 
     /** The account's config entry name uppercased, e.g. `PAPER_DERIBIT`. */

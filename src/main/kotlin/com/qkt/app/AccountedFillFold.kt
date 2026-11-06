@@ -42,9 +42,11 @@ internal class AccountedFillFold(
                 runawayBreaker?.recordClose(a.strategyId)
             }
         }
-        // A boot-time reconcile is venue history from before this session; it belongs in
-        // lifetime P&L, not in today's loss budget.
-        if (a.kind != FillAccountingKind.RECONCILE) riskState.onFill(a.strategyId, a.netStrategyAccountRealized)
+        // A boot-time reconcile or downtime close is venue history from before this session; it
+        // belongs in lifetime P&L, not in today's loss budget.
+        if (a.kind != FillAccountingKind.RECONCILE && !a.orderId.startsWith(DOWNTIME_CLOSE_ID_PREFIX)) {
+            riskState.onFill(a.strategyId, a.netStrategyAccountRealized)
+        }
         riskEngine.evaluateHaltRules()
     }
 }

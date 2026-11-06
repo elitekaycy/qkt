@@ -11,6 +11,10 @@ import java.math.BigDecimal
  * venue ticket once known, and [protectiveIds] the bracket orders to cancel before closing.
  * Once its close is sent the exit stays armed until that close fills (#1360): [closeId] is the close
  * last sent, [attempts] how many were sent, [failures] how many in a row the venue ended unfilled.
+ *
+ * An exit whose entry order is still working is persisted too (#1660), so a restart re-arms it on the
+ * entry's fill: [entryId] is that entry and [holdMs] the hold timed from its fill; [deadlineMs] is then
+ * only the signal-time estimate. Both are null once the exit is armed.
  */
 data class PersistedTimeExit(
     val id: String,
@@ -25,7 +29,12 @@ data class PersistedTimeExit(
     val closeId: String? = null,
     val attempts: Int = 0,
     val failures: Int = 0,
-)
+    val entryId: String? = null,
+    val holdMs: Long? = null,
+) {
+    /** True while the entry this exit waits for has not filled. */
+    val isPending: Boolean get() = entryId != null
+}
 
 /**
  * Storage for armed timed exits. Kept apart from the rest of [StatePersistor] so the defaults

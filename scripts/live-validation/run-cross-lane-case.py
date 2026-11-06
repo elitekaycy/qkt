@@ -54,6 +54,7 @@ import causal_trace  # noqa: E402
 import cross_venue as cv  # noqa: E402
 import derivatives_drills  # noqa: E402
 import venue_health  # noqa: E402
+import venue_instruments  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("gateway_lane", os.path.join(HERE, "run-derivatives-lane-case.py"))
 gateway_lane = importlib.util.module_from_spec(_spec)  # the gateway lanes' venue client, reused for each gateway leg
@@ -499,17 +500,21 @@ class CrossRun:
 
     def await_venues(self, text):
         """Waits for every gateway venue before the case touches any account, then samples them while it runs."""
-        probes = [venue_health.Probe(leg.label, leg.url, leg.key, venue_health.strategy_symbols(text))
+        probes = [venue_health.Probe(leg.label, leg.url, leg.key, venue_health.strategy_symbols(text),
+                                     resolve=lambda listing, at_ms, quotes_of: venue_instruments.case_codes(
+                                         text, listing, at_ms, quotes_of))
                   for leg in self.gateways()]
         self.venue_waits = venue_health.await_available(probes)
         self.watch = venue_health.Watch(probes).start()
 
     def end_watch(self, problems):
-        """Stops the venue sampling; a failed attempt takes one more sample, at the time it failed."""
+        """Stops the venue sampling; a failed attempt takes one more sample, at the time it failed, and records each
+        order a venue refused because its book was closed (venue_health.Watch.record_refusals)."""
         if self.watch:
             self.watch.stop()
             if problems:
                 self.watch.look()
+                self.watch.record_refusals(self.log())
 
     def venue_record(self):
         record = {}

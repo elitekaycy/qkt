@@ -15,8 +15,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 /**
  * The REST half of a VGP v1 gateway (`docs/superpowers/specs/2026-10-01-vgp-v1-wire.md`) at
  * [baseUrl], authenticated by [apiKey]. Reads, and submits, are tried up to [retryAttempts] times
- * on a timeout or `503`: a submit is idempotent on its `client_order_id`, so resending the same body
- * can never place a second order. `422` and `423` refuse a submit; any other error is thrown. A request
+ * on a timeout, `503` or `429`: a submit is idempotent on its `client_order_id`, so resending the same body
+ * can never place a second order. A `503` or `429` first pauses every request to the gateway on [throttle]
+ * (shared per gateway); a request facing a long pause is not sent at all ([GatewayThrottle.pace]). `422`
+ * and `423` refuse a submit; any other error is thrown. A request
  * may take `httpTimeoutMs` in all, its wait for the answer included. Every attempt is recorded in [journal]
  * when one is given (never the key), an order's exchanges tagged with its engine order id.
  */
@@ -26,6 +28,7 @@ class GatewayClient(
     httpTimeoutMs: Long = 5_000,
     private val retryAttempts: Int = 3,
     journal: TransportJournal? = null,
+    private val throttle: GatewayThrottle = GatewayThrottle(),
 ) {
     private val json =
         Json {
@@ -146,13 +149,17 @@ class GatewayClient(
         return json.decodeFromString(serializer, text)
     }
 
-    /** One request, sent again on a timeout or `503` up to [retryAttempts] times. */
+    /** How long until the gateway may be asked again after a rate-limited answer; 0 when it may be now. */
+    fun backoffMs(): Long = throttle.waitMs()
+
+    /** One request, sent again on a timeout, `503` or `429` up to [retryAttempts] times, paced by [throttle]. */
     private fun send(
         path: String,
         method: (Request.Builder) -> Request.Builder,
     ): Pair<Int, String> {
         var last: String? = null
         repeat(retryAttempts) {
+            throttle.pace(path, last)
             val request =
                 method(
                     Request.Builder().url(baseUrl + path).header("Authorization", "Bearer $apiKey"),
@@ -160,8 +167,12 @@ class GatewayClient(
             try {
                 http.newCall(request).execute().use { response ->
                     val text = response.body?.string().orEmpty()
-                    if (response.code != 503) return response.code to text
-                    last = "503 ${errorOf(503, text).message}"
+                    if (response.code != 503 && response.code != 429) {
+                        throttle.answered()
+                        return response.code to text
+                    }
+                    throttle.limited(response.header("Retry-After"))
+                    last = "${response.code} ${errorOf(response.code, text).message}"
                 }
             } catch (e: IOException) {
                 last = e.toString()

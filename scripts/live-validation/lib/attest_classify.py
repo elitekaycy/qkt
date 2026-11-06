@@ -10,7 +10,11 @@ Two more come only from a gateway lane case's recorded venue evidence (lib/venue
   venue-outage      the attempt failed while samples taken during it show the venue unavailable, and every problem is
                     what an outage causes (a transport error, too few fills, not flat, a sweep that could not finish).
                     It reruns once the venue is back without spending the case's other budgets (bounded by
-                    VENUE_RERUNS). A wrong number, a failed replay or drill is behaviour, outage or not;
+                    VENUE_RERUNS). A wrong number, a failed replay or drill is behaviour, outage or not. When the
+                    evidence holds the venue's own refusals of the case's orders because their book was closed
+                    (`closedBookRefusals`, e.g. 11030 orderbook_disabled) and the attempt filled nothing, what could
+                    then not happen (a roll's legs, a drill that waits for a fill, an expected log line) is what the
+                    outage caused too; anything that did happen and should not have (reject_log) stays behaviour;
   venue-unavailable the venue stayed unavailable past the profile's wait maximum before the case could start: final, so
                     a resumed release (lib/attest_resume.py) reruns only such cases once the venue is back.
 Retrying only ever re-runs the whole case with every assertion: no class can turn a failure into a pass.
@@ -62,6 +66,11 @@ def _line_class(line, log_tail):
 _OUTAGE_EFFECT = re.compile(r"^(expected \d+ fills within the budget, saw \d+|flat-by-strategy:|sweep:)")
 
 
+# What a closed book causes in an attempt that filled nothing: whatever was to follow a fill never happened.
+_NOTHING_TRADED_EFFECT = re.compile(r"^(roll-[a-z-]+: |\w+: never fired|expect_log: the daemon log never matched|"
+                                    r"resume: the strategy never stopped)")
+
+
 def venue_class(result, problems, log_tail=()):
     """SESSION, VENUE_UNAVAILABLE or VENUE_OUTAGE when the attempt's own recorded evidence ([result]'s `sessionClosed`:
     a venue wait took a session-bound case past its window; `venueWaits`; `venueOutage`) says so, else None. The
@@ -75,7 +84,12 @@ def venue_class(result, problems, log_tail=()):
     if not outage.get("unavailableSamples"):
         return None
     lines = [p for p in problems if p and p.strip()]
-    if lines and all(_OUTAGE_EFFECT.search(line) or _line_class(line, log_tail) == INFRASTRUCTURE for line in lines):
+    nothing_traded = bool(outage.get("closedBookRefusals")) and not result.get("fills") and not result.get("rollLegs")
+
+    def caused(line):
+        return (_OUTAGE_EFFECT.search(line) or _line_class(line, log_tail) == INFRASTRUCTURE
+                or (nothing_traded and _NOTHING_TRADED_EFFECT.search(line)))
+    if lines and all(caused(line) for line in lines):
         return VENUE_OUTAGE
     return None
 
