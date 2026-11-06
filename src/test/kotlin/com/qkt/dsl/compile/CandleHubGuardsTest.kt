@@ -44,4 +44,28 @@ class CandleHubGuardsTest {
         assertThatThrownBy { hub.registerSyncGroup(SyncGroupKey(mapOf("g" to gold, "s" to silver), null), "s") }
             .hasMessageContaining("registerSyncGroup: alias 's' refers to unregistered stream $silver")
     }
+
+    @Test
+    fun `reads on a stream the hub never registered are empty`() {
+        val hub = CandleHub()
+
+        assertThat(hub.latest(gold)).isNull()
+        assertThat(hub.history(gold, 1)).isNull()
+        assertThat(hub.retention(gold)).isZero
+        assertThat(hub.historySize(gold)).isZero
+        assertThat(hub.seededHistory(gold)).isEmpty()
+        assertThat(hub.latestAtOrBefore(gold, 0L)).isNull()
+        assertThatThrownBy { hub.publish(gold, bar(gold.qktSymbol, 60_000L)) }
+            .hasMessageContaining("CandleHub.publish: unknown key $gold")
+    }
+
+    @Test
+    fun `registration needs a positive retention and a strategy id`() {
+        assertThatThrownBy {
+            CandleHub().register(gold, retention = 0, strategyId = "s")
+        }.hasMessageContaining("retention must be >= 1: 0")
+        assertThatThrownBy {
+            CandleHub().register(gold, retention = 1, strategyId = " ")
+        }.hasMessageContaining("strategyId must be non-blank")
+    }
 }
