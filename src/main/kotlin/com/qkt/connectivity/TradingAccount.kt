@@ -50,6 +50,12 @@ interface TradingAccount : AutoCloseable {
     /** Builds the catalogs of this account's option roots from the venue's listing, or null when it lists none. */
     val optionCatalogs: com.qkt.instrument.OptionCatalogSource? get() = null
 
+    /**
+     * The venue's event families as it lists them now (each contract's terms, kept current while it runs), or null
+     * when the connector lists none; a live session reads its event slots' contracts here.
+     */
+    val eventFamilies: com.qkt.instrument.InstrumentRegistry? get() = null
+
     /** The venue's published funding rates of its perpetuals, or null when the connector cannot read them. */
     val fundingRates: com.qkt.instrument.FundingRateSource? get() = null
 

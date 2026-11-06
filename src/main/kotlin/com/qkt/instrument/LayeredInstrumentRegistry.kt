@@ -26,7 +26,11 @@ class LayeredInstrumentRegistry(
 
     override fun options(): OptionDirectory? = layers.firstNotNullOfOrNull { it.options() }
 
-    override fun events(): EventDirectory? = layers.firstNotNullOfOrNull { it.events() }
+    /** The layers' event families; with several, a family is answered by the first layer that declares it. */
+    override fun events(): EventDirectory? {
+        val directories = layers.mapNotNull { it.events() }
+        return if (directories.size > 1) EventDirectories(directories) else directories.firstOrNull()
+    }
 
     override fun corporateActions(): CorporateActionSource? = layers.firstNotNullOfOrNull { it.corporateActions() }
 }

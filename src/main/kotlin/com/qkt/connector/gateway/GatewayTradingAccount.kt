@@ -45,11 +45,22 @@ class GatewayTradingAccount internal constructor(
     private val client by lazy {
         GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal, throttle)
     }
+    /** The session's symbol map, which the event families also feed contracts listed between two listing reads. */
+    private val sessionSymbols = GatewaySymbols(config.symbolPrefix)
+
+    private val events =
+        GatewayEventFamilies(
+            config.symbolPrefix,
+            { filters -> client.instrumentPages(filters) },
+            sessionSymbols::include,
+            EVENT_POLL_MS,
+        )
+
     private val opened =
         lazy {
             GatewaySession(
                 client,
-                GatewaySymbols(config.symbolPrefix),
+                sessionSymbols,
                 clock,
                 identity,
                 strategies,
@@ -85,9 +96,12 @@ class GatewayTradingAccount internal constructor(
             bars = client::bars,
             capabilities = { client.health().capabilities },
             prints = { code, kind, fromMs, toMs -> historyClient.prints(code, kind, fromMs, toMs) },
+            events = events,
         )
 
     override val marketData: MarketSource = quotes
+
+    override val eventFamilies: InstrumentRegistry get() = events
 
     override val contractCatalogs: ContractCatalogSource
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
@@ -162,9 +176,13 @@ class GatewayTradingAccount internal constructor(
     /** Closes the account's gateway connection, if it was ever opened. */
     override fun close() {
         if (opened.isInitialized()) opened.value.close()
+        events.close()
         recording.close()
         journal?.close()
     }
 }
 
 private const val MARKS_TIMEOUT_MS = 60_000L
+
+/** How often a live event family is polled for listing changes: the gateway reads its venue's listing each minute. */
+private const val EVENT_POLL_MS = 60_000L
