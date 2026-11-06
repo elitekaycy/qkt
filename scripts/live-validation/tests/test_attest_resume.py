@@ -63,11 +63,17 @@ printf '{"status":"passed","telemetry":{"ruleDecisions":1,"submitted":1,"accepte
 '''
 GH = '''#!/usr/bin/env bash
 case "$1 ${2:-}" in
+  "api "*) case "$*" in
+    *compare/*) echo ahead; exit 0 ;;
+    *contents/VERSION*) echo MC4wLjEK; exit 0 ;;
+    *git/ref/heads*) exit 1 ;;
+    *git/refs*) exit 0 ;;
+  esac ;;&
   "run list") echo 4242 ;;
   "run view") echo "pushing manifest for ghcr.io/test/qkt:edge@sha256:$(printf 'a%.0s' {1..64})" ;;
   "release view") echo v0.0.1 ;;
   "api "*) echo 1 ;;
-  "workflow run") echo "dispatched" >> "$STUB_ROOT/calls.log" ;;
+  "workflow run") echo "dispatched $*" >> "$STUB_ROOT/calls.log" ;;
   *) ;;
 esac
 '''
@@ -123,6 +129,7 @@ class Harness:
         write(f"{repo}/{LIVE}/run-insights-attribution.sh", INS_STUB)
         write(f"{repo}/scripts/release-proof/run.sh", PROOFS_STUB)
         write(f"{repo}/gradlew", GRADLEW, True)
+        write(f"{repo}/scripts/pin-release-branch.sh", open(f"{ROOT}/scripts/pin-release-branch.sh").read(), True)
         write(f"{repo}/attestation/lib/validate.py", 'print("ok")\n')
         write(f"{repo}/attestation/lanes.yaml", "lanes: {}\n")
         write(f"{repo}/tests/data-e2e/corpus.lock", "abc x\n")

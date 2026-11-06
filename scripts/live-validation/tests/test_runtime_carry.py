@@ -70,6 +70,12 @@ class CarryTest(unittest.TestCase):
         self.assertEqual(evidence["carry"]["summary"], {"carried": 0, "keptFromThisCommit": 0, "freshlyRun": 6})
         self.assertEqual(self.h.verify().returncode, 0, self.h.verify().stderr)
 
+    def test_the_dispatch_runs_on_a_branch_pinned_at_the_attested_commit(self):
+        self.h.forget_calls()
+        self.attested(dispatch=True)
+        self.assertIn("dispatched workflow run paper-soak.yml --ref release/v0.0.1", "\n".join(self.h.calls()))
+        self.assertNotIn("--ref testing", "\n".join(self.h.calls()))
+
     def test_a_v2_bundle_is_refused_without_a_repo_to_check_it_against(self):
         done = self.h.verify(repo_root=False)
         self.assertEqual(done.returncode, 1)
