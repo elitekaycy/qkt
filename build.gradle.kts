@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.dokka)
     id("qkt.build-info")
     id("qkt.testing")
+    id("qkt.coverage")
     id("qkt.script-tests")
     id("qkt.file-size")
     id("qkt.distribution")
