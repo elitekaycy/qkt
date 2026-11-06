@@ -21,7 +21,7 @@ A case's `continuous_roll` says what must come of it:
                  stops, and `qkt resume` clears the stop (nothing is left of it) and its next order reaches the venue.
 
 Legs are not the engine's orders: their client order ids are `roll:<atMs>:<digest>:<kind>.<submit time>`, the digest
-being the first 12 hex digits of the SHA-256 of `stream\\natMs\\nstrategy` (RollLegIds.kt), so a case can still tell its
+being the first 8 hex digits of the SHA-256 of `stream\\natMs\\nstrategy` (RollLegIds.kt), so a case can still tell its
 own apart on a shared account.
 """
 import datetime, hashlib, json
@@ -68,9 +68,13 @@ def hhmm(at_ms):
     return datetime.datetime.fromtimestamp(at_ms / 1000, datetime.timezone.utc).strftime("%H:%M")
 
 
+# RollLegIds.kt DIGEST_HEX: 8 hex digits, so a roll leg's client order id fits Bybit's 45-character limit (#1643).
+ROLL_DIGEST_HEX = 8
+
+
 def leg_prefix(stream, at_ms, strategy):
     """The client order id prefix of [strategy]'s legs of the roll at [at_ms] (RollLegIds.kt)."""
-    digest = hashlib.sha256(f"{stream}\n{at_ms}\n{strategy}".encode()).hexdigest()[:12]
+    digest = hashlib.sha256(f"{stream}\n{at_ms}\n{strategy}".encode()).hexdigest()[:ROLL_DIGEST_HEX]
     return f"roll:{at_ms}:{digest}:"
 
 
