@@ -41,6 +41,11 @@ sockets and signal handlers, or a shutdown hook. It is not for code that is mere
 test; split the pure part out and test that. Every use names its reason, and a reviewer can
 refuse it.
 
+The hand-run harnesses in `qkt.dev-tasks` (`runDemo`, `runLiveDemo`, `runMaxAudit`, `runParity*`,
+`runStateDemo`) are excluded by class name in `build-logic/src/main/kotlin/qkt.coverage.gradle.kts`:
+they are mains against live feeds that no product code calls. Adding to that list needs the same
+justification.
+
 ## Writing the test
 
 Follow [the testing rules](conventions.md): JUnit 5, AssertJ, real project types over mocks,

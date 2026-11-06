@@ -237,8 +237,11 @@ Use `--dry-run` before applying an edited live strategy.
 
 Reconcile distinguishes a position that closed while the daemon was down from a real
 mismatch: a persisted leg whose venue ticket is no longer in the venue's open-position list
-is retired automatically (its realized result is booked from the venue's closing deals when
-the venue keeps deal history) and the deploy continues. A venue position with no persisted
+is retired automatically and the deploy continues. When the venue keeps deal history, the
+close is booked from its closing deals like a venue close seen live: a `filled` order-journal
+line `reconcile:<legId>` on the leg's symbol with the opposite side, the leg's quantity, the
+venue's price, `exitReason` (STOP, TAKE_PROFIT, ...) and `venueTime`, and the realized P&L on
+that symbol, kept out of the day's loss budget. It is booked once: the next start finds no leg. A venue position with no persisted
 leg, a quantity/side disagreement on a ticket that still exists, or a leg without a ticket
 still fails closed and needs `--reconcile=ignore-mismatches`.
 

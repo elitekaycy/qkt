@@ -5,6 +5,9 @@ import com.qkt.broker.continuous.StreamContractPositions
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
+import com.qkt.events.FUNDING_REPLAY_MS
+import com.qkt.events.FillAccountedEvent
+import com.qkt.positions.HoldingTimeline
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
@@ -28,8 +31,27 @@ internal class GatewayRouting {
         val positions: PositionProvider,
         val publish: (BrokerEvent) -> Unit,
     ) {
+        private val moves = HoldingTimeline<String>(FUNDING_REPLAY_MS)
+
         /** What the broker's session holds of [symbol], signed. */
         fun holding(symbol: String): BigDecimal = positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+
+        /** What the broker's session held of [symbol] just before [atMs], signed (now, when it has not moved since). */
+        fun holdingAt(
+            symbol: String,
+            atMs: Long,
+        ): BigDecimal = moves.heldAt(symbol, atMs) { holding(symbol) }
+
+        /** The broker's session accounted [e], a fill that may have moved what it holds; [legs] keep its leg too. */
+        fun moved(
+            e: FillAccountedEvent,
+            legs: GatewayFillLegs,
+        ) {
+            legs.record(e)
+            val before = e.accountPositionBefore?.quantity ?: BigDecimal.ZERO
+            val after = e.accountPositionAfter?.quantity ?: BigDecimal.ZERO
+            moves.record(e.symbol, HoldingTimeline.movedAt(e), before, after)
+        }
     }
 
     private val log = LoggerFactory.getLogger(GatewayRouting::class.java)
