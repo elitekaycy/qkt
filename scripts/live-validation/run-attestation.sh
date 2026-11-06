@@ -7,12 +7,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 usage() {
     cat <<'USAGE'
-Usage: run-attestation.sh --profile FILE [--dispatch] [--attempts N]
+Usage: run-attestation.sh --profile FILE [--dispatch] [--attempts N] [--no-carry]
 
 FILE is a shell fragment that sets:
   gateway_url  expected_login  expected_server  expected_leverage
   wave_root    bundle_root     image_repository insights_image   magic_base
   data_corpus  (a clone of elitekaycy/qkt-data-corpus, for the release proofs)
+and may set gateway_images: space-separated docker image refs of the gateways this run trades through. Their image ids are part
+of the evidence key; without them nothing is carried between commits (see lib/runtime_fingerprint.py).
 and may set docs_data_root, the local store the docs examples read (adds them to the proofs).
 and may set session_wait_max_h (default 72): how far ahead a session lane's window (stocks, alpaca) may be. A run that
 reaches such a lane outside a window it fits in runs every other lane now and waits for the window; only a window
@@ -30,6 +32,9 @@ Must run from a clean checkout of the testing commit. Progress is written to
 <wave_root>/attestation-run.json after every stage. Exit 0 only when the assembled bundle
 passes verify-paper-soak-attestation.py. --dispatch then starts paper-soak.yml on testing.
 
+--no-carry runs every case on this commit even when an earlier commit with the same runtime fingerprint passed it: the
+scheduled full re-attestation that audits the carry rules against real runs.
+
 Run again after a stop: evidence bound to this commit, this profile file, this account and this built CLI, and younger
 than 24 hours, is kept. Preflight, the sweep, every case that did not pass, the bundle and the verify always run again.
 USAGE
@@ -37,12 +42,13 @@ USAGE
 fail() { stage_write failed "$1"; printf 'run-attestation: %s\n' "$1" >&2; exit 1; }
 log() { printf '%s %s\n' "$(date -u +%T)" "$*"; }
 
-profile=""; dispatch=false; attempts=3
+profile=""; dispatch=false; attempts=3; no_carry=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --profile) profile="${2:-}"; shift 2 ;;
         --dispatch) dispatch=true; shift ;;
         --attempts) attempts="${2:-}"; shift 2 ;;
+        --no-carry) no_carry=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) printf 'run-attestation: unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
@@ -105,6 +111,16 @@ if [ -n "${cross_venues:-}" ]; then
     for venue in $cross_venues; do deriv+=(--cross-venue "$venue"); done
 fi
 
+# What an earlier commit's passed case may stand for here (lib/runtime_fingerprint.py): the fingerprint of what ships,
+# plus the JDK and the gateway images. Any part that cannot be computed leaves the binding on the exact commit.
+runtime_fp="$(python3 "$lib/runtime_fingerprint.py" fingerprint --repo "$repo_root" --sha "$sha" 2>/dev/null || true)"
+environment="$(python3 "$lib/runtime_fingerprint.py" environment --gateway-images "${gateway_images:-}" 2>/dev/null || true)"
+if [ -z "$runtime_fp" ] || [ -z "$environment" ]; then
+    runtime_fp=""; environment=""
+    log "binding: exact commit $short (no runtime fingerprint or environment identity): nothing is carried from other commits"
+else
+    log "binding: runtime fingerprint ${runtime_fp:0:12} (evidence of other commits with it may be carried)"
+fi
 stage_write preflight
 problems=()
 [ -z "$(git status --porcelain)" ] || problems+=(--also-failed "working tree is not clean; the binary would not correspond to $short")
@@ -138,7 +154,7 @@ for pass in 1 2 3; do
         --server "$expected_server" --cli-root "$cli_root" --cli-version "${cli_version:-none}" --proofs "$proofs" --wave "$wave" \
         --insights "$ins" --catalog "$catalog" --lanes "$lanes" --repo-root "$repo_root" --previous-tag "$previous_tag" \
         --corpus-lock "$(cut -d' ' -f1 "$repo_root/tests/data-e2e/corpus.lock" 2>/dev/null || true)" \
-        --image-id "$(docker image inspect --format '{{.Id}}' "$insights_image" 2>/dev/null || true)" --out "$plan" > "$plan.txt"
+        --image-id "$(docker image inspect --format '{{.Id}}' "$insights_image" 2>/dev/null || true)" --runtime-fingerprint "$runtime_fp" --environment "$environment" --out "$plan" > "$plan.txt"
     log "$(cat "$plan.txt")"
     checked=0
     python3 "$lib/attest_preflight.py" --profile "$profile" --repo-root "$repo_root" "${dispatch_flag[@]}" --plan "$plan" \
@@ -174,7 +190,7 @@ if reuse fresh; then
     ./gradlew --stop >/dev/null 2>&1 || true
     cli_version="$("$cli" --version | head -n 1)"
     python3 "$lib/attest_resume.py" binding --sha "$sha" --profile "$profile" --login "$expected_login" --server "$expected_server" \
-        --cli-root "$cli_root" --cli-version "$cli_version" --out "$binding"
+        --cli-root "$cli_root" --cli-version "$cli_version" --runtime-fingerprint "$runtime_fp" --environment "$environment" --out "$binding"
     python3 "$lib/attest_resume.py" begin --ledger "$ledger" --binding "$binding"
 else
     log "kept the CLI built earlier"
@@ -248,6 +264,10 @@ fi
 
 # Any failed case fails the attestation: promotion to main means the whole catalog passed on this exact build, and
 # the bundle's catalog evidence says so case by case.
+# Cases an earlier commit passed under the same key and definition join the catalog before it starts; it runs the rest.
+carry_flag=(); [ "$no_carry" != true ] || carry_flag=(--no-carry)
+python3 "$lib/attest_resume.py" carry --ledger "$ledger" --catalog "$catalog" --binding "$binding" --repo-root "$repo_root" \
+    --lanes "$lanes" --carry-root "$wave_root" "${carry_flag[@]}" | while IFS= read -r line; do log "$line"; done
 stage_write catalog "$( [ -f "$schedule" ] && jq -r .summary "$schedule" || true)"
 # A gateway lane's venue down (a halted testnet) is waited out, at most venue_wait_max_s (profile; default 6 h), each wait
 # and each outage rerun written here through fd 3; deribit_public_url (profile) overrides the Deribit testnet API.
@@ -289,16 +309,19 @@ run_id="$(jq -r .execution.runId "$wave/suite.json")"
 catalog_evidence="$wave_root/attest-$short.catalog-evidence.json"
 python3 "$lib/attest_resume.py" manifest --ledger "$ledger" --catalog "$catalog" --lanes "$lanes" --repo-root "$repo_root" \
     --run-id "$run_id" --waits "$session_waits" --waits "$catalog/session-waits.jsonl" --out "$catalog_evidence" 2> "$wave_root/assemble-$short.log" || fail "bundle refused: $(tail -n 1 "$wave_root/assemble-$short.log")"
+log "evidence: $(jq -c '.carry | {mode, disabled, summary}' "$catalog_evidence")"
 python3 scripts/live-validation/assemble-attestation.py "$wave" "$ins" "$bundle" "$image_repository@$digest" "$sha" "$catalog_evidence" \
     >> "$wave_root/assemble-$short.log" 2>&1 || fail "bundle assembly failed; see assemble-$short.log: $(tail -n 1 "$wave_root/assemble-$short.log" | cut -c1-200)"
 python3 scripts/verify-paper-soak-attestation.py "$bundle/attestation.json" --expected-git-sha "$sha" \
-    --expected-image-repository "$image_repository" --cases-root "$repo_root/attestation/cases" || fail "assembled bundle does not verify"
+    --expected-image-repository "$image_repository" --cases-root "$repo_root/attestation/cases" --repo-root "$repo_root" || fail "assembled bundle does not verify"
 
 if [ "$dispatch" = true ]; then
     stage_write dispatch
     runner_online="$(gh api "repos/{owner}/{repo}/actions/runners" --jq '[.runners[] | select(.status == "online")] | length' 2>/dev/null || echo 0)"
     [ "$runner_online" -gt 0 ] || fail "no self-hosted runner is online to verify the attestation; start it and re-run with the same bundle"
-    gh workflow run paper-soak.yml --ref testing -f attestation_path="$bundle/attestation.json" >/dev/null
+    # paper-soak runs on a branch pinned at this commit, so testing moving on does not change what it verifies.
+    release_branch="$(bash "$repo_root/scripts/pin-release-branch.sh" "$sha")" || fail "could not pin the release branch at $short"
+    gh workflow run paper-soak.yml --ref "$release_branch" -f attestation_path="$bundle/attestation.json" >/dev/null
     # paper-soak records this runId as used: a later rerun needs a new wave, whatever else it keeps.
     python3 "$lib/attest_resume.py" spend-wave --ledger "$ledger"
 fi
