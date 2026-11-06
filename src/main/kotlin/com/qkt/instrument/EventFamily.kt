@@ -27,10 +27,13 @@ data class EventFamily(
     /** The venue prefix of [root]: `KALSHI` for `KALSHI:KXINXU`. */
     val venue: String get() = root.substringBefore(':')
 
-    /** Metadata for [qktSymbol], a contract of this family with [terms]. */
+    /**
+     * Metadata for [qktSymbol], a contract of this family with [terms], or a slot of it ([SlotSymbol]) when [terms] is
+     * null: a slot sizes like the family's contracts but is no contract, so it carries no terms and is never traded.
+     */
     fun metaFor(
         qktSymbol: String,
-        terms: EventTerms,
+        terms: EventTerms?,
     ): InstrumentMeta =
         InstrumentMeta(
             qktSymbol = qktSymbol,

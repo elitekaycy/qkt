@@ -26,7 +26,9 @@ class EventCatalogRegistry(
     private val byFamily: Map<String, List<String>> =
         families.associate { f -> f.root to table.keys.filter { termsOf(it).root == f.root } }
 
-    override fun lookup(qktSymbol: String): InstrumentMeta? = table[qktSymbol]
+    /** A catalogued contract's metadata, or a declared family's slot's ([EventFamily.metaFor] without terms). */
+    override fun lookup(qktSymbol: String): InstrumentMeta? =
+        table[qktSymbol] ?: SlotSymbol.parse(qktSymbol)?.let { family(it.root)?.metaFor(qktSymbol, null) }
 
     override fun events(): EventDirectory = this
 
