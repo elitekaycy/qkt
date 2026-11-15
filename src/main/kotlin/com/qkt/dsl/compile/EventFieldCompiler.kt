@@ -18,6 +18,7 @@ import java.math.RoundingMode
  * contract, `rate × p × (1 − p)`), **unrounded**: the venue rounds per order, so one contract's share of an order's fee
  * is this value, not the rounded single-contract fee. A fee with no maker rate reads 0 for `maker_fee`.
  *
+ * On an event slot every field reads the contract the slot followed for its latest ticks ([SlotFields]).
  * A bound, time or label the contract does not carry is Undefined, and so is a fee while the stream has no quote on
  * that side. A stream that is not an event contract, or a fee field on one whose fee is unknown, is refused before
  * the strategy starts ([com.qkt.app.requireEventTerms]), so neither reads as a silent Undefined or zero.
@@ -35,9 +36,10 @@ internal object EventFieldCompiler {
         val quote = if (ref.field in feeFields) quoteSide(ref) else null
         return CompiledExpr { ctx ->
             val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            val symbol = SlotFields.resolve(ctx, key.qktSymbol) ?: return@CompiledExpr Value.Undefined
             val terms =
                 ctx.strategyContext.instruments
-                    .lookup(key.qktSymbol)
+                    .lookup(symbol)
                     ?.derivative as? EventTerms ?: return@CompiledExpr Value.Undefined
             val now = ctx.nowMs()
             when (ref.field) {
