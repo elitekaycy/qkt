@@ -287,7 +287,7 @@
       "requiredAxes": ["oracle", "dsl", "ticks", "bars", "tickResolvedBars", "livePaper", "mt5Demo", "reports", "journal", "insights", "portfolio"],
       "evidenceProfile": "generated-numeric-functions",
       "capabilities": [
-        "ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORMALIZE", "POW",
+        "ABS", "CEIL", "EXP", "FLOOR", "LOG", "MAX", "MIN", "MOD", "NORM_CDF", "NORMALIZE", "POW",
         "RANK_OF", "ROUND", "ROUND_TO", "SOFTMAX", "SQRT"
       ]
     },

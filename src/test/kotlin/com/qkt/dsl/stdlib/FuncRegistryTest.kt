@@ -149,6 +149,22 @@ class FuncRegistryTest {
     }
 
     @Test
+    fun `NORM_CDF is the standard normal probability of at most x`() {
+        assertThat(FuncRegistry.invoke("NORM_CDF", listOf(BigDecimal.ZERO))).isEqualByComparingTo("0.5")
+        assertThat(FuncRegistry.invoke("NORM_CDF", listOf(BigDecimal("1.96")))!!.toDouble())
+            .isCloseTo(0.9750021, within(1e-7))
+        assertThat(FuncRegistry.invoke("NORM_CDF", listOf(BigDecimal("-1.96")))!!.toDouble())
+            .isCloseTo(0.0249979, within(1e-7))
+        assertThat(FuncRegistry.invoke("NORM_CDF", listOf(BigDecimal("1000")))).isEqualByComparingTo("1")
+    }
+
+    @Test
+    fun `NORM_CDF takes exactly one argument`() {
+        assertThatThrownBy { FuncRegistry.invoke("NORM_CDF", listOf(BigDecimal.ONE, BigDecimal.ONE)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `MIN rejects single arg`() {
         assertThatThrownBy { FuncRegistry.invoke("MIN", listOf(BigDecimal.ONE)) }
             .isInstanceOf(IllegalArgumentException::class.java)

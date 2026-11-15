@@ -401,6 +401,7 @@ round_to(<x>, <step>)
 rank_of(<self>, <peer>, ...)      -- 1-based rank of <self> among the values, 1 = highest
 normalize(<self>, <peer>, ...)    -- min-max scale of <self> among the values, in [0, 1]
 softmax(<self>, <peer>, ...)      -- softmax weight of <self> among the values, in (0, 1)
+norm_cdf(<expr>)                  -- standard normal probability of at most <expr>, in [0, 1]
 ```
 
 `max`/`min` with two or more arguments are plain scalar functions; with one argument and a
@@ -420,6 +421,16 @@ RULES
 
     WHEN normalize(mom_eth, mom_btc, mom_sol) > 0.5 AND POSITION.eth = 0
     THEN BUY eth SIZING max(0.05, min(0.2, abs(mom_eth)))
+```
+
+`norm_cdf(x)` is the standard normal cumulative probability: `norm_cdf(0)` is 0.5, `norm_cdf(1.96)` about
+0.975, and it tends to 0 and 1 in the tails. It is the same distribution qkt prices options with. A fair value
+for "the reference settles at or above K" is then one expression, from the distance to K in standard deviations
+of the move left:
+
+```qkt
+LET z = (spx.close - 7425) / (spx.close * 0.15 * sqrt(30 / 525600))   -- 15% annual vol, 30 minutes left
+LET fair_yes = norm_cdf(z)
 ```
 
 ```qkt
