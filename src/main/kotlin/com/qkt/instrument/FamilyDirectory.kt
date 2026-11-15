@@ -68,22 +68,21 @@ class OpenEvents(
             .map { (event, members) ->
                 FamilyEvent(event, members.minOf { it.terms.closeAtMs }, members.sortedWith(STRIKE_ORDER))
             }.sortedWith(compareBy({ it.closeAtMs }, { it.event }))
-
-    private companion object {
-        val BOUNDS: Comparator<BigDecimal?> = nullsLast(naturalOrder())
-
-        /** By the first bound (strikeless contracts last), then the cap, then the symbol, so the order never ties. */
-        val STRIKE_ORDER: Comparator<FamilyContract> =
-            Comparator { a, b ->
-                val first = BOUNDS.compare(a.firstBound(), b.firstBound())
-                val cap = BOUNDS.compare(a.terms.predicate.cap, b.terms.predicate.cap)
-                when {
-                    first != 0 -> first
-                    cap != 0 -> cap
-                    else -> a.symbol.compareTo(b.symbol)
-                }
-            }
-
-        fun FamilyContract.firstBound(): BigDecimal? = terms.predicate.floor ?: terms.predicate.cap
-    }
 }
+
+private val BOUNDS: Comparator<BigDecimal?> = nullsLast(naturalOrder())
+
+/** By the first bound (strikeless contracts last), then the cap, then the symbol, so the order never ties. */
+private val STRIKE_ORDER: Comparator<FamilyContract> =
+    Comparator { a, b ->
+        val first = BOUNDS.compare(firstBound(a), firstBound(b))
+        val cap = BOUNDS.compare(a.terms.predicate.cap, b.terms.predicate.cap)
+        when {
+            first != 0 -> first
+            cap != 0 -> cap
+            else -> a.symbol.compareTo(b.symbol)
+        }
+    }
+
+private fun firstBound(contract: FamilyContract): BigDecimal? =
+    contract.terms.predicate.floor ?: contract.terms.predicate.cap
