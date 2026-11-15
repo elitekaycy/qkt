@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.instrument.ContinuousSelector
+import com.qkt.instrument.SlotSelectors
 
 /**
  * Parses the right-hand side of one `SYMBOLS` declaration: a venue stream
@@ -19,7 +20,8 @@ internal class StreamDeclParser(
 ) {
     /**
      * Parse the stream body after `<alias> =`: `<broker>:<symbol>[@front|@next] EVERY <tf> [WARMUP <n> BARS]`.
-     * A continuous-futures selector stays part of the symbol (`BTCUSDT@front`), so the stream's
+     * A continuous-futures selector stays part of the symbol (`BTCUSDT@front`), and so does an event slot's
+     * (`KXINXU@front.p70`, [com.qkt.instrument.SlotSymbol]), so the stream's
      * identity, and every existing strategy's AST, are unchanged by the syntax; so does a decimal strike
      * (`KXHIGHNY_26NOV06_B73.5`, [venueSymbol]).
      */
@@ -66,10 +68,14 @@ internal class StreamDeclParser(
         )
     }
 
-    /** The continuous-futures selector after `@` (`front`, `next`), validated against [ContinuousSelector]. */
+    /**
+     * The selector after `@`: a continuous-futures selector (`front`, `next`), validated against
+     * [ContinuousSelector], or, when a `.` follows it, an event slot's selectors (`front.p70`, [slotSelector]).
+     */
     private fun parseSelector(): String {
         cursor.advance()
         val token = cursor.expect(TokenKind.IDENT, "expected a continuous selector after '@'").lexeme
+        if (cursor.peek().kind == TokenKind.DOT) return slotSelector(token)
         if (ContinuousSelector.parse(token) == null) {
             cursor.error(
                 "unknown continuous selector '@$token'; use ${ContinuousSelector.entries.joinToString {
@@ -78,6 +84,19 @@ internal class StreamDeclParser(
             )
         }
         return token
+    }
+
+    /** An event slot's `<event>.<strike>` after `@` (`front.p70`), each part validated against [SlotSelectors]. */
+    private fun slotSelector(event: String): String {
+        if (SlotSelectors.eventOffset(event) == null) {
+            cursor.error("unknown slot event selector '@$event'; use ${SlotSelectors.eventSpellings}")
+        }
+        cursor.advance()
+        val strike = cursor.expect(TokenKind.IDENT, "expected a slot strike selector after '@$event.'").lexeme
+        if (SlotSelectors.strike(strike) == null) {
+            cursor.error("unknown slot strike selector '$strike'; use ${SlotSelectors.strikeSpellings}")
+        }
+        return "$event.$strike"
     }
 
     /**
