@@ -136,6 +136,8 @@ RULES
 - `<symbol>` is the canonical symbol qkt sees (`EURUSD`, `BTCUSDT`). Per-broker translation
   (suffix, alias) happens at the broker boundary — see
   [broker integration](../concepts/broker-integration.md).
+  It is one identifier, which may end in a decimal strike written digits `.` digits with no spaces
+  (`KALSHI:KXHIGHNY_26NOV06_B73.5`).
 - `<timeframe>` is `1m`, `5m`, `15m`, `1h`, `1d`, etc. — units `s`, `m`, `h`, `d` only, there is
   no `1w`. Drives the candle aggregator.
 - `WARMUP <N> BARS` (optional) gates every rule that touches this stream until N closed candles
@@ -275,6 +277,10 @@ fill and checked every tick. Also applies to its `STACK_AT` legs. See
 - Option contract: `.iv` (mark implied volatility), `.delta`, `.gamma`, `.vega`, `.theta` (per contract);
   refused at start on any other stream or on a feed without option marks (see
   [streams](dsl/streams.md#stream-field-access))
+- Event contract: `.floor_strike`, `.cap_strike`, `.close_at`, `.expiry_at`, `.minutes_left`, `.occurs_at`,
+  `.minutes_to_occurs`, `.taker_fee`, `.maker_fee` (one contract, unrounded), `.title` (string); refused at start on
+  any other stream, the fees also on a contract with no fee model (see
+  [streams](dsl/streams.md#event-contract-fields-aliasminutes_left-floor_strike))
 - Order-book depth: `.bid_depth`, `.ask_depth` (quantity on the ten best levels a side), `.book_imbalance`
   (−1 to 1); a venue stream only, refused at start on a feed whose gateway does not declare `depth` (see
   [streams](dsl/streams.md#order-book-depth-aliasbid_depth-ask_depth-book_imbalance))

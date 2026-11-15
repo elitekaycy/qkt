@@ -3,6 +3,7 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.SymbolSessionProvider
 import com.qkt.common.Clock
+import com.qkt.instrument.EventTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.MarketDataGate
@@ -12,9 +13,10 @@ import com.qkt.marketdata.MarketDataGateConfig
  * The live session's stale/outlier judgment over its feeds (#395): it suppresses new orders on frozen
  * data and drops implausible ticks before they poison indicators, with [config]'s thresholds, session
  * and scheduled-break answers from [venues] (read at call time, so venues built after the gate count),
- * and every unhealthy/recovered transition routed to [alerts]. Option contracts in [instruments] are not
- * judged for price outliers: a premium moves several times its underlying's move, so a band sized for
- * spot rejects real quotes and re-baselines endlessly (a backtest fills on the same quotes; parity A49).
+ * and every unhealthy/recovered transition routed to [alerts]. Option and event contracts in [instruments]
+ * are not judged for price outliers: a premium moves several times its underlying's move, so a band sized
+ * for spot rejects real quotes and re-baselines endlessly (a backtest fills on the same quotes; parity A49),
+ * and an event's price is bounded in [0, payout], where a jump from 0.30 to 0.95 is the news, not an error.
  */
 internal fun liveMarketDataGate(
     clock: Clock,
@@ -38,16 +40,16 @@ internal fun liveMarketDataGate(
     )
 
 /**
- * Whether [symbol]'s prices are judged for outliers: not an option's. An option code of a declared root that its
- * catalog does not list yet (a venue lists the next expiries during the day, the catalog refreshes on a schedule)
- * is still an option, so it is not judged either.
+ * Whether [symbol]'s prices are judged for outliers: not an option's or an event contract's. An option code of a
+ * declared root that its catalog does not list yet (a venue lists the next expiries during the day, the catalog
+ * refreshes on a schedule) is still an option, so it is not judged either.
  */
 internal fun judgesPriceOutliers(
     instruments: InstrumentRegistry,
     symbol: String,
 ): Boolean {
     val meta = instruments.lookup(symbol)
-    if (meta != null) return meta.derivative !is OptionTerms
+    if (meta != null) return meta.derivative !is OptionTerms && meta.derivative !is EventTerms
     return instruments.options()?.isOptionCode(symbol) != true
 }
 
