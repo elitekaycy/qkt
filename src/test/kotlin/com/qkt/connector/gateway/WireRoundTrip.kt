@@ -15,7 +15,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 
 /**
  * Drives a wire data class through every field: a full document decodes, re-encodes to itself, equals a twin and
- * differs from every single-field mutation; an optional field may be absent or null, a required one may not.
+ * differs from every single-field mutation; a field with a default may be absent and a nullable one null, no other.
  */
 internal class WireRoundTrip<T : Any>(
     private val serializer: KSerializer<T>,
@@ -28,8 +28,14 @@ internal class WireRoundTrip<T : Any>(
     private fun decode(element: JsonElement): T = json.decodeFromJsonElement(serializer, element)
 
     fun verify() {
+        val descriptor = serializer.descriptor
+        assertThat(root.keys.filter { descriptor.isElementOptional(descriptor.getElementIndex(it)) }.toSet())
+            .`as`("the fields with a default")
+            .isEqualTo(optional)
         val value = decode(root)
-        assertThat(json.encodeToJsonElement(serializer, value)).isEqualTo(root)
+        val encoded = json.encodeToJsonElement(serializer, value).jsonObject
+        assertThat(encoded.keys).containsAll(root.keys)
+        assertThat(decode(encoded)).isEqualTo(value)
         val twin = decode(root)
         assertThat(value).isEqualTo(twin).hasSameHashCodeAs(twin)
         assertThat(value.toString()).startsWith(value.javaClass.simpleName + "(")
@@ -50,9 +56,14 @@ internal class WireRoundTrip<T : Any>(
             val absent = decode(without)
             assertThat(absent).isNotEqualTo(value)
             assertThat(absent).isEqualTo(decode(without)).hasSameHashCodeAs(decode(without))
-            val explicitNull = decode(JsonObject(root + (key to JsonNull)))
-            assertThat(explicitNull).isNotEqualTo(value)
+        }
+        val withNull = JsonObject(root + (key to JsonNull))
+        if (serializer.descriptor.getElementDescriptor(serializer.descriptor.getElementIndex(key)).isNullable) {
+            assertThat(decode(withNull)).isNotEqualTo(value)
         } else {
+            assertThatThrownBy { decode(withNull) }.isInstanceOf(SerializationException::class.java)
+        }
+        if (key !in optional) {
             assertThatThrownBy { decode(without) }.isInstanceOf(SerializationException::class.java)
         }
     }
