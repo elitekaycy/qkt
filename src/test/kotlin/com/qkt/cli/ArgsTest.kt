@@ -109,4 +109,31 @@ class ArgsTest {
         }.isInstanceOf(ArgError::class.java)
             .hasMessage("missing value for --from")
     }
+
+    @Test
+    fun `an optional-value option may stand alone, take a value, or end the line`() {
+        fun validated(vararg argv: String) =
+            Args(arrayOf("backtest", *argv)).also {
+                it.validateOptions(valueOptions = setOf("from"), optionalValueOptions = setOf("report"))
+            }
+
+        assertThat(validated("s.qkt", "--report", "out", "--from", "2024-01-01").option("from")).isEqualTo("2024-01-01")
+        assertThat(validated("s.qkt", "--report", "--from", "2024-01-01").option("from")).isEqualTo("2024-01-01")
+        assertThat(validated("s.qkt", "--report").flag("report")).isTrue()
+        assertThatThrownBy { validated("s.qkt", "--report", "-x") }
+            .isInstanceOf(ArgError::class.java)
+            .hasMessageStartingWith("unknown flag -x")
+    }
+
+    @Test
+    fun `config defaults fill missing options and never override the command line`() {
+        val args =
+            Args(arrayOf("backtest", "s.qkt", "--from", "2024-01-01"))
+                .withDefaults(values = mapOf("from" to "2020-01-01", "to" to "2024-06-01"))
+
+        assertThat(args.option("from")).isEqualTo("2024-01-01")
+        assertThat(args.option("to")).isEqualTo("2024-06-01")
+        assertThat(args.tokens).containsExactly("backtest", "s.qkt", "--from", "2024-01-01")
+        assertThat(Args(arrayOf("backtest")).withDefaults().option("to")).isNull()
+    }
 }

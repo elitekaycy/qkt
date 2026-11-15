@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.entry
 import org.junit.jupiter.api.Test
 
 class BacktestRunConfigTest {
@@ -88,5 +89,40 @@ class BacktestRunConfigTest {
         assertThat(merged.provenance).containsEntry("broker", "run:b")
         assertThat(merged.params).containsExactly("fast=3", "fast=8")
         assertThat(merged.paramProvenance).containsEntry("fast", "run:b")
+    }
+
+    @Test
+    fun `nested values where a scalar belongs are ignored with a warning naming the key`() {
+        val section =
+            BacktestRunConfig.parse(
+                mapOf(
+                    "from" to listOf("2025-09-01"),
+                    "to" to null,
+                    "runs" to
+                        mapOf("r" to mapOf("broker" to mapOf("kind" to "paper"), "to" to null, "from" to "2025-10-01")),
+                ),
+            )
+
+        assertThat(section.defaults).isEmpty()
+        assertThat(section.runs.getValue("r").values).containsExactly(entry("from", "2025-10-01"))
+        assertThat(section.warnings).containsExactly(
+            "backtest.from: expected a scalar value, ignoring",
+            "backtest.runs.r.broker: expected a scalar value, ignoring",
+        )
+    }
+
+    @Test
+    fun `runs that are not a map are ignored with a warning`() {
+        val section = BacktestRunConfig.parse(mapOf("strategy" to "s.qkt", "runs" to listOf("a", "b")))
+
+        assertThat(section.runs).isEmpty()
+        assertThat(section.strategy).isEqualTo("s.qkt")
+        assertThat(section.warnings).containsExactly("backtest.runs: expected a map of run names, ignoring")
+    }
+
+    @Test
+    fun `yaml truthy spellings are true and anything else is literal`() {
+        assertThat(listOf("true", " YES ", "on", "1").map(BacktestRunConfig::isTruthy)).containsOnly(true)
+        assertThat(listOf("false", "", "y", "2").map(BacktestRunConfig::isTruthy)).containsOnly(false)
     }
 }

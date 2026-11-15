@@ -147,4 +147,30 @@ class CorporateActionImportTest {
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(err).contains("quoted in USD")
     }
+
+    @Test
+    fun `corporate actions need a venue-qualified symbol`() {
+        val f = file("nvda.csv", "ex_date,kind,value,currency,pay_date\n2024-06-10,split,10,,\n")
+
+        for (argv in listOf(listOf(), listOf("--as", "NVDA"), listOf("--as", "EXNESS:NV/DA"))) {
+            val (code, _, err) = run(f, "--kind", "corporate-actions", *argv.toTypedArray())
+            assertThat(code).isEqualTo(ExitCodes.ARG_ERROR)
+            assertThat(err)
+                .contains("qkt: --as <VENUE:SYMBOL> is required for corporate actions, e.g. --as EXNESS:AAPL")
+        }
+    }
+
+    @Test
+    fun `a map entry without a column or naming an unknown field writes nothing`() {
+        val f = file("nvda.csv", "ex_date,kind,value,currency,pay_date\n2024-06-10,split,10,,\n")
+
+        val (bareCode, _, bareErr) = run(f, "--as", "EXNESS:NVDA", "--kind", "corporate-actions", "--map", "ex_date")
+        assertThat(bareCode).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(bareErr).contains("qkt: --map takes field=column: ex_date\n  Nothing was written.")
+
+        val (code, _, err) = run(f, "--as", "EXNESS:NVDA", "--kind", "corporate-actions", "--map", "ratio=Ratio")
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err).contains("--map field 'ratio' is not one of ex_date, kind, value, currency, pay_date")
+        assertThat(stored()).isEmpty()
+    }
 }
