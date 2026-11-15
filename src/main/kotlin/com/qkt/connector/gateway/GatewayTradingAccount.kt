@@ -66,9 +66,14 @@ class GatewayTradingAccount internal constructor(
     override val tradingHours: SymbolCalendars =
         GatewaySettings.calendars(config).withInstrumentCategories(config.name) { instrumentSpec(it)?.meta }
 
-    /** A spot or equity instrument's spec from the venue's listing; derivatives keep their catalog terms (null here). */
+    /**
+     * A spot, equity or event instrument's spec from the venue's listing, found by its symbol (the code with `-`
+     * written `_`); futures and options keep their catalog terms (null here).
+     */
     override fun instrumentSpec(qktSymbol: String) =
-        client.instruments().firstOrNull { "${config.symbolPrefix}${it.code}" == qktSymbol }?.instrumentSpec(qktSymbol)
+        GatewaySymbols(config.symbolPrefix).let { symbols ->
+            client.instruments().firstOrNull { symbols.qkt(it.code) == qktSymbol }?.instrumentSpec(qktSymbol)
+        }
 
     private val quotes =
         GatewayMarketSource(
