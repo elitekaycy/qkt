@@ -222,6 +222,18 @@ Phase 16's MC bootstraps **per-trade returns with replacement**:
 
 Assumes trade returns are i.i.d. — strategies with clustered wins/losses (momentum) violate this and the MC will be optimistic about path dependence. Block bootstrap is a future enhancement.
 
+## Event contract settlement
+
+An event contract (a binary that pays 1 when its question resolves YES and 0 when NO, declared under `events:` in
+`instruments.yaml`) fills on its own venue whatever `--broker` says: a buy at the quoted ask, a sell at the bid, netting,
+at any hour. An order placed at or after the contract's close time is refused. When the replay's clock reaches the
+contract's expiry, its working orders are cancelled and every strategy holding it is closed at the outcome its event
+catalog records (1, 0, or a value between after a void), with exit reason `EXPIRY`, in `settlements.csv`. The money the
+position held is released then, not at the close. A contract that expired held but without a recorded outcome fails the
+run and names it: qkt never settles an event at its last price, which would book a resolved-NO contract at the 0.01 to
+0.03 it last traded. Probability fees (`roundUp(rate × contracts × p × (1 − p))` per order) are commissions; a
+settlement at 1 or 0 pays none. See [Event contracts](../how-to/import-data.md#event-contracts) for the catalog.
+
 ## Per-trade risk
 
 `TradeRecord.riskUsd` is `qty × |entry - stopLoss|` in the symbol's quote currency, captured at order submission. Surfaced in the HTML report's per-trade table. `n/a` when the order had no stop attached.

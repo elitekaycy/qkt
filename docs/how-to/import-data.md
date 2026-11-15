@@ -24,6 +24,7 @@ dropped or flagged.
 | `open-interest` | `open_interest/<VENUE>/<NAME>.csv` | `<alias>.open_interest` |
 | `series` | `bars/<SOURCE>/<NAME>/1d/<day>.csv` (value as open, high, low and close) | a daily stream, e.g. COT positions |
 | `corporate-actions` | `corporate-actions/<VENUE>/<NAME>.csv` | dividends and splits of a share, backtest and live ([Dividends and splits](trade-stock-cfds.md#dividends-and-splits)) |
+| `events` | `contracts/<VENUE>/<FAMILY>.events.json` | an event family's contracts, their times, fees and outcomes ([Event contracts](#event-contracts)) |
 
 Bars need a source prefix (`--as EXNESS:XAUUSD`): the bar store keeps each source apart, and a strategy
 reads them as `EXNESS:XAUUSD EVERY 15m`. Import the finest timeframe you have; qkt builds 5m, 1h, 4h and
@@ -109,6 +110,37 @@ Every row is checked before anything is written. The import merges into the symb
 kind on a date already stored replaces it, so re-importing never pays a dividend twice. Two actions of one kind on one
 date in the input, a non-positive amount or ratio, and a dividend in a currency other than the instrument's are
 refused. `--dry-run` reports without writing; `--json` prints the counts for tools.
+
+## Event contracts
+
+An event family (`KALSHI:KXINXU`, every contract of one series) is declared under `events:` in `instruments.yaml`
+([Contract specs](backtest-data.md#event-families-events)); its contracts come from the family's event catalog, which
+`--kind events` writes from any file with a header and one contract a row. Columns are named with `--map` (qkt's own
+file needs none):
+
+| Field | Meaning |
+|---|---|
+| `code` | the venue's contract code (`KXINXU-26NOV06H1500-T7425`); the qkt symbol is the venue prefix and the code with each `-` written `_` (`KALSHI:KXINXU_26NOV06H1500_T7425`) |
+| `event` | the event the contract belongs to |
+| `strike_type`, `floor`, `cap` | the question: `greater`, `greater_or_equal`, `less`, `less_or_equal`, `between`, `custom` or `none`, with the bounds that type needs |
+| `open`, `close`, `expiry` | trading opens, trading stops, the result is expected: UTC epoch milliseconds or ISO-8601 instants |
+| `occurs`, `occasion`, `can_close_early`, `exclusive`, `frequency`, `title` | optional descriptions (flags are `true`/`false`) |
+| `taker_fee`, `maker_fee`, `fee_rounding` | the probability fee, when known (`fee_rounding` is required with `taker_fee`) |
+| `outcome` | the settled value in [0, 1], or `yes` (1) / `no` (0); empty until the contract resolves |
+
+```console
+$ qkt data import kxinxu-markets.csv --as KALSHI:KXINXU --kind events \
+    --map code=ticker,event=event_ticker,strike_type=strike_type,floor=floor_strike,cap=cap_strike,open=open_time,close=close_time,expiry=expiration_time,outcome=result
+```
+
+The import merges into the catalog by code: a known contract is replaced by its row, and a row with an empty outcome
+keeps the outcome already recorded, so importing settled results later fills them in. An outcome that contradicts a
+recorded one is refused. Every row is checked before anything is written; `--dry-run` and `--json` work as for
+corporate actions.
+
+Each contract's history is quote ticks under its own symbol, imported with `--kind ticks` (`bid` and `ask` columns).
+For an event contract a quote may carry one side only (nobody bids, or nobody offers): that row is kept, priced at
+the side it has. For every other instrument a one-sided quote is still a row error.
 
 ## Clocks
 
