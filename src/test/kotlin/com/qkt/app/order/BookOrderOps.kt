@@ -20,8 +20,10 @@ internal class BookOrderOps(
     override fun update(
         id: String,
         change: (ManagedOrder) -> ManagedOrder,
-    ) {
-        book[id]?.let { book.put(change(it)) }
+    ): Boolean {
+        val managed = book[id] ?: return false
+        book.put(change(managed))
+        return true
     }
 
     override fun track(managed: ManagedOrder) = book.put(managed)
@@ -40,7 +42,9 @@ internal class BookOrderOps(
     override fun rejectEngineHeld(
         request: OrderRequest,
         reason: String,
-    ) = update(request.id) { it.copy(state = OrderState.REJECTED) }
+    ) {
+        update(request.id) { it.copy(state = OrderState.REJECTED) }
+    }
 
     override fun persistAll() {}
 
