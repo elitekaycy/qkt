@@ -45,6 +45,7 @@ class GatewayTradingAccount internal constructor(
     private val client by lazy {
         GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal, throttle)
     }
+
     /** The session's symbol map, which the event families also feed contracts listed between two listing reads. */
     private val sessionSymbols = GatewaySymbols(config.symbolPrefix)
 

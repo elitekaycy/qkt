@@ -58,7 +58,9 @@ class BotEventCommand(
     private fun printChain(chain: DirectChain) {
         println("${chain.event} closes ${Instant.ofEpochMilli(chain.closeAtMs)}")
         for (c in chain.contracts) {
-            val title = c.market.terms.title.orEmpty()
+            val title =
+                c.market.terms.title
+                    .orEmpty()
             println("  ${c.market.symbol} \"$title\" bid=${c.bid} ask=${c.ask} ${c.market.trading}")
         }
     }
@@ -93,7 +95,9 @@ private fun marketJson(m: DirectMarket): String =
         "event" to m.terms.event,
         "title" to m.terms.title,
         "category" to m.category,
-        "strikeType" to m.terms.predicate.type.name.lowercase(),
+        "strikeType" to
+            m.terms.predicate.type.name
+                .lowercase(),
         "floor" to m.terms.predicate.floor,
         "cap" to m.terms.predicate.cap,
         "openAt" to m.terms.openAtMs,

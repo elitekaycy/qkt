@@ -87,8 +87,11 @@ class BotGatewayEventCliTest {
         val (_, none) = run(dir, false, "markets", "KALSHI", "--category", "Weather")
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(out).contains("\"symbol\":\"KALSHI:KXS_H1_T1\"").contains("\"strikeType\":\"greater\"")
-            .contains("\"takerFeeRate\":0.07").doesNotContain("KXS_H2_T1")
+        assertThat(out)
+            .contains("\"symbol\":\"KALSHI:KXS_H1_T1\"")
+            .contains("\"strikeType\":\"greater\"")
+            .contains("\"takerFeeRate\":0.07")
+            .doesNotContain("KXS_H2_T1")
         assertThat(text).contains("KALSHI:KXS_H2_T1 KXS-H2 \"above 100\" disabled")
         assertThat(none).contains("no event contracts match")
     }
@@ -101,7 +104,9 @@ class BotGatewayEventCliTest {
         val (_, text) = run(dir, false, "chain", "KALSHI:KXS@front")
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(out).startsWith("{\"event\":\"KXS-H1\"").contains("\"symbol\":\"KALSHI:KXS_H1_T2\"")
+        assertThat(out)
+            .startsWith("{\"event\":\"KXS-H1\"")
+            .contains("\"symbol\":\"KALSHI:KXS_H1_T2\"")
             .contains("\"bid\":0.69,\"ask\":0.71")
         assertThat(text).contains("KXS-H1 closes").contains("KALSHI:KXS_H1_T4 \"above 400\" bid=0.09 ask=0.11 full")
     }
@@ -131,7 +136,8 @@ class BotGatewayEventCliTest {
         val (code, bought) = run(dir, true, "buy", "10", "KALSHI:KXS@front.p70", "--as", "agent")
         filler.join()
 
-        assertThat(quote).contains("\"symbol\":\"KALSHI:KXS@front.p70\",\"contract\":\"KALSHI:KXS_H1_T2\"")
+        assertThat(quote)
+            .contains("\"symbol\":\"KALSHI:KXS@front.p70\",\"contract\":\"KALSHI:KXS_H1_T2\"")
             .contains("\"ask\":0.71")
         assertThat(plain).startsWith("KALSHI:KXS_H1_T3 bid=0.39")
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)

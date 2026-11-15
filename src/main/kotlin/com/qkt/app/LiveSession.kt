@@ -544,7 +544,9 @@ class LiveSession(
             )
         val trades = RecentTrades()
 
-        val pipelineCandleHub = candleHub ?: com.qkt.dsl.compile.CandleHub()
+        val pipelineCandleHub =
+            candleHub ?: com.qkt.dsl.compile
+                .CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
         val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)

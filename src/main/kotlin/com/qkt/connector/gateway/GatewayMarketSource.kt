@@ -47,8 +47,8 @@ internal class GatewayMarketSource(
         emptyList()
     },
     prints: (code: String, kind: FlowKind, fromMs: Long, toMs: Long) -> List<Print> = { _, _, _, _ -> emptyList() },
-    capabilities: () -> Collection<String> = { emptyList() },
     private val events: GatewayEventFamilies? = null,
+    capabilities: () -> Collection<String> = { emptyList() },
 ) : MarketSource {
     private val marks = GatewayMarks(prefix, capabilities)
 
@@ -138,8 +138,7 @@ internal class GatewayMarketSource(
                 .apply { if (codes.isNotEmpty()) addQueryParameter("symbols", codes.joinToString(",")) }
                 .apply {
                     if (roots.isNotEmpty() || families.isNotEmpty()) addQueryParameter("roots", series(roots, families))
-                }
-                .build()
+                }.build()
                 .toString()
         val recorders = HashMap<String, (WireQuote) -> Unit>()
         for (fed in fedRoots) {

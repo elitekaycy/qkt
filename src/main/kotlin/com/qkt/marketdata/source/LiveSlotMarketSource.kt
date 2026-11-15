@@ -82,18 +82,19 @@ class LiveSlotMarketSource(
         val slot = SlotSymbol.parse(symbol)
         if (slot == null) {
             val root = EventChainSymbol.parse(symbol).root
-            return EventChainFollower(symbol) { families.of(root) }::step
+            val chain = EventChainFollower(symbol) { families.of(root) }
+            return chain::step
         }
         val picks = follows.computeIfAbsent(symbol) { ConcurrentSkipListMap() }
         val trading = { contract: String -> instruments.lookup(contract)?.tradeMode == TradeMode.FULL }
-        return SlotFollower(slot, windows.getValue(symbol), { families.of(slot.root) }, trading) { at, contract ->
-            picks[at] = contract.orEmpty()
-            picks.headMap(at - KEPT_MS).clear()
-        }::step
-    }
-
-    private companion object {
-        /** How far back a slot's picks are kept for [slotContractAt]: an order resolves at the window it fired in. */
-        const val KEPT_MS = 86_400_000L
+        val follower =
+            SlotFollower(slot, windows.getValue(symbol), { families.of(slot.root) }, trading) { at, contract ->
+                picks[at] = contract.orEmpty()
+                picks.headMap(at - KEPT_MS).clear()
+            }
+        return follower::step
     }
 }
+
+/** How far back a slot's picks are kept: an order resolves at the window it fired in. */
+private const val KEPT_MS = 86_400_000L

@@ -95,8 +95,7 @@ internal class GatewayEventReads(
                 DirectMarket(symbol, it, i.category, i.trading ?: FULL)
             }
         }
-
-    private companion object {
-        const val FULL = "full"
-    }
 }
+
+/** The `trading` mode of a contract the venue trades freely (the wire leaves it absent). */
+private const val FULL = "full"
