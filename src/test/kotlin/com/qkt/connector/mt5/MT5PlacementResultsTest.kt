@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 
 /** A market buy of 1.00 XAUUSD and the venue's reply to it. */
 class MT5PlacementResultsTest {
@@ -131,15 +133,84 @@ class MT5PlacementResultsTest {
     }
 
     @Test
-    fun `a partial fill reply that names no residual is settled from the venue position`() {
-        gateway.on("/orders", "[]")
+    fun `a refusal that names a definite reason is rejected with it`() {
+        results.handlePlacementResult(
+            request,
+            placement,
+            sentAt,
+            null,
+            reply(10019, 0L, 0L, "0", error = "HTTP 400: no money"),
+        )
+
+        assertThat((events.single() as BrokerEvent.OrderRejected).reason).isEqualTo("HTTP 400: no money")
+    }
+
+    @Test
+    fun `an instant fill names its order ticket and the volume the venue filled`() {
+        results.handlePlacementResult(
+            request,
+            placement,
+            sentAt,
+            null,
+            reply(10009, 55L, 77L, "2400.35", volume = "0.40"),
+        )
+        results.handlePlacementResult(request, placement, sentAt, null, reply(10009, 0L, 0L, "2400.35", volume = "0"))
+
+        val accepted = events.filterIsInstance<BrokerEvent.OrderAccepted>().map { it.brokerOrderId }
+        val quantities = events.filterIsInstance<BrokerEvent.OrderFilled>().map { it.quantity.toPlainString() }
+        assertThat(accepted).containsExactly("55", "0")
+        assertThat(quantities).containsExactly("0.40", "1.00")
+        assertThat(books.positionBook.meta(55L)?.orderId).isEqualTo("entry-1")
+        assertThat(books.positionBook.meta(0L)).`as`("a fill naming no ticket tracks none").isNull()
+    }
+
+    @Test
+    fun `a resting order is accepted and waits in the pending book only under a real ticket`() {
+        val limit =
+            OrderRequest.Limit(
+                "lim-1",
+                "EXNESS:XAUUSD",
+                Side.BUY,
+                BigDecimal("1.00"),
+                BigDecimal("2390"),
+                TimeInForce.GTC,
+                sentAt,
+                "gold",
+            )
+
+        results.handlePlacementResult(limit, placement, sentAt, null, reply(10009, 0L, 0L, "0"))
+        results.handlePlacementResult(limit, placement, sentAt, null, reply(10009, 66L, 0L, "0"))
+
+        assertThat(events.map { it::class }).containsOnly(BrokerEvent.OrderAccepted::class)
+        assertThat(books.pendingBook.meta(66L)?.requestedQuantity).isEqualByComparingTo("1.00")
+        assertThat(books.pendingBook.isPending(0L)).isFalse()
+    }
+
+    @ParameterizedTest
+    @CsvSource("900, 7001,", "900, 7001, 0", "900, 7001, 1.00", "0, 7001, 0.5", "900, 0, 0.5")
+    fun `a partial fill reply with no usable residual is settled from the venue position`(
+        order: Long,
+        deal: Long,
+        volume: String?,
+    ) {
         val held =
-            Mt5RoutedGateway.position(500, "1.00", priceOpen = "2401", comment = "entry-1", clientOrderId = "cid-1")
+            Mt5RoutedGateway.position(
+                500,
+                "1.00",
+                priceOpen = "2401",
+                comment = "entry-1",
+                clientOrderId = "cid-1",
+            )
+        gateway.on("/orders", "[]")
         gateway.on("/get_positions", "[$held]")
 
-        val partial = reply(10010, 900L, 7001L, "2400", volume = null)
-
-        results.handlePlacementResult(request, placement, sentAt, null, partial)
+        results.handlePlacementResult(
+            request,
+            placement,
+            sentAt,
+            null,
+            reply(10010, order, deal, "2400", volume = volume),
+        )
 
         val fill = filled.get(5, TimeUnit.SECONDS)
         assertThat(fill.brokerOrderId).isEqualTo("500")
