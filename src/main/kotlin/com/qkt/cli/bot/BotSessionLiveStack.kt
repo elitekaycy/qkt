@@ -66,7 +66,7 @@ internal class LiveSessionStack(
                             instruments,
                         ),
                     brokerFactories = accounts.orderEntry(),
-                    instrumentRegistry = instruments,
+                    instrumentRegistry = accounts.withEventFamilies(instruments),
                     calendarFor = CalendarResolver.live(accounts, instruments)::calendarFor,
                     persistor = cfg.statePersistor(stateDir.stateRoot),
                     notifier = notifier,

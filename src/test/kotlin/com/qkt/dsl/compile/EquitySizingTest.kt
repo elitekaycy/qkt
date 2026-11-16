@@ -3,8 +3,11 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizePctBalance
 import com.qkt.dsl.ast.SizePctEquity
+import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.marketdata.Candle
+import com.qkt.pnl.BookBalanceView
 import com.qkt.pnl.StrategyPnLView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
@@ -28,6 +31,7 @@ class EquitySizingTest {
     private fun ctx(
         equityValue: BigDecimal,
         balanceValue: BigDecimal,
+        book: BookBalanceView? = null,
     ): EvalContext {
         val pnl =
             object : StrategyPnLView {
@@ -47,7 +51,7 @@ class EquitySizingTest {
             candle = candle,
             streams = mapOf("btc" to HubKey("BACKTEST", "BTCUSDT", "1m")),
             lets = emptyMap(),
-            strategyContext = testStrategyContext(pnl = pnl),
+            strategyContext = testStrategyContext(pnl = pnl, book = book),
         )
     }
 
@@ -88,5 +92,34 @@ class EquitySizingTest {
                 streamAlias = "btc",
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `every risk form skips the order when the runtime stop distance is not positive`() {
+        // A stop that resolved onto the entry leaves nothing to divide by: null (skip), never a throw.
+        val compiler = SizingCompiler(ExprCompiler())
+        val book = BookBalanceView { BigDecimal("10000") }
+        val forms =
+            listOf(
+                SizeRiskAbs(NumLit(BigDecimal("100"))),
+                SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                SizeRiskFracOfBook(NumLit(BigDecimal("0.01"))),
+            )
+        for (form in forms) {
+            val s =
+                compiler.compile(
+                    form,
+                    stopDistance = null,
+                    streamAlias = "btc",
+                    runtimeStopDistanceAvailable = true,
+                )
+            val ec = ctx(BigDecimal("10000"), BigDecimal("10000"), book)
+            assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"), runtimeStopDistance = BigDecimal.ZERO))
+                .describedAs(form.toString())
+                .isNull()
+            assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"), runtimeStopDistance = BigDecimal("5")))
+                .describedAs(form.toString())
+                .isEqualByComparingTo("20")
+        }
     }
 }

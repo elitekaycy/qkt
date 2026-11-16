@@ -58,6 +58,25 @@ class SkewTest {
     }
 
     @Test
+    fun `a return off a zero price is undefined until it leaves the window`() {
+        val s = Skew(period = 4)
+        // 0 -> 100 has no defined return (division by the zero base), so the window holding it
+        // is undefined rather than an exception; four later returns roll it out again.
+        feed(s, "0", "100", "101", "102.01", "103.0301")
+        assertThat(s.isReady).isTrue()
+        assertThat(s.value()).isNull()
+        feed(s, "99.939197")
+        assertThat(s.value()!!.toDouble()).isCloseTo(-1.154700538, within(1e-7))
+    }
+
+    @Test
+    fun `a return off a negative price is undefined`() {
+        val s = Skew(period = 3)
+        feed(s, "-5", "100", "101", "102")
+        assertThat(s.value()).isNull()
+    }
+
+    @Test
     fun `rejects period below three`() {
         assertThatThrownBy { Skew(period = 2) }
             .isInstanceOf(IllegalArgumentException::class.java)

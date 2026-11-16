@@ -114,6 +114,8 @@ RULES
 
 **When to use:** the default for portable strategies. Risk-percent sizing scales correctly with account size, stop distance, and instrument volatility.
 
+A stop that resolves onto the entry price at fire time (`STOP LOSS AT btc.close`) has no distance to divide by: the order is refused with a reason (a suppressed signal, see [bracket](bracket.md)), never sized at a default or thrown out of the rule.
+
 ### Portfolio book risk
 
 ```qkt

@@ -33,8 +33,8 @@ class CompiledRule(
     // Action gating is edge-driven (reference/dsl/conditions.md): the action runs on the
     // false->true transition of the condition, not on every bar it stays true. Without
     // this, `WHEN close > ema THEN BUY` emits an entry on all 50 bars the close holds
-    // above the EMA. Undefined counts as false, so a condition that goes true ->
-    // Undefined -> true re-arms and fires again.
+    // above the EMA. An Undefined bar holds the edge as it was: it is neither a falling
+    // edge (true -> Undefined -> true fires once) nor a rising one.
     private var wasTrue = false
     private var pendingCommit = false
     private var rejectedDuringCommit = false
@@ -106,14 +106,16 @@ class CompiledRule(
         ec: EvalContext,
         ctx: StrategyContext,
     ): List<Signal> {
-        val v = condition.evaluate(ec)
+        // Undefined (a cold indicator, a missing quote) says nothing about the condition: the edge
+        // stays where the last defined bar left it, and nothing fires.
+        val v = condition.evaluate(ec) as? Value.Bool ?: return emptyList()
         // The tick that closes a bar can also be the one that stops the position out. The bar ended
         // first: as of its close the position was still open, so an entry gated on being flat does
         // not fire off that bar - it would be re-entering on a close that predates its own exit,
         // e.g. a 4h bar closes at 100, the next tick gaps to 111 through the target, and the rule
         // would buy at 111 because "the bar closed at 100 and I am flat". It waits for the next close.
         val gateMetAfterBar = gateSatisfiedSinceMs?.let { it >= ec.candle.endTime } ?: false
-        val isTrue = v is Value.Bool && v.v && !gateMetAfterBar
+        val isTrue = v.v && !gateMetAfterBar
         if (!isTrue) {
             if (wasTrue || exitRetryPending) edgeDirty = true
             wasTrue = false

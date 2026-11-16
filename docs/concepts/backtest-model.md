@@ -77,8 +77,8 @@ Two simulated brokers, chosen with `--broker`:
   price for the symbol. A stop, limit or bracket exit triggers on the first tick whose quote for its
   side reaches the level (the ask for a buy, the bid for a sell, as at the venue) and fills at that
   tick's mid, so it can fill up to half a spread better than its level, or beyond it on a gap. No
-  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` is
-  rejected (`volumeMax` is not checked). `--execution-latency`, `--reject-every` and `--partial-fill`
+  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` or
+  above `volumeMax` is rejected, as the live venues reject it. `--execution-latency`, `--reject-every` and `--partial-fill`
   apply to `mt5-sim` only. A symbol replayed from
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
@@ -221,6 +221,18 @@ Phase 16's MC bootstraps **per-trade returns with replacement**:
 - The per-trade equity fan (P5/P25/P50/P75/P95 after each resampled trade) is written to `monte_carlo_fan.csv`
 
 Assumes trade returns are i.i.d. — strategies with clustered wins/losses (momentum) violate this and the MC will be optimistic about path dependence. Block bootstrap is a future enhancement.
+
+## Event contract settlement
+
+An event contract (a binary that pays 1 when its question resolves YES and 0 when NO, declared under `events:` in
+`instruments.yaml`) fills on its own venue whatever `--broker` says: a buy at the quoted ask, a sell at the bid, netting,
+at any hour. An order placed at or after the contract's close time is refused. When the replay's clock reaches the
+contract's expiry, its working orders are cancelled and every strategy holding it is closed at the outcome its event
+catalog records (1, 0, or a value between after a void), with exit reason `EXPIRY`, in `settlements.csv`. The money the
+position held is released then, not at the close. A contract that expired held but without a recorded outcome fails the
+run and names it: qkt never settles an event at its last price, which would book a resolved-NO contract at the 0.01 to
+0.03 it last traded. Probability fees (`roundUp(rate × contracts × p × (1 − p))` per order) are commissions; a
+settlement at 1 or 0 pays none. See [Event contracts](../how-to/import-data.md#event-contracts) for the catalog.
 
 ## Per-trade risk
 

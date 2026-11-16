@@ -8,7 +8,7 @@ import com.qkt.common.Side
 /**
  * The `qkt bot` command group — a one-shot manual/AI trading surface. Trade verbs
  * (buy/sell/close/modify/cancel) fire a single venue call and exit; query verbs
- * (account/positions/orders/quote/bars/history/eval) read venue truth. Every verb
+ * (account/positions/orders/quote/bars/history/eval, markets/chain for event contracts) read venue truth. Every verb
  * accepts `--config` and `--json`; trade verbs add `--as <name>` (attribution,
  * default `manual`) and `--dry-run`.
  */
@@ -68,6 +68,7 @@ class BotCommand(
             "account", "positions", "orders", "quote", "bars", "history" ->
                 BotQueryCommand(sub, verb).run()
             "eval" -> BotEvalCommand(sub).run()
+            "markets", "chain" -> BotEventCommand(sub, verb).run()
             "help", "--help" -> help()
             else -> {
                 System.err.println("qkt bot: unknown verb '$verb' (see qkt bot help)")
@@ -97,10 +98,12 @@ class BotCommand(
                 bot account                      equity, balance, margin, currency
                 bot positions [BROKER:SYMBOL]    open venue positions
                 bot orders    [BROKER:SYMBOL]    resting pending orders
-                bot quote     BROKER:SYMBOL      bid/ask
+                bot quote     BROKER:SYMBOL      bid/ask (an event slot VENUE:FAMILY@front.p70: its contract now)
                 bot bars      BROKER:SYMBOL --tf 1h [--count 100]
                 bot history   [--since <iso|Nd>] closed deals
                 bot eval "ema(21)" BROKER:SYMBOL --tf 1h [--count 500]
+                bot markets   VENUE [--category C] [--family F] [--open]   event contracts listed
+                bot chain     VENUE:FAMILY@front|next          one event's contracts with quotes
 
             SESSION (the engine: backtest over your data, or live as qkt deploy builds it)
                 bot session start --backtest --symbols A[,B] --tf 5m[,1h] --from <date> --to <date>

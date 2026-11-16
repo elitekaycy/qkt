@@ -23,7 +23,8 @@ private const val MS_PER_DAY = 86_400_000L
  *
  * "Day" is the UTC calendar day, derived purely from each candle's `startTime`, so the
  * indicator is deterministic across backtest and live. Value is null until [nDays] in-window
- * days have completed.
+ * days have completed, and while one of them opened at a zero or negative price: that day's
+ * return has no value, so the sum is undefined until the day rolls out of the window.
  *
  * e.g. window 12:00–14:00 UTC, nDays 2; yesterday's 12–14 segment returned +0.5% and the day
  * before +0.2% → reports +0.7%.
@@ -39,7 +40,11 @@ class SessionMomentum(
         require(nDays > 0) { "SessionMomentum.nDays must be > 0: $nDays" }
     }
 
+    // A day that opened at a zero or negative price has no return: it holds zero here, is flagged
+    // undefined in [dailyDefined], and the sum over the window is undefined while it is inside.
     private val dailyReturns: ArrayDeque<BigDecimal> = ArrayDeque(nDays)
+    private val dailyDefined: ArrayDeque<Boolean> = ArrayDeque(nDays)
+    private var undefinedDays = 0
     private var activeDay: Long? = null
     private var sessionOpen: BigDecimal? = null
     private var sessionClose: BigDecimal? = null
@@ -69,12 +74,20 @@ class SessionMomentum(
     private fun finalizeSession() {
         val open = sessionOpen ?: return
         val close = sessionClose ?: return
-        dailyReturns.addLast(close.subtract(open, Money.CONTEXT).divide(open, Money.CONTEXT))
-        if (dailyReturns.size > nDays) dailyReturns.removeFirst()
+        val hasValue = open.signum() > 0
+        dailyReturns.addLast(
+            if (hasValue) close.subtract(open, Money.CONTEXT).divide(open, Money.CONTEXT) else BigDecimal.ZERO,
+        )
+        dailyDefined.addLast(hasValue)
+        if (!hasValue) undefinedDays++
+        if (dailyReturns.size > nDays) {
+            dailyReturns.removeFirst()
+            if (!dailyDefined.removeFirst()) undefinedDays--
+        }
     }
 
     override fun value(): BigDecimal? {
-        if (!isReady) return null
+        if (!isReady || undefinedDays > 0) return null
         var sum = BigDecimal.ZERO
         for (r in dailyReturns) sum = sum.add(r, Money.CONTEXT)
         return sum.setScale(Money.SCALE, Money.ROUNDING)

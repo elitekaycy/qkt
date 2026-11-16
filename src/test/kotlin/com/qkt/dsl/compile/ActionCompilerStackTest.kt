@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
@@ -14,6 +15,7 @@ import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
+import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.Candle
 import com.qkt.pnl.StrategyPnLView
@@ -94,6 +96,26 @@ class ActionCompilerStackTest {
                 .isNotNull
                 .isEqualByComparingTo(expectedQtyPerLayer)
         }
+    }
+
+    @Test
+    fun `STACK with RISK sizing and a stop on the seed entry is refused with a reason`() {
+        val action =
+            Buy(
+                stream = "btc",
+                opts =
+                    ActionOpts(
+                        sizing = SizeRiskFrac(NumLit(BigDecimal("0.01"))),
+                        stack = StackSpacing(3, NumLit(stopDistance), StackDirection.TRADE_DIRECTION),
+                        // The seed layer enters at the candle close, so a stop AT the close has no distance.
+                        bracket = BracketAst(stopLoss = ChildAt(StreamFieldRef("btc", "close"))),
+                    ),
+            )
+        val sigs = ActionCompiler(ExprCompiler()).compile(action).invoke(makeCtx())
+
+        val refused = sigs.single() as Signal.Suppressed
+        assertThat(refused.symbol).isEqualTo("BACKTEST:BTCUSDT")
+        assertThat(refused.reason).contains("stop distance").contains("1000")
     }
 
     @Test
