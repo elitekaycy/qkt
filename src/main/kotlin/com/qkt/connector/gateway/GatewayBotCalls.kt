@@ -55,7 +55,9 @@ private val quoteJson = Json { ignoreUnknownKeys = true }
  * A quote of venue [code] from the quotes socket (VGP v1 has no REST quote). Updates may carry one side
  * each, so the latest bid, ask and mark are merged: the answer comes once both sides are known, or, at
  * most [sideWaitMs] after the first price, with the missing side taken from the venue's mark (a one-sided
- * book). Throws when no price arrives within [timeoutMs]: a one-shot order never prices a made-up quote. A venue's
+ * book) or, with no mark, from [bounds] (the lowest bid and the highest ask the instrument can have: an event
+ * contract with no offer is quoted at its payout, as its venue quotes it). Throws when no price arrives within
+ * [timeoutMs], or a side is missing with neither: a one-shot order never prices a made-up quote. A venue's
  * first quote can take longer than a liquid market's: a US share on Alpaca's overnight feed took over 10 s.
  */
 fun gatewayQuoteOnce(
@@ -64,6 +66,7 @@ fun gatewayQuoteOnce(
     code: String,
     timeoutMs: Long = 30_000,
     sideWaitMs: Long = 2_000,
+    bounds: Pair<String, String>? = null,
 ): WireQuote {
     val url =
         baseUrl
@@ -113,9 +116,11 @@ fun gatewayQuoteOnce(
             twoSided.get(sideWaitMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             val q = latest.get()!!
-            val mark =
-                q.mark ?: error("$code has a one-sided book (bid ${q.bid}, ask ${q.ask}) and no mark to price against")
-            q.copy(bid = q.bid ?: mark, ask = q.ask ?: mark)
+            val missing =
+                q.mark?.let { it to it }
+                    ?: bounds
+                    ?: error("$code has a one-sided book (bid ${q.bid}, ask ${q.ask}) and no mark to price against")
+            q.copy(bid = q.bid ?: missing.first, ask = q.ask ?: missing.second)
         }
     } finally {
         socket.stop()
