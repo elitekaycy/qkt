@@ -25,7 +25,8 @@ BUDGET_SECONDS = 50
 # label, url variable, login variable, trader key, guardian key
 VENUES = (("derivatives", "deriv_gateway_url", "deriv_expected_login", "QKT_DERIV_GATEWAY_KEY", "QKT_DERIV_GUARDIAN_KEY"),
           ("bybit", "bybit_gateway_url", "bybit_expected_login", "QKT_BYBIT_GATEWAY_KEY", "QKT_BYBIT_GUARDIAN_KEY"),
-          ("alpaca", "alpaca_gateway_url", "alpaca_expected_login", "QKT_ALPACA_GATEWAY_KEY", "QKT_ALPACA_GUARDIAN_KEY"))
+          ("alpaca", "alpaca_gateway_url", "alpaca_expected_login", "QKT_ALPACA_GATEWAY_KEY", "QKT_ALPACA_GUARDIAN_KEY"),
+          ("kalshi", "kalshi_gateway_url", "kalshi_expected_login", "QKT_KALSHI_GATEWAY_KEY", "QKT_KALSHI_GUARDIAN_KEY"))
 
 
 def venues(p):

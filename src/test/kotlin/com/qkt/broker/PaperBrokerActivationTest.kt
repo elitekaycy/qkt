@@ -93,6 +93,46 @@ class PaperBrokerActivationTest {
     }
 
     @Test
+    fun `a stop limit marketable on its trigger tick fills at that tick's mid, not the bid`() {
+        PaperBroker(bus, clock, MarketPriceTracker()).submit(
+            OrderRequest.StopLimit(
+                "sl",
+                "X",
+                Side.SELL,
+                Money.of("1"),
+                Money.of("100.00"),
+                Money.of("99.90"),
+                TimeInForce.GTC,
+                0L,
+            ),
+        )
+
+        bus.publish(TickEvent(Tick("X", Money.of("99.95"), 1L, bid = Money.of("99.94"), ask = Money.of("99.96"))))
+
+        assertThat(fills.single().price).isEqualByComparingTo("99.95")
+    }
+
+    @Test
+    fun `a stop limit marketable on its trigger tick never fills worse than its limit`() {
+        PaperBroker(bus, clock, MarketPriceTracker()).submit(
+            OrderRequest.StopLimit(
+                "sl",
+                "X",
+                Side.BUY,
+                Money.of("1"),
+                Money.of("100.00"),
+                Money.of("100.05"),
+                TimeInForce.GTC,
+                0L,
+            ),
+        )
+
+        bus.publish(TickEvent(Tick("X", Money.of("100.10"), 1L, bid = Money.of("100.04"), ask = Money.of("100.05"))))
+
+        assertThat(fills.single().price).isEqualByComparingTo("100.05")
+    }
+
+    @Test
     fun `on bars a stop limit whose limit the gap traded through fills at the limit`() {
         val broker = PaperBroker(bus, clock, MarketPriceTracker(), fillAtTriggerPrice = { true })
         tick("105", 1L)

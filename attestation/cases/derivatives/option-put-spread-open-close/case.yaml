@@ -4,6 +4,7 @@ why: 'A structure chooses its legs from the chain the gateway account records; i
   legs than replay of that recorded chain, sizes them differently, or books fees qkt and the venue do
   not agree on, the strategy trades one structure live and backtests another.'
 status: ready
+group: btc-options
 symbols:
 - OPTIONS:DERIBIT.BTC_USDC
 - CHAIN:DERIBIT.BTC_USDC.atm_iv.30d

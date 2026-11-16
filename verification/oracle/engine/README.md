@@ -37,76 +37,69 @@ once as a bar close in the tape, so each rule fires once.
 
 ## Modelling rules and where each comes from
 
-Paths relative to the repo root; line numbers at origin/dev `0ef93788a`.
+Paths relative to the repo root; line numbers as of the doc answers to #1717.
 
 | Rule | Doc |
 | --- | --- |
 | Rules evaluate on every candle close, edge-triggered. | `docs/reference/dsl/strategy-block.md:205,230` |
-| A market entry from a bar-close signal fills on the first executable price after that close: the first tick at or after the bar's end on ticks, the next bar's open on the synthetic path. | `docs/reference/dsl/conditions.md:231` |
-| `paper` fills at mid; a stop, limit or bracket exit triggers on the first tick whose quote for its side reaches the level (ask for a buy, bid for a sell) and fills at that tick's mid, up to half a spread better than its level or beyond it on a gap; no spread, slippage or latency. | `docs/concepts/backtest-model.md:76-80` |
-| Volume rounds down to `volumeStep`; below `volumeMin` the order is rejected and counted in the report's rejections, never sent at the minimum. | `backtest-model.md:80-81,104-105`; `docs/reference/dsl/sizing.md:219-224` |
-| `mt5-sim`: a BUY fills at the ask, a SELL at the bid, plus slippage; fill prices round to `digits`. | `backtest-model.md:104-106` |
-| `mt5-sim` slips market and stop fills against you by `slippagePoints` x `pointSize`; a limit, take-profit included, is never filled worse than its price and is not slipped. | `backtest-model.md:144-147` |
-| `spreadPoints: N` prices fills at mid +- N/2 points whatever the tick's spread; stops and limits still trigger on the feed's quotes. | `backtest-model.md:158,162-163` |
-| A symbol replayed from bars has no prints between open, low, high and close: an exit the bar trades through fills at its level, one the next bar opens beyond fills at that open. | `backtest-model.md:83-85` |
-| A bar without ticks replays open, extremes (the open position's adverse one first), close. With no position: open, low, high, close. | `backtest-model.md:90-91`; `docs/how-to/backtest-data.md:25-27` |
-| `--bars` resolves fills on the recorded ticks inside each bar by default: signals from bars, fills from prints. | `backtest-model.md:86-88` |
-| `mt5-sim` refuses the synthetic path. | `backtest-model.md:100-101` |
+| A bar closes on the first tick at or after its end; a market entry from that close fills on that tick at its quotes (the next bar's open on the synthetic path). Orders the close places work from the next tick. | `docs/concepts/backtest-model.md:89-96`; `docs/reference/dsl/conditions.md:241` |
+| `paper` fills at mid; a stop, limit or bracket exit triggers on the first tick whose quote for its side reaches the level (ask for a buy, bid for a sell) and fills at that tick's mid, up to half a spread better than its level or beyond it on a gap; no spread, slippage or latency. | `backtest-model.md:76-80` |
+| Volume rounds down to `volumeStep`; below `volumeMin` the order is rejected and counted in the report's rejections, never sent at the minimum. | `backtest-model.md:80-81,120-121`; `docs/reference/dsl/sizing.md:240-243` |
+| `mt5-sim`: a BUY fills at the ask, a SELL at the bid, plus slippage; fill prices round to `digits`, half to even, after slippage and the limit cap. | `backtest-model.md:120-124` |
+| `mt5-sim` slips market and stop fills against you by `slippagePoints` x `pointSize`; a limit, take-profit included, is never filled worse than its price and is not slipped, even when `spreadPoints` would price it past its level. | `backtest-model.md:164-168` |
+| `--tp-fill` defaults to `print`: a crossed take-profit fills at the crossing price when it beats the level. | `backtest-model.md:135-137` |
+| `spreadPoints: N` prices fills at mid +- N/2 points whatever the tick's spread; stops and limits still trigger on the feed's quotes. | `backtest-model.md:179,183-184` |
+| A symbol replayed from bars has no prints between open, low, high and close: any resting order, entry or exit, the bar trades through fills at its level, one the next bar opens beyond fills at that open. | `backtest-model.md:83-88` |
+| A bar without ticks replays open, extremes (the open position's adverse one first), close. With no position: open, low, high, close. The prints fall at the bar's start, a quarter and a half of the bar later, and 1 ms before its end. | `backtest-model.md:97-101,105-107`; `docs/how-to/backtest-data.md:25-27` |
+| `--bars` resolves fills on the recorded ticks inside each bar by default: signals from bars, fills from prints. | `backtest-model.md:102-104` |
+| `mt5-sim` refuses the synthetic path. | `backtest-model.md:116-117` |
 | `BRACKET`: when either side fills the other cancels. Levels: `BY <points>` from the fill, `BY <pct> PCT` percent of the entry price, `AT <price>` absolute. | `docs/reference/dsl/bracket.md:3,49-57,64-72,84-92` |
 | Each bracket level goes on the price grid once the entry fills: nearest tick, an exact half tick toward the entry. | `bracket.md:40-47` |
-| `OCO { STOP AT, LIMIT AT }` states the same two exits as raw prices. | `docs/reference/dsl/actions.md:127-136` |
-| Entry types: `LIMIT AT`, `STOP AT` ("triggers when price hits"), `STOP AT ... LIMIT AT` (once the stop trades a limit rests at the limit price). | `actions.md:104-123` |
-| `CLOSE` flattens the position at market; `SELL ... SIZING 0.5 * POSITION.x` is a partial close. | `actions.md:143-149`; `sizing.md:61-73` |
-| Sizing: fixed lots; `USD` notional / price; `PCT OF EQUITY` of position value at the current price; `PCT RISK` so a stop-out loses N % of equity; `RISK $ N` budget / (stop distance x contract size). | `sizing.md:7-16,19-57,75-88,164` |
+| `OCO { STOP AT, LIMIT AT }` states the same two exits as raw prices. | `docs/reference/dsl/actions.md:143-152` |
+| Entry types: `LIMIT AT`, `STOP AT` ("triggers when price hits"), `STOP AT ... LIMIT AT` (once the stop trades a limit rests at the limit price, and fills on the trigger tick when that tick already satisfies it). | `actions.md:112-141` |
+| An opposite-side order smaller than the position closes that part of it (hedging: of the oldest leg, by ticket); a larger one ends with the excess open on the other side: hedging closes the legs and opens the excess, two deals at one price; netting reverses in one fill. | `actions.md:93-110` |
+| `CLOSE` flattens the position at market; `SELL ... SIZING 0.5 * POSITION.x` is a partial close. | `actions.md:159-164`; `sizing.md:80-92` |
+| Sizing price: a market order sizes at the signal bar's close, `LIMIT AT p` / `STOP AT p` at `p`, a stop-limit at its stop price; equity and stop distance are taken at that moment. | `sizing.md:61-73` |
+| Sizing: fixed lots; `USD` notional / (price x contractSize x quote-to-account rate); `PCT OF EQUITY` of position value at that price; `PCT RISK` so a stop-out loses N % of equity; `RISK $ N` budget / (stop distance x contract size). | `sizing.md:7-16,19-57,73-78,94-107,183` |
 | `commissionPerLot` is charged per lot per fill, entry and exit; realised is net of modelled commission. | `backtest-data.md:577`; `docs/reference/cli-commands.md:65`; `docs/reference/config-schema.md:739-742` |
-| Realised = price difference x lots x contractSize (USD account, USD-quoted symbol). | `backtest-model.md` "Equity"; release audit `scripts/release-proof/audit/verify.py` relation |
+| Realised = price difference x lots x contractSize (USD account, USD-quoted symbol, so the conversion rate is 1). | `backtest-model.md` "Equity", "Currency conversion"; release audit `scripts/release-proof/audit/verify.py` relation |
 | Starting balance default 10000 (`--starting-balance`). | `docs/reference/cli-commands.md` (`qkt backtest --help`) |
 
-## Where the docs are silent or ambiguous
+## Questions the docs now answer
 
-The oracle takes the reading stated here and the matching scenario carries a `notes` entry; each is a question for
-the docs, not a guess the harness hides.
+The first version of this oracle listed eleven places where the docs were silent or ambiguous, and took a reading
+for each. Issue #1717 settled every one from qkt's code, wrote the answer into the docs, and pinned it with a
+scenario; the oracle's rule now cites the answer. None of qkt's behaviour here was changed.
 
-- **Q1 Sizing price.** `sizing.md:36,57` say "at current price" but not which: the signal bar's close, or the tick the
-  order fills on. Every scenario quotes the first tick after the signal bar at the signal bar's close, so both
-  readings give one number.
-- **Q2 Bar-close tick.** `conditions.md:231` says a market entry fills "a moment later on ticks". The oracle takes
-  the first tick at or after the bar's end (the tick that completes the bar) and fills at that tick's quotes.
-- **Q3 `USD` and `PCT OF EQUITY` with `contractSize` other than 1.** `sizing.md:51-57` only shows BTC (contract size
-  1). The oracle divides the notional by price x `contractSize` so the notional is the fill notional qkt reports
-  (`fillNotional` in `trades.csv`).
-- **Q4 Synthetic-print timestamps.** The time a synthetic open/low/high/close fill carries inside its bar is not
-  documented; the harness compares those fills at bar granularity.
-- **Q5 `digits` rounding mode.** `backtest-model.md:105` says fill prices round to `digits` without the mode; every
-  scenario keeps fill prices on the grid (even spreads, whole-point slippage) so no rounding happens.
-- **Q6 Stop-limit already marketable on its trigger tick.** `actions.md:114-119` does not say whether the resting
-  limit fills on the same tick that trips the stop when that tick's quote already satisfies it. The oracle fills it.
-- **Q7 Gapped take-profit default.** `backtest-model.md:118` names `--tp-fill print|level` without the default;
-  `:84-85` say a gapped exit fills at the open. The oracle uses the open (print). `BacktestFlagHelp` spells the
-  values `level or touch`, the doc `print|level`.
-- **Q8 Pending entries on the synthetic path.** `backtest-model.md:84-85` states the at-level rule for *exits*; the
-  oracle applies it to a pending `STOP AT` entry too.
-- **Q9 Partial close on a hedging account.** `actions.md:93-97` say an opposite-side market order "closes the
-  strategy's open opposite legs by ticket, oldest first"; a fraction of one leg is not described. The partial-close
-  scenarios run with `--position-mode netting`, where `sizing.md:71` documents the partial close.
-- **Q10 Opposite-side entry over an open position.** Out of scope for tranche A (netting reverses,
-  `backtest-model.md:45-47`); the oracle refuses it.
-- **Q11 `spreadPoints` against a limit.** `backtest-model.md:158` prices fills at mid +- N/2 points and `:162` keeps
-  triggers on the feed's quotes, so a target the feed's bid just reaches would be priced below its limit;
-  `:146` says a limit is never filled worse than its price. The oracle lets the limit price win (qkt agrees).
-- **Doc contradiction.** `backtest-model.md:243` lists "FX conversion of cross-currency positions" as not modelled
-  while the `usdjpy-conversion-paper` golden proves it is (audit §4).
+| # | Question | Answer (doc) | qkt code | Scenario |
+| --- | --- | --- | --- | --- |
+| Q1 | Which price `USD` / `PCT OF EQUITY` sizing uses. | A market order sizes at the signal bar's close, not the fill; `LIMIT AT p` / `STOP AT p` at `p`; a stop-limit at its stop price. [sizing.md](../../../docs/reference/dsl/sizing.md#the-price-and-the-notional-sizing-uses) | `dsl/compile/OrderTypeCompiler.kt:84-96,111,122,133,146`; `EntryOrderCompiler.kt:94-131` | `long-market-sizing-usd-gap-open-ticks-paper`, `long-limit-sizing-pct-equity-ticks-paper` |
+| Q2 | Which tick a bar-close market entry fills on. | The tick that closes the bar (the first at or after its end), at that tick's quotes; a heartbeat close fills at the symbol's last quote. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `app/TickIngest.kt:77-87`; `app/CandleWindowCloser.kt:45-48`; `broker/PaperBroker.kt:258-273` | `long-market-sizing-usd-gap-open-ticks-paper` |
+| Q3 | Whether notional divides by price x `contractSize`. | Yes, and by the quote-to-account rate. [sizing.md](../../../docs/reference/dsl/sizing.md#the-price-and-the-notional-sizing-uses) | `dsl/compile/SizingCompiler.kt:72-78,104-113,175-197` | `long-market-sizing-usd-ticks-paper` |
+| Q4 | The time a synthetic print carries. | Open at the bar's start, extremes at a quarter and a half of the bar, close 1 ms before its end. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `marketdata/source/BarTickFeed.kt:77-92` | every `*-bars-synthetic-paper` scenario (now compared to the millisecond) |
+| Q5 | The `digits` rounding mode. | Half to even, after slippage and the limit cap (`mt5-sim`). [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/MT5BrokerSimulator.kt:394` | `long-market-digits-half-even-stop-ticks-mt5` |
+| Q6 | A stop-limit already marketable on its trigger tick. | It fills on that tick; on `paper` at that tick's mid, never worse than its limit (#1716). [actions.md](../../../docs/reference/dsl/actions.md#order-type-modifiers), [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/PaperBroker.kt:280-296,337-353`; `broker/MT5BrokerSimulator.kt:278-293` | `short-stoplimit-marketable-ticks-mt5`, `short-stoplimit-marketable-ticks-paper` |
+| Q7 | The `--tp-fill` default. | `print` (`touch` is the same); `paper` always fills a gapped target at the crossing price. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/TakeProfitFill.kt:7-24`; `backtest/ExecutionSimulation.kt:57`; `broker/MT5BrokerSimulator.kt:349-357` | `short-market-gap-target-ticks-mt5`, `short-market-gap-target-bars-synthetic-paper` |
+| Q8 | Pending entries on the synthetic path. | The at-level / at-open rule holds for every resting order, entries included. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/PaperBroker.kt:216-218,317-325` | `long-stop-entry-target-bars-synthetic-paper`, `short-limit-entry-gap-bars-synthetic-paper` |
+| Q9 | A partial close on a hedging account. | It closes that part of the oldest leg by ticket; the rest stays open at its entry. [actions.md](../../../docs/reference/dsl/actions.md#buy-stream-and-sell-stream) | `app/HedgedEntryRouter.kt:38-69` | `long-market-partial-close-then-close-hedging-ticks-paper` |
+| Q10 | An opposite-side entry over an open position. | Netting reverses in one fill; hedging closes the opposite legs then opens the excess; a bracketed opposite entry on hedging opens its own leg. [actions.md](../../../docs/reference/dsl/actions.md#buy-stream-and-sell-stream) | `app/HedgedEntryRouter.kt:34-83`; `app/LegIntentPlanner.kt:123-131` | `long-market-reverse-netting-ticks-paper`, `long-market-reverse-hedging-ticks-paper` |
+| Q11 | `spreadPoints` against a limit. | The limit's price caps the fill. [backtest-model.md](../../../docs/concepts/backtest-model.md#slippage) | `broker/MT5BrokerSimulator.kt:349-357,366-371` | `long-market-spreadpoints-override-target-ticks-mt5` |
 
-## Results (2026-11-16, origin/dev 0ef93788a)
+The doc contradiction the first version found (`backtest-model.md` listing FX conversion as not modelled while the
+`usdjpy-conversion-paper` golden proves it is) is fixed: the page now has a
+[Currency conversion](../../../docs/concepts/backtest-model.md#currency-conversion) section
+(`accounting/Accounting.kt:138-148,196-265`).
 
-46 of 49 scenarios agree with qkt to the digit. Three disagree and are held `@Disabled` in
+## Results (2026-11-16)
+
+56 of 58 scenarios agree with qkt to the digit. Two disagree and are held `@Disabled` in
 `ExecutionVerificationKnownBugsTest`, asserting the documented behaviour:
 
 - `long-market-oco-stop-ticks-paper`, `short-market-oco-target-ticks-paper`: `BUY syn SIZING 0.1 OCO { STOP AT
   99.50, LIMIT AT 102.50 }` submits no entry at all. qkt places a `StandaloneOCO` of the two *exit* prices as
   opening orders (`legIntent: Open`), so the first leg to trigger opens an opposite-side position instead of closing
-  a long (`actions.md:127-136`: OCO "states the same two exits as raw order prices" on a `BUY`/`SELL` entry).
-- `short-stoplimit-marketable-ticks-paper`: a paper `STOP AT 100.00 LIMIT AT 99.90` whose trigger tick (bid 99.94,
-  mid 99.95) already satisfies the limit fills at the bid 99.94, not the tick's mid, and anchors its bracket on
-  99.94; `backtest-model.md:76-79` has every paper stop and limit fill at the mid. The same-tick case itself is
-  undocumented (Q6); the resting case (`long-stoplimit-rests-then-fills-ticks-paper`) fills at the mid as documented.
+  a long (`actions.md:143-152`: OCO "states the same two exits as raw order prices" on a `BUY`/`SELL` entry). #1715.
+
+`short-stoplimit-marketable-ticks-paper` disagreed until #1716: a paper `STOP AT 100.00 LIMIT AT 99.90` whose
+trigger tick (bid 99.94, mid 99.95) already satisfied the limit filled at the bid 99.94, not the tick's mid. It now
+fills at the mid, as `backtest-model.md` states, and runs in the main set.

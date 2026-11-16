@@ -7,6 +7,7 @@ why: 'A live roll sent market legs that filled at 233,605 and 38,940 with the ma
   minutes ahead must hold no record of the roll, and the session must price it from the venue''s bars at its minute
   (#1615): a record fetched early is priced from the bars before the roll.'
 status: ready
+group: btc-front
 symbols:
 - DERIBIT:BTC_USDC@front
 timeframes:

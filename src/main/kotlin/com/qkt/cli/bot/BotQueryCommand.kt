@@ -82,34 +82,16 @@ class BotQueryCommand(
         val rows =
             venue(symbol) { v ->
                 val all = v.positions() ?: error("venue positions read failed")
-                if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
-            }
-        val docs =
-            rows.map {
-                jsonObj(
-                    "ticket" to idJson(it.ticket),
-                    "symbol" to it.symbol,
-                    "side" to it.side,
-                    "lots" to it.lots,
-                    "entry" to it.entry,
-                    "current" to it.current,
-                    "sl" to it.sl,
-                    "tp" to it.tp,
-                    "profit" to it.profit,
-                    "swap" to it.swap,
-                    "openedAtMs" to it.openedAtMs,
-                    "comment" to it.comment,
-                )
+                val matching = if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
+                matching.map { it to v.qktSymbol(it.symbol) }
             }
         if (json) {
-            println(jsonArr(docs))
+            println(jsonArr(rows.map { (p, qkt) -> p.doc(qkt) }))
         } else if (rows.isEmpty()) {
             println("no open positions")
         } else {
-            rows.forEach {
-                println(
-                    "${it.ticket} ${it.symbol} ${it.side} ${it.lots} @ ${it.entry} sl=${it.sl} tp=${it.tp} pnl=${it.profit}",
-                )
+            rows.forEach { (p, qkt) ->
+                println("${p.ticket} $qkt ${p.side} ${p.lots} @ ${p.entry} sl=${p.sl} tp=${p.tp} pnl=${p.profit}")
             }
         }
         return ExitCodes.SUCCESS
@@ -120,30 +102,16 @@ class BotQueryCommand(
         val rows =
             venue(symbol) { v ->
                 val all = v.pendingOrders() ?: error("venue pending-orders read failed")
-                if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
-            }
-        val docs =
-            rows.map {
-                jsonObj(
-                    "ticket" to idJson(it.ticket),
-                    "symbol" to it.symbol,
-                    "type" to it.type,
-                    "lots" to it.lots,
-                    "price" to it.price,
-                    "sl" to it.sl,
-                    "tp" to it.tp,
-                    "expiresAt" to it.expiresAt,
-                )
+                val matching = if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
+                matching.map { it to v.qktSymbol(it.symbol) }
             }
         if (json) {
-            println(jsonArr(docs))
+            println(jsonArr(rows.map { (o, qkt) -> o.doc(qkt) }))
         } else if (rows.isEmpty()) {
             println("no pending orders")
         } else {
-            rows.forEach {
-                println(
-                    "${it.ticket} ${it.symbol} ${it.type} ${it.lots} @ ${it.price} sl=${it.sl} tp=${it.tp}",
-                )
+            rows.forEach { (o, qkt) ->
+                println("${o.ticket} $qkt ${o.type} ${o.lots} @ ${o.price} sl=${o.sl} tp=${o.tp}")
             }
         }
         return ExitCodes.SUCCESS
@@ -180,36 +148,16 @@ class BotQueryCommand(
     private fun history(json: Boolean): Int {
         val now = SystemClock().now()
         val since = parseSince(args.option("since"), now)
-        val deals = venue(null) { it.deals(since, now) } ?: error("venue deal-history read failed")
-        val docs =
-            deals.map {
-                jsonObj(
-                    "dealTicket" to idJson(it.dealTicket),
-                    "positionTicket" to it.positionTicket?.let(::idJson),
-                    "symbol" to it.symbol,
-                    "side" to it.side,
-                    "entry" to it.entry,
-                    "lots" to it.lots,
-                    "price" to it.price,
-                    "profit" to it.profit,
-                    "commission" to it.commission,
-                    "swap" to it.swap,
-                    "fee" to it.fee,
-                    "timeMs" to it.timeMs,
-                    "comment" to it.comment,
-                )
-            }
+        val deals =
+            venue(null) { v -> v.deals(since, now)?.map { it to v.qktSymbol(it.symbol) } }
+                ?: error("venue deal-history read failed")
         if (json) {
-            println(jsonArr(docs))
+            println(jsonArr(deals.map { (d, qkt) -> d.doc(qkt) }))
         } else if (deals.isEmpty()) {
             println("no deals since ${Instant.ofEpochMilli(since)}")
         } else {
-            deals.forEach {
-                println(
-                    "${Instant.ofEpochMilli(
-                        it.timeMs,
-                    )} ${it.symbol} ${it.side} ${it.lots} @ ${it.price} pnl=${it.profit}",
-                )
+            deals.forEach { (d, qkt) ->
+                println("${Instant.ofEpochMilli(d.timeMs)} $qkt ${d.side} ${d.lots} @ ${d.price} pnl=${d.profit}")
             }
         }
         return ExitCodes.SUCCESS

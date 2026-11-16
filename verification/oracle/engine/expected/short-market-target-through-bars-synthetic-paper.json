@@ -2,7 +2,7 @@
   "name": "short-market-target-through-bars-synthetic-paper",
   "proves": "a target the bar trades through fills at its level, not at the bar low",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
-  "timestampGranularity": "bar",
+  "timestampGranularity": "tick",
   "trades": [
     {
       "ts": 1704880860000,
@@ -17,7 +17,7 @@
       "takeProfit": "98.50"
     },
     {
-      "ts": 1704880920000,
+      "ts": 1704880950000,
       "side": "BUY",
       "qty": "0.1",
       "price": "98.50",

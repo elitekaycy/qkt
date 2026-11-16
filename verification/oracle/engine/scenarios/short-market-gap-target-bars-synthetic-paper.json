@@ -154,6 +154,6 @@
     }
   ],
   "notes": [
-    "backtest-model.md:118 names --tp-fill print|level for a gap-crossed take-profit without stating the default; the oracle takes the open (print), per :84-85 (README Q7)."
+    "backtest-model.md:87-88: a take-profit the next bar opens beyond always fills at that open on paper (README Q7)."
   ]
 }

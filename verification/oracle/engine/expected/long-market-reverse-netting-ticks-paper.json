@@ -1,0 +1,42 @@
+{
+  "name": "long-market-reverse-netting-ticks-paper",
+  "proves": "SELL 0.2 over a 0.1 long on a netting account reverses in one fill: realises the long, opens a 0.1 short",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.2",
+      "price": "102.00",
+      "realized": "0.150",
+      "reason": "reverse",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704881040000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.00",
+      "realized": "0.200",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.350",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "actions.md:105-108: netting reverses an oversized opposite order in one fill (README Q10)."
+  ]
+}

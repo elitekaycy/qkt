@@ -15,6 +15,9 @@ interface DirectVenue {
     /** The venue's code for [qktSymbol] (`XAUUSDm`, `SOL_USDC-PERPETUAL`). */
     fun venueSymbol(qktSymbol: String): String
 
+    /** The qkt symbol of the venue's code [venueSymbol], the inverse of [DirectVenue.venueSymbol] (`EXNESS:XAUUSD`). */
+    fun qktSymbol(venueSymbol: String): String
+
     /** The quote, account value and instrument limits an order is sized and priced against. */
     fun facts(qktSymbol: String): VenueFacts
 

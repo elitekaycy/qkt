@@ -78,7 +78,7 @@ class Level:
 
 @dataclass(frozen=True)
 class Exit:
-    """`BRACKET { STOP_LOSS, TAKE_PROFIT }` (bracket.md) or `OCO { STOP AT, LIMIT AT }` (actions.md:127-136)."""
+    """`BRACKET { STOP_LOSS, TAKE_PROFIT }` (bracket.md) or `OCO { STOP AT, LIMIT AT }` (actions.md:143-152)."""
 
     kind: str  # "bracket" | "oco"
     stop: Level

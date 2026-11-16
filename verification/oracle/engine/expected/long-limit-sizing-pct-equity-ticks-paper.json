@@ -1,0 +1,35 @@
+{
+  "name": "long-limit-sizing-pct-equity-ticks-paper",
+  "proves": "SIZING 5 PCT OF EQUITY on a LIMIT AT 99.80 sizes at the limit price: 500 / 99.80 = 5.01 lots",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "5.01",
+      "price": "99.79",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "98.79",
+      "takeProfit": "100.79"
+    },
+    {
+      "ts": 1704881010000,
+      "side": "SELL",
+      "qty": "5.01",
+      "price": "100.80",
+      "realized": "5.0601",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "5.0601",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "sizing.md:69-70: a LIMIT entry sizes at its own price, not the signal close (README Q1)."
+  ]
+}

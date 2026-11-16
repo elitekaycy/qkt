@@ -35,6 +35,8 @@ class Mt5DirectVenue(
 
     override fun venueSymbol(qktSymbol: String): String = mt5Symbol.toBroker(qktSymbol.substringAfter(':'))
 
+    override fun qktSymbol(venueSymbol: String): String = "${profile.name.uppercase()}:${mt5Symbol.toQkt(venueSymbol)}"
+
     override fun facts(qktSymbol: String): VenueFacts {
         val broker = venueSymbol(qktSymbol)
         val tick =
