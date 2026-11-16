@@ -1,0 +1,136 @@
+{
+ "function": "POW",
+ "oracle": "math.pow; null when the double result is infinite or NaN; TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3",
+ "tolerance": {
+  "abs": 1e-300,
+  "rel": 1e-12
+ },
+ "cases": [
+  {
+   "args": [
+    "2",
+    "10"
+   ],
+   "expected": "1024.0"
+  },
+  {
+   "args": [
+    "9",
+    "0.5"
+   ],
+   "expected": "3.0"
+  },
+  {
+   "args": [
+    "10",
+    "-400"
+   ],
+   "expected": "0.0"
+  },
+  {
+   "args": [
+    "-8",
+    "0.33333333"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "0",
+    "0"
+   ],
+   "expected": "1.0"
+  },
+  {
+   "args": [
+    "0",
+    "-1"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "2",
+    "0.5"
+   ],
+   "expected": "1.4142135623730951"
+  },
+  {
+   "args": [
+    "1.0001",
+    "365"
+   ],
+   "expected": "1.0371724113025478"
+  },
+  {
+   "args": [
+    "10",
+    "308"
+   ],
+   "expected": "1e+308"
+  },
+  {
+   "args": [
+    "10",
+    "309"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "-2",
+    "3"
+   ],
+   "expected": "-8.0"
+  },
+  {
+   "args": [
+    "-2",
+    "0.5"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "94273.12345678",
+    "2"
+   ],
+   "expected": "8887421806.297283"
+  },
+  {
+   "args": [
+    "1e-6",
+    "3"
+   ],
+   "expected": "9.999999999999999e-19"
+  },
+  {
+   "args": [
+    "0.5",
+    "-1074"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "0.5",
+    "-1075"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "2",
+    "1023"
+   ],
+   "expected": "8.98846567431158e+307"
+  },
+  {
+   "args": [
+    "2",
+    "1024"
+   ],
+   "expected": null
+  }
+ ]
+}

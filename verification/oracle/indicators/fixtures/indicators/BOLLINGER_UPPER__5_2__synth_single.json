@@ -1,0 +1,1 @@
+{"indicator":"BOLLINGER_UPPER","args":["5","2"],"series":"synth_single","input":"close","oracle":"TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3","tolerance":{"abs":1e-07,"rel":1e-09},"note":"population (n) standard deviation, as TA-Lib BBANDS; stddev() is sample (n-1)","values":[null]}

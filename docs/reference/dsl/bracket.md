@@ -91,6 +91,12 @@ BRACKET {
 
 Computed at action-execute time. `btc.close` is the entry price (the close of the bar that fired the rule). Arithmetic, indicator calls, and `LET`-bound values all work.
 
+A stop that resolves onto the entry price (`STOP_LOSS AT btc.close`, or an expression that comes out
+there) leaves no stop distance: there is no risk for `SIZING RISK` to divide by, and a `TAKE_PROFIT RR`
+target would sit on the entry itself. The order is refused with the levels in the reason — it shows as a
+suppressed signal in the trade record and the session log — and the rule's other actions still run. The
+rule re-arms, so it tries again on the next bar its condition holds.
+
 That bar close is only the placement-time estimate. For fill-anchored fixed brackets,
 live execution modifies venue protection to the actual fill geometry after acceptance.
 If the venue rejects that modification, qkt reports a protection failure and arms an

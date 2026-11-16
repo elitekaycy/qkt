@@ -71,7 +71,14 @@ internal class StackActionCompiler(
                             val spec =
                                 resolveStopLoss(stopLoss, ctx, side, expectedEntry)
                                     ?: return@stack emptyList()
-                            stopDistance(expectedEntry, spec)
+                            val distance = stopDistance(expectedEntry, spec)
+                            // A stop on a layer's entry protects nothing: refuse the stack with the levels.
+                            if (distance.signum() <= 0) {
+                                return@stack listOf(
+                                    Signal.Suppressed(symbol, zeroStopDistanceReason(expectedEntry, distance)),
+                                )
+                            }
+                            distance
                         }
                     val qty =
                         compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)

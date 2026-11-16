@@ -11,6 +11,7 @@ import java.time.temporal.ChronoUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -109,8 +110,8 @@ class Mt5TickClient(
             brokerTimeMs = serverTimeZone.serverEpochToUtc(serverMs),
             bid = obj["bid"]!!.jsonPrimitive.content.toBigDecimal(),
             ask = obj["ask"]!!.jsonPrimitive.content.toBigDecimal(),
-            last = obj["last"]?.jsonPrimitive?.content?.toBigDecimal() ?: BigDecimal.ZERO,
-            flags = obj["flags"]?.jsonPrimitive?.content?.toInt() ?: 0,
+            last = obj["last"]?.jsonPrimitive?.contentOrNull?.toBigDecimal() ?: BigDecimal.ZERO,
+            flags = obj["flags"]?.jsonPrimitive?.contentOrNull?.toInt() ?: 0,
         )
     }
 

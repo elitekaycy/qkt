@@ -52,14 +52,23 @@ class MarketDataHealthAlertsTest {
 
     private var exposure = SymbolExposure.NONE
 
-    private fun alerts(quietAlertAfterMs: Long = 600_000L): MarketDataHealthAlerts {
+    private fun alerts(quietAlertAfterMs: Long? = 600_000L): MarketDataHealthAlerts {
         val clock = FixedClock(1L)
         val strategies = listOf("s1" to strategy)
         val sessionNotifier =
             SessionNotifier(notifier, setOf(NotifyEventKind.STRATEGY_ERROR), null, strategies, clock)
         val insights = InsightsLifecycle(null, emptySet(), emptyMap(), strategies, source, listOf("X"), clock)
-        val config = MarketDataGateConfig.DEFAULT.copy(quietAlertAfterMs = quietAlertAfterMs)
-        return MarketDataHealthAlerts(strategies, sessionNotifier, insights, config).also {
+        // Null: the session's default gate config.
+        val alerts =
+            quietAlertAfterMs?.let {
+                MarketDataHealthAlerts(
+                    strategies,
+                    sessionNotifier,
+                    insights,
+                    MarketDataGateConfig.DEFAULT.copy(quietAlertAfterMs = it),
+                )
+            } ?: MarketDataHealthAlerts(strategies, sessionNotifier, insights)
+        return alerts.also {
             it.exposureFor = { exposure }
         }
     }
@@ -84,6 +93,16 @@ class MarketDataHealthAlertsTest {
             "market data for X: no quote for 10m while its venue is in session; nothing open on X in " +
                 "this session; new orders on X stay suppressed until quotes return",
         )
+    }
+
+    @Test
+    fun `with the default gate config a quiet symbol waits ten minutes before it pages`() {
+        val alerts = alerts(quietAlertAfterMs = null)
+        alerts.onUnhealthy("X", stale, FeedFault.STALE)
+        alerts.onStillStale("X", 599_000L)
+        assertThat(pages).isEmpty()
+        alerts.onStillStale("X", 600_000L)
+        assertThat(pages.single()).startsWith("market data for X: no quote for 10m")
     }
 
     @Test
