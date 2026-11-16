@@ -126,8 +126,53 @@ other difference, and an order on one side only, is a parity mismatch: the trace
 and the verifier refuses a bundle whose trace and parity disagree.
 
 `catalog` lists every required case and stage with each attempt that led there. The verifier refuses a bundle in which
-a ready case at this commit has no pass, a case or stage is bound to another commit, profile, account or CLI build,
+a ready case at this commit has no pass, a case or stage is bound to another commit (or, for a carried case, another runtime
+fingerprint or definition, see below), profile, account or CLI build,
 a failed attempt is hidden, any evidence is over 24 hours old at assembly, or a core lane is missing.
+
+## Evidence carried between commits
+
+`testing` moves with every merge into `dev`, and a release is of one named candidate commit, so the attestation of the
+candidate stays valid however far `testing` has moved. Carry exists for the other case: restarting on a *newer*
+candidate whose shipped artifact is the same.
+
+A passed catalog case is carried from commit X to commit N only when **all** of these hold, each checked by the run and again
+by the verifier, which recomputes them from git and trusts no declaration in the bundle:
+
+- **The runtime fingerprint is equal.** `scripts/live-validation/lib/runtime_fingerprint.py` hashes every tracked file
+  except an explicit deny-list of paths known not to affect what is built or shipped: `src/test`, `tests`, `docs`, `.github`,
+  `config`, `data`, `strategies`, `examples` (except `examples/bot`), `attestation`, the harness
+  (`scripts/live-validation`, `scripts/release-proof`), the promotion scripts by name, and root metadata. A path nobody
+  classified (a new directory, a new script) is in the fingerprint, so it invalidates carried evidence until someone
+  reviews and adds it to the list. File identity is git's blob id and mode.
+- **The artifact hash is equal, when both builds have one.** The built CLI is not byte-reproducible across commits:
+  `build-info.properties` carries the git sha and the build time, and `qkt --version` must name the commit. So the CLI's own
+  hash cannot be the key. `artifact_hash` instead hashes the installed tree by content (every jar entry's name and bytes, never
+  timestamps or order, minus `build-info.properties`). It catches drift the source list cannot see (a dependency or toolchain
+  change). It is an extra gate, not a replacement: the verifier cannot rebuild, so the source fingerprint is what it proves
+  independently. The mode is recorded in the binding (`carryMode`: `artifact+source` or `source`).
+- **The case's own definition is equal**: its files under `attestation/cases/<lane>/<id>/`, its lane's entry in
+  `attestation/lanes.yaml`, and the harness that runs it. A change to one case reruns that case; a harness change reruns all.
+- **The profile file, the account and the environment are equal**: the JDK and the image ids of the profile's
+  `gateway_images`. A profile without `gateway_images` carries nothing.
+- **The evidence is under 24 hours old**, as everywhere.
+
+A commit that changes anything runtime reruns ALL cases. There is no per-lane guess from code paths: the engine is one
+Kotlin program with no sound map from a source file to the lanes it affects.
+
+**Never carried:** the parity wave (its run id is spent by paper-soak and stamped with the commit), the release proofs, the
+insights scenario, and the shadow lane. These run on every candidate. If the fingerprint or the environment cannot be
+computed, the binding is the exact-commit one and nothing is carried.
+
+Every carried case is logged (`evidence carried from commit X (same runtime fingerprint F): <case>`), recorded in the
+ledger, and shown in the bundle's catalog evidence: `ranOnSha`, `definitionSha256` and `carriedFrom` per case, and
+`carry.summary` with the counts carried, kept from this commit and freshly run. The verifier refuses a v2 bundle (no
+`--repo-root`), a fingerprint that is not the verified commit's, a case that ran on a commit shipping something else, a
+changed definition, and a carry that is not logged as one.
+
+**Backstop.** `run-attestation.sh --no-carry` (and `release-unattended.sh --no-carry`) runs every case on the commit. Run
+it on the testing head on a schedule: the carry rules are then audited by real runs, and a carry that would have hidden a
+failure shows up as a fresh failure.
 
 Artifacts are disposable evidence, not source files. Store them on the trusted runner
 and in the retained Actions artifact. Keep only the attestation metadata, hashes,
