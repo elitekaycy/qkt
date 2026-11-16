@@ -48,7 +48,7 @@ class HubTailFailureTest {
         try {
             Files.writeString(file, "not json\n" + record(2, "0.2"), StandardOpenOption.APPEND)
             assertThat(delivered.await(5, TimeUnit.SECONDS)).isTrue()
-            assertThat(ticks.map { it.price.toPlainString() }).containsExactly("0.2")
+            assertThat(ticks.map { it.price.stripTrailingZeros().toPlainString() }).containsExactly("0.2")
         } finally {
             source.stop()
         }
@@ -67,7 +67,7 @@ class HubTailFailureTest {
         val source = HubTailSource(tmp, listOf(symbol), pollIntervalMs = 10L)
         source.start(
             onTick = { tick ->
-                if (tick.price.toPlainString() == "0.2") error("consumer failed")
+                if (tick.price.stripTrailingZeros().toPlainString() == "0.2") error("consumer failed")
                 ticks.add(tick)
                 later.countDown()
             },
@@ -84,7 +84,7 @@ class HubTailFailureTest {
             Files.writeString(file, record(3, "0.3"), StandardOpenOption.APPEND)
             assertThat(later.await(5, TimeUnit.SECONDS)).isTrue()
             assertThat(errors.first()).hasMessage("consumer failed")
-            assertThat(ticks.map { it.price.toPlainString() }).containsExactly("0.3")
+            assertThat(ticks.map { it.price.stripTrailingZeros().toPlainString() }).containsExactly("0.3")
         } finally {
             source.stop()
         }

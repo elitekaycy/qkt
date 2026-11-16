@@ -27,6 +27,7 @@ class ImportRowArithmeticTest {
             time = listOf("$0"),
             basis = PriceBasis.MID,
             digits = 5,
+            timeframe = "1m",
             fields = mapOf("open" to "$1", "high" to "$2", "low" to "$3", "close" to "$4", "spread" to "$5"),
         )
 
