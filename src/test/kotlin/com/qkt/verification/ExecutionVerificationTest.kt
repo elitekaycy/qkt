@@ -32,14 +32,17 @@ class ExecutionVerificationTest {
             .filterNot { it.name in ExecutionVerificationKnownBugsTest.KNOWN_BUGS }
             .map { scenario ->
                 dynamicTest(scenario.name) {
-                    verify(scenario, Files.createDirectories(tmp.resolve(scenario.name)))
+                    val levels = !ExecutionVerificationKnownBugsTest.levelsUnreported(scenario)
+                    verify(scenario, Files.createDirectories(tmp.resolve(scenario.name)), levels)
                 }
             }
 
     companion object {
+        /** Checks [scenario] against its oracle tape; [levels] false skips the entry rows' reported stop and target. */
         fun verify(
             scenario: ExecutionScenario,
             dir: Path,
+            levels: Boolean = true,
         ) {
             val expectation = ExecutionScenarios.expectation(scenario.name)
             val run = ExecutionScenarioRun.run(scenario, dir)
@@ -51,7 +54,7 @@ class ExecutionVerificationTest {
             val actual = if (tick) run.fills.sortedWith(ACTUAL_ORDER) else run.fills
             val mismatches =
                 expected.indices.mapNotNull { i ->
-                    compare(i, expected[i], actual[i], expectation.timestampGranularity, scenario)
+                    compare(i, expected[i], actual[i], expectation.timestampGranularity, scenario, levels)
                 }
             assertThat(mismatches).describedAs("$about: ${mismatches.size} fills differ").isEmpty()
             assertThat(run.finalRealized.cents())
@@ -82,6 +85,7 @@ class ExecutionVerificationTest {
             act: ActualFill,
             granularity: String,
             scenario: ExecutionScenario,
+            levels: Boolean,
         ): String? {
             val problems = mutableListOf<String>()
             if (granularity == "tick") {
@@ -96,8 +100,10 @@ class ExecutionVerificationTest {
             differs("qty", act.qty, exp.qty)?.let { problems += it }
             differs("price", act.price, exp.price)?.let { problems += it }
             differs("realized", act.realized, exp.realized)?.let { problems += it }
-            exp.stopLoss?.let { differs("stopLoss", act.stopLoss, it)?.let { p -> problems += p } }
-            exp.takeProfit?.let { differs("takeProfit", act.takeProfit, it)?.let { p -> problems += p } }
+            if (levels) {
+                exp.stopLoss?.let { differs("stopLoss", act.stopLoss, it)?.let { p -> problems += p } }
+                exp.takeProfit?.let { differs("takeProfit", act.takeProfit, it)?.let { p -> problems += p } }
+            }
             if (problems.isEmpty()) return null
             return "fill $i (${exp.reason} ${exp.side}): ${problems.joinToString(", ")}"
         }

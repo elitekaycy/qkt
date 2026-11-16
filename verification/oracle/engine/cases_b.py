@@ -337,11 +337,11 @@ CASES: list = [
     ),
     Case(
         "long-market-stackat-tier-on-target-tick-ticks-paper",
-        "one gap tick fills the primary's target and lifts MFE past the tier: the tier fires on it and its leg runs on",
+        "a gap tick that fills the primary's target ends its lifecycle: the tier that tick lifts MFE past does not fire",
         dims("stack-at", "stack-at-mfe", collision="stack-at-tier-on-target-tick"),
         [SIGNAL, ["100.50", "100.80", "101.60", "101.70"], ["101.90", "102.11", "102.00", "101.95"]],
         [rule(order("BUY", exit=by("1.00", "1.00"), stackAt=[mfe("0.90", 300, "0.05", "0.50", "0.50")]))],
-        notes=["The tick updates the primary's MFE and fills its target; stack-at.md:75-85 evaluate tiers on every tick the primary was open for, and :53 closes the primary leg only. README QB5."],
+        notes=["stack-at.md:87-89: the primary's own exit on a tick ends its lifecycle before its tiers see that tick (README QB5)."],
     ),
     Case(
         "long-market-stackat-tier-ticks-mt5",
@@ -495,6 +495,26 @@ CASES: list = [
         ],
         fill_mode="bars-synthetic",
         notes=["actions.md:277: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."],
+    ),
+    Case(
+        "oco-entry-gap-closer-leg-listed-first-bars-synthetic-paper",
+        "a bar opening beyond both legs fills the leg closer to the open even when it is listed first",
+        dims("oco-entry", "oco-entry-gap", fills="bars-synthetic", collision="oco-entry-both-legs-gapped"),
+        [SIGNAL, ["100.50", "100.40", "100.30", "100.20"], ["98.80", "98.70", "99.85", "99.70"], ["99.60"] * 4],
+        [
+            rule(
+                {
+                    "kind": "ocoEntry",
+                    "legs": [
+                        order("BUY", order_type={"type": "LIMIT", "price": "99.00"}, exit=by("1.00", "1.00")),
+                        order("SELL", order_type={"type": "STOP", "price": "99.50"}, exit=by("1.00", "1.00")),
+                    ],
+                },
+                position=None,
+            )
+        ],
+        fill_mode="bars-synthetic",
+        notes=["actions.md:277; the mirror of oco-entry-gap-through-both-legs-bars-synthetic-paper with the legs swapped, so listing order cannot decide it."],
     ),
     Case(
         "oco-entry-straddle-dual-breach-bars-synthetic-paper",

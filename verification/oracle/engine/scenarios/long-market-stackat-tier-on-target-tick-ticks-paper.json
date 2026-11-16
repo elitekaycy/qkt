@@ -1,6 +1,6 @@
 {
   "name": "long-market-stackat-tier-on-target-tick-ticks-paper",
-  "proves": "one gap tick fills the primary's target and lifts MFE past the tier: the tier fires on it and its leg runs on",
+  "proves": "a gap tick that fills the primary's target ends its lifecycle: the tier that tick lifts MFE past does not fire",
   "dimensions": {
     "feature": "stack-at",
     "shape": "stack-at-mfe",
@@ -123,6 +123,6 @@
     }
   ],
   "notes": [
-    "The tick updates the primary's MFE and fills its target; stack-at.md:75-85 evaluate tiers on every tick the primary was open for, and :53 closes the primary leg only. README QB5."
+    "stack-at.md:87-89: the primary's own exit on a tick ends its lifecycle before its tiers see that tick (README QB5)."
   ]
 }

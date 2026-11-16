@@ -1,6 +1,6 @@
 {
   "name": "long-market-stackat-tier-on-target-tick-ticks-paper",
-  "proves": "one gap tick fills the primary's target and lifts MFE past the tier: the tier fires on it and its leg runs on",
+  "proves": "a gap tick that fills the primary's target ends its lifecycle: the tier that tick lifts MFE past does not fire",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
   "timestampGranularity": "tick",
   "trades": [
@@ -17,39 +17,19 @@
     },
     {
       "ts": 1704880890000,
-      "side": "BUY",
-      "qty": "0.05",
-      "price": "101.60",
-      "realized": "0.00",
-      "reason": "entry",
-      "orderType": "MARKET",
-      "stopLoss": "101.10",
-      "takeProfit": "102.10"
-    },
-    {
-      "ts": 1704880890000,
       "side": "SELL",
       "qty": "0.1",
       "price": "101.60",
       "realized": "0.110",
       "reason": "target",
       "orderType": "LIMIT"
-    },
-    {
-      "ts": 1704880935000,
-      "side": "SELL",
-      "qty": "0.05",
-      "price": "102.11",
-      "realized": "0.0255",
-      "reason": "target",
-      "orderType": "LIMIT"
     }
   ],
-  "realized": "0.1355",
-  "commission": "0.00",
+  "realized": "0.110",
+  "commission": "0.0",
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "The tick updates the primary's MFE and fills its target; stack-at.md:75-85 evaluate tiers on every tick the primary was open for, and :53 closes the primary leg only. README QB5."
+    "stack-at.md:87-89: the primary's own exit on a tick ends its lifecycle before its tiers see that tick (README QB5)."
   ]
 }

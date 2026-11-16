@@ -93,7 +93,7 @@ def enter_oco(st, action: Action, bar, p) -> None:
 
 def filled(st, p, o: Pending, price: Decimal) -> None:
     """Opens the leg, then arms what hangs off the fill: EXIT AFTER from the fill (exit-after.md:9-11,35-36), the
-    STACK ladder off the seed fill (stack.md:200), STACK_AT tiers (stack-at.md:29,187) and ON_FILL children
+    STACK ladder off the seed fill (stack.md:200), STACK_AT tiers (stack-at.md:29,191) and ON_FILL children
     (oto.md:3,51)."""
     leg = st.open_leg(p, o.side, o.qty, price, o.label, o.exit)
     if leg is None:
@@ -218,13 +218,14 @@ def retire_stacks(st, p) -> None:
 
 
 def work_tiers(st, p) -> None:
-    """stack-at.md:73-85, on every tick after the primary fills (:191 "first evaluates on the tick after the
-    primary fill"): the primary's MFE/MAE update on the mark, the tick's mid (:89-90), against its fill price;
+    """stack-at.md:73-85, on every tick after the primary fills (:195 "first evaluates on the tick after the
+    primary fill"): the primary's MFE/MAE update on the mark, the tick's mid (:93-94), against its fill price;
     an MFE tier fires when `mfe >= threshold` and `elapsed <= within`; a recoil tier arms at `mae >= threshold`,
     floats its anchor with the worst adverse mark and fires once recovered by RECOVER (:28,67-69,80-81,189);
-    a tier past its window is abandoned (:82); each fires at most once (:83), all qualifying on one tick (:85).
-    The leg is a market order (stack-at.md:94-95) priced as any market fill on this broker, its BY bracket
-    anchored on its own fill (:96-98), and it gets the action's EXIT AFTER from its own fill (exit-after.md:37)."""
+    a tier past its window is abandoned (:82); each fires at most once (:83), all qualifying on one tick (:85); a
+    tick that fills the primary's stop or target ends its lifecycle before the tiers see it (:87-89).
+    The leg is a market order (stack-at.md:98-99) priced as any market fill on this broker, its BY bracket
+    anchored on its own fill (:100-102), and it gets the action's EXIT AFTER from its own fill (exit-after.md:37)."""
     for leg in list(st.open_legs):
         if not leg.tiers or leg.fill_ts == p.ts:
             continue
@@ -275,7 +276,7 @@ def trail_stop(leg, mid: Decimal) -> None:
     """bracket.md:161-167: pre-arm the stop sits at entry -+ distance; "when MFE crosses <threshold>, the stop
     arms and starts tracking the favorable extreme"; post-arm it sits at hwm -+ distance, "where hwm is the
     running favorable extreme since fill"; arming is one-way. The extreme is the mark (mid), the price MFE is
-    measured on (stack-at.md:89-90)."""
+    measured on (stack-at.md:93-94)."""
     if leg.trail is None:
         return
     leg.best = max(leg.best, mid) if leg.side == LONG else min(leg.best, mid)

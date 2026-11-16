@@ -14,8 +14,8 @@ Positions are tracked as legs: each filled entry is its own leg with its own exi
 positions of backtest-model.md:45-46: "each bracket, `TIMES` or `STACK` entry is its own leg"). On a netting
 account fills on one side merge into one leg and an opposite fill reduces it (backtest-model.md:46-47).
 
-On one print the oracle works, in order: resting entries (composite.work_pending), STACK_AT tiers of primaries
-already open (composite.work_tiers), then every open leg's exits (work_exits). See README "Tranche B" for why.
+On one print the oracle works, in order: resting entries (composite.work_pending), every open leg's exits
+(work_exits), then the STACK_AT tiers of primaries still open (composite.work_tiers). See README "Tranche B".
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class Leg:
     stack: Optional[object] = None  # composite.StackRun this leg belongs to
     tier_action: Optional[Action] = None  # the action whose STACK_AT tiers this primary carries
     cost: Decimal = Decimal(0)  # sum of fill price x qty, so a whole netted close is exact
-    best_excursion: Decimal = Decimal(0)  # MFE of the mark against the fill (stack-at.md:27,89-90)
+    best_excursion: Decimal = Decimal(0)  # MFE of the mark against the fill (stack-at.md:27,93-94)
     worst_excursion: Decimal = Decimal(0)  # MAE likewise (stack-at.md:28)
     open_: bool = True
 
@@ -267,8 +267,8 @@ class State:
 
     def work(self, p: Print) -> None:
         composite.work_pending(self, p)
-        composite.work_tiers(self, p)
         self.work_exits(p)
+        composite.work_tiers(self, p)  # stack-at.md:87-89: a primary closed on this tick has no tiers left
         composite.retire_stacks(self, p)
 
 

@@ -1,5 +1,5 @@
 STRATEGY long_market_stackat_tier_on_target_tick_ticks_paper VERSION 1
--- one gap tick fills the primary's target and lifts MFE past the tier: the tier fires on it and its leg runs on
+-- a gap tick that fills the primary's target ends its lifecycle: the tier that tick lifts MFE past does not fire
 SYMBOLS
     syn = BACKTEST:SYN EVERY 1m
 RULES
