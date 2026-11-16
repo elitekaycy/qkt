@@ -30,6 +30,7 @@ internal fun liveFactory(
     insightsDeployedIds: () -> Collection<String>,
     insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch,
     daemonRisk: com.qkt.risk.DaemonRiskScope = com.qkt.risk.DaemonRiskScope(),
+    symbolSets: com.qkt.dsl.sets.SetCatalog? = null,
 ): StrategyHandle.RealFactory =
     StrategyHandle.RealFactory(
         stateDir = stateDir,
@@ -69,6 +70,7 @@ internal fun liveFactory(
         insightsDealBackfillDays = cfg.insights.dealBackfillDays,
         marketDataGateConfig = cfg.marketData,
         effectiveConfig = EffectiveConfigFacts(cfg, daemonMixed = daemonRisk.composition::mixed),
+        symbolSets = symbolSets,
     )
 
 /**

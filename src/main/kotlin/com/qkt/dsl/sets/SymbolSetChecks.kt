@@ -15,7 +15,8 @@ object SymbolSetChecks {
         val alias = (unresolved as? com.qkt.dsl.ast.StreamDecl)?.alias ?: (unresolved as ForEachSet).set
         error(
             "symbol set '$alias' is a filtered universe, which only a catalog can resolve: run it as a backtest " +
-                "(members come from instruments.yaml) or list its members with qkt bot universe; " +
+                "(members come from instruments.yaml), deploy it on a gateway or MT5 account (members come from " +
+                "the venue's listing at start) or list its members with qkt bot universe; " +
                 "a picked list (VENUE:{A, B}) runs anywhere",
         )
     }

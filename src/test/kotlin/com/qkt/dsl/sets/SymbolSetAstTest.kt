@@ -79,6 +79,7 @@ class SymbolSetAstTest {
         assertThatThrownBy { AstCompiler().compile(filtered) }
             .isInstanceOf(CompileError::class.java)
             .hasMessageContaining("symbol set 'stocks' is a filtered universe, which only a catalog can resolve")
+            .hasMessageContaining("deploy it on a gateway or MT5 account (members come from the venue's listing")
         val loopOnly = filtered.copy(streams = emptyList())
         assertThatThrownBy { AstCompiler().compile(loopOnly) }
             .hasMessageContaining("symbol set 'stocks' is a filtered universe")
