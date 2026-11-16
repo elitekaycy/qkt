@@ -97,7 +97,8 @@ internal class SetMemberInstances(
     }
 
     private fun opens(request: OrderRequest): Boolean {
-        val held = ctx.positions.positionFor(request.symbol)?.quantity?.signum() ?: 0
+        val position = ctx.positions.positionFor(request.symbol)
+        val held = position?.quantity?.signum() ?: 0
         return held == 0 || (held > 0) == (request.side == Side.BUY)
     }
 
