@@ -32,6 +32,6 @@
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "The SELL trigger is closer to the 100.30 open (actions.md:172) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."
+    "The SELL trigger is closer to the 100.30 open (actions.md:256) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."
   ]
 }

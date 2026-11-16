@@ -158,16 +158,16 @@ class ExecutionVerificationCompletenessTest {
                         "multi-rule",
                     ),
                 "shape" to
-                    setOf(
-                        "oto-market-child", "oto-limit-child", "oto-entry-signal-estimate", "oto-entry-stop-price",
-                        "oto-parent-unfilled", "oto-child-unfilled", "stack-above", "stack-above-short", "stack-below",
-                        "stack-list", "stack-within", "stack-exit-cancels", "stack-at-mfe", "stack-at-two-tiers",
-                        "stack-at-expired", "stack-at-recoil", "exit-after-plain", "exit-after-off-tick",
-                        "exit-after-bracket-timer", "exit-after-bracket-first", "exit-after-pending",
-                        "exit-after-stack-at", "trailing-by", "trailing-pct", "armed-trailing-hwm",
-                        "armed-trailing-pre-arm", "armed-trailing-inception", "oco-entry-gap", "oco-entry-dual-breach",
-                        "two-market", "market-and-limit",
-                    ),
+                    (
+                        "oto-market-child oto-limit-child oto-entry-signal-estimate oto-entry-stop-price " +
+                            "oto-parent-unfilled oto-child-unfilled stack-above stack-above-short stack-below " +
+                            "stack-list stack-within stack-exit-cancels stack-at-mfe stack-at-two-tiers " +
+                            "stack-at-expired stack-at-recoil exit-after-plain exit-after-off-tick " +
+                            "exit-after-bracket-timer exit-after-bracket-first exit-after-pending " +
+                            "exit-after-stack-at trailing-by trailing-pct armed-trailing-hwm armed-trailing-pre-arm " +
+                            "armed-trailing-inception oco-entry-gap oco-entry-dual-breach two-market " +
+                            "market-and-limit"
+                    ).split(' ').toSet(),
                 "collision" to
                     setOf(
                         "none",

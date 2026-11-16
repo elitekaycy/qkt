@@ -84,7 +84,7 @@ def enter(st, action: Action, bar, p, group: Optional[int] = None) -> None:
 
 
 def enter_oco(st, action: Action, bar, p) -> None:
-    """actions.md:139-154: "Submits two pending entry orders linked one-cancels-other. When either leg fills,
+    """actions.md:223-238: "Submits two pending entry orders linked one-cancels-other. When either leg fills,
     the broker auto-cancels the other." Each leg carries its own BRACKET."""
     st.next_group += 1
     for leg in action.legs:
@@ -157,7 +157,7 @@ def triggered(o: Pending, tick) -> bool:
 def work_pending(st, p) -> None:
     """Resting entries in placement order, then each live STACK's next layer (stack.md:179: "Layers in the list
     trigger in order"). Two OCO_ENTRY legs reached on one print: "the leg with the closer trigger to the candle's
-    open fills first" (actions.md:172) and the other is cancelled (actions.md:141)."""
+    open fills first" (actions.md:256) and the other is cancelled (actions.md:225)."""
     winners = _oco_winners(st, p)
     for o in st.pending:
         if not o.live:

@@ -30,6 +30,6 @@
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "actions.md:172 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."
+    "actions.md:256 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."
   ]
 }

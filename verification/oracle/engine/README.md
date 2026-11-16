@@ -104,3 +104,60 @@ disagreed until their fixes:
 - `short-stoplimit-marketable-ticks-paper` (fixed, #1716): a paper `STOP AT 100.00 LIMIT AT 99.90` whose trigger
   tick (bid 99.94, mid 99.95) already satisfied the limit filled at the bid 99.94, not the tick's mid. It now fills
   at the mid, as `backtest-model.md` states, and runs in the main set.
+
+## Tranche B: composite orders
+
+`cases_b.py` adds 40 scenarios for OTO (`ON_FILL`), STACK, STACK_AT, EXIT AFTER, trailing entries and armed trailing
+stops, OCO_ENTRY, collisions of composite orders on one tick, and two rules firing on one bar. `composite.py` holds
+their rules; `engine.py` now tracks every filled entry as its own leg. The tranche-A expectations are unchanged by
+the rewrite (`gen.py --check` passes on them byte for byte). Line numbers at origin/dev `5cf2db50f`.
+
+| Rule | Doc |
+| --- | --- |
+| Each filled entry is its own leg with its own exits; a netted account merges one side into one position at its volume-weighted average and an opposite fill reduces it. | `docs/concepts/backtest-model.md:45-47` |
+| Rules are evaluated in order on every candle close and are independent: every rule reads the state the bar closed on, then the actions run in rule order. | `docs/reference/dsl/strategy-block.md:205` |
+| OTO: children are placed only when the parent fills, dropped if it never does; a child is a plain BUY/SELL with its own sizing and order type, resting GTC with no exits. | `docs/reference/dsl/oto.md:3,17-22,51,58` |
+| OTO `entry` is the parent's fill price: its price for a LIMIT/STOP parent, the signal-time estimate for a MARKET parent. | `oto.md:26,34` |
+| STACK n includes the seed; rungs at seed fill +- k x SPACING; ABOVE adds on favourable moves for a buy (adverse for a sell), BELOW the mirror; an `AT` layer is a stop beyond the seed in the trade direction and a limit behind it. | `docs/reference/dsl/stack.md:16-18,33-37,74-77,198,200` |
+| Each STACK layer carries its own copy of the bracket anchored on its own fill and exits on its own. | `stack.md:119-135,139` |
+| Layers trigger in order; unfilled layers cancel when the trade exits or WITHIN after the seed fill (24 h when omitted). | `stack.md:3,19-20,146-156,179,201` |
+| STACK_AT: the primary's MFE/MAE is the mark (mid) against its fill, evaluated from the tick after the fill; an MFE tier fires at `mfe >= threshold` while `elapsed <= within`; a recoil tier arms at `mae >= threshold`, floats its anchor with the worst adverse mark and fires on RECOVER; each fires once, all qualifying tiers on one tick. | `docs/reference/dsl/stack-at.md:27-33,67-85,89-90,187-191` |
+| A tier's leg is a market order priced like any market fill on the broker; its `BY` bracket anchors on its own fill; `SIZING ENTRY_QTY * x` sizes off the primary; closing the primary leaves the leg. | `stack-at.md:30,53,61,94-98,127` |
+| EXIT AFTER closes the entry's own leg at market on the first tick at or after fill time + duration; a bracket is cancelled first, a stop or target filling first drops the timer; a pending entry's timer starts at its fill; each STACK_AT leg is timed from its own fill. | `docs/reference/dsl/exit-after.md:9-11,27-38` |
+| A TRAILING entry ratchets its extreme (low-water for a buy, high-water for a sell) and fires a market order when price reverses by the distance; `PCT` is whole percentage points. | `docs/how-to/add-stop-loss.md:65,79-83`; `actions.md:46` |
+| An armed trailing stop sits at entry -+ distance, arms once MFE reaches the threshold (0 trails from the fill), then sits at the running favourable extreme -+ distance; it never disarms. | `docs/reference/dsl/bracket.md:152-169` |
+| OCO_ENTRY places two pending entries; the first to fill cancels the other; each carries its own bracket. Two legs reached together: "the leg with the closer trigger to the candle's open fills first". | `docs/reference/dsl/actions.md:223-238,172` |
+
+### Questions where the docs are silent (tranche B)
+
+The scenarios are built so the reading below does not change their fills; each is a question for the docs.
+
+- **QB1 Order of work on one tick.** Nothing states whether resting entries, STACK_AT tiers or exits are worked
+  first on a tick. The oracle works entries, then tiers of primaries already open, then exits, and the harness
+  compares fills that share a timestamp as a set (the trade log's order of two fills on one tick is not documented).
+- **QB2 OTO `entry` for a STOP parent on paper.** `oto.md:34` says a LIMIT/STOP parent "fills at its price", but a
+  paper stop fills at the tick's mid (`backtest-model.md:76-79`). The scenario trips the stop on a tick whose mid is
+  the stop price.
+- **QB3 STACK rung anchor.** `stack.md:200` hangs every rung off the seed fill; `stack.md:53` says "200 points below
+  the previous fill". The scenarios use STACK 2, or layers whose fill equals their rung, so both agree.
+- **QB4 A STACK layer and the seed's stop on one tick.** `stack.md:3` cancels unfilled layers when the trade exits;
+  nothing says whether a layer the same tick reaches is still unfilled. The oracle fills it: both orders rest when
+  the tick arrives and `backtest-model.md:77-79` triggers each on the first tick that reaches it.
+- **QB5 A STACK_AT tier on the primary's target tick.** `stack-at.md:71` abandons a recoil tier when the primary
+  closes "before firing"; an MFE tier on the closing tick is not covered. The oracle fires it (`:75-85` on every
+  tick the primary was open for).
+- **QB6 Trailing entry price.** `add-stop-loss.md:79-85` does not say which quote the extreme tracks (mid, bid or
+  ask), when tracking starts, whether "reverses by" is inclusive, or what `PCT` is a percent of. The oracle tracks the
+  mid from the placement tick and takes `PCT` of the extreme; the tapes have a constant spread, no exact ties, and a
+  reversal both PCT bases trip on the same tick.
+- **QB7 Armed trailing extreme.** `bracket.md:165` "running favorable extreme since fill" does not name the quote.
+  The oracle uses the mark (mid, as MFE in `stack-at.md:89-90`); every trigger tick is through the level on either.
+- **QB8 OCO_ENTRY tie-break on ticks.** `actions.md:256` states it for a candle. On ticks the oracle takes the open
+  of the gap tick's bar; the closer leg is listed first so submission order agrees.
+- **QB9 OCO_ENTRY dual breach on the synthetic path.** `actions.md:256` (closer to the open fills first) and
+  `backtest-data.md:25-27` (a flat bar replays its low before its high) disagree when the open is nearer the high.
+  The scenario has the open nearer the low, where both pick the same leg.
+- **QB10 Not covered on purpose:** a gap through two STACK rungs on one tick (`stack.md:179` "waits for the previous
+  one's trigger"), an MFE tier after its primary has closed, EXIT AFTER and a bracket level on the same tick, CLOSE
+  over several hedged legs (one fill per leg or one in all), WITHIN boundary ties (`stack.md:156` "before the
+  deadline elapses" against `stack-at.md:79` `elapsed <= within`).
