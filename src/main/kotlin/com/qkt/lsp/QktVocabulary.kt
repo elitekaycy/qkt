@@ -25,8 +25,7 @@ object QktVocabulary {
         (
             FuncRegistry.names() + DslVocabulary.clockPredicates + DslVocabulary.rollingShorthands +
                 DslVocabulary.setFunctions
-        )
-            .map { it.lowercase() }
+        ).map { it.lowercase() }
             .distinct()
             .sorted()
 

@@ -70,7 +70,12 @@ class DslCommandTest {
         // rank_of is a registry function over explicit peers and the set form: listed once, variadic
         val ranks = functions.filter { it.getValue("name").jsonPrimitive.content == "rank_of" }
         assertThat(ranks).hasSize(1)
-        assertThat(ranks.single().getValue("variadic").jsonPrimitive.content).isEqualTo("true")
+        assertThat(
+            ranks
+                .single()
+                .getValue("variadic")
+                .jsonPrimitive.content,
+        ).isEqualTo("true")
         assertThat(functions.map { it.getValue("name").jsonPrimitive.content })
             .contains("avg_of", "max_of", "min_of", "count_of")
         assertThat(
