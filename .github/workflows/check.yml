@@ -81,6 +81,14 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.full == 'true'
+      # Python 3.12 and diff-cover for the diff-coverage gate and the data e2e suite below.
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.full == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install diff-coverage tools
+        if: steps.changes.outputs.full == 'true'
+        run: pip install --quiet -r config/coverage-requirements.txt
       - name: Build + test + ktlint + coverage floor
         if: steps.changes.outputs.full == 'true'
         run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
