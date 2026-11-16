@@ -4,6 +4,8 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
@@ -95,5 +97,21 @@ class SessionLimitMarksTest {
     fun `no price at all counts as nothing`() {
         long("A")
         assertThat(read().unmeasured["A"]).isEqualTo("no price")
+    }
+
+    @Test
+    fun `a position that cannot be valued counts as nothing and is named with why`() {
+        val unreadable =
+            object : InstrumentRegistry {
+                override fun lookup(qktSymbol: String): InstrumentMeta? = error("catalog unreadable")
+            }
+        val blind = SessionLimitMarks(positions, StrategyPnL(positions, prices, unreadable), prices, gate)
+        long("A")
+        live("A", "80")
+
+        val r = blind.read(listOf("s"), BigDecimal("-3"), StopFlatten.Book(emptyList(), false))
+
+        assertThat(r.open).isEqualByComparingTo("0")
+        assertThat(r.unmeasured).containsEntry("A", "not valued: catalog unreadable")
     }
 }

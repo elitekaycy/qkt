@@ -39,7 +39,7 @@ internal class StartupReconcile(
     fun run(
         strategyPositions: StrategyPositionTracker,
         broker: Broker,
-        onLegRetired: (strategyId: String, leg: PersistedLeg) -> Unit = { _, _ -> },
+        onLegRetired: (strategyId: String, leg: PersistedLeg) -> Unit,
     ): Map<String, Int> {
         val adoptedLegCounts = mutableMapOf<String, Int>()
         // Never reconcile against assumed state: a transient broker error that reads as

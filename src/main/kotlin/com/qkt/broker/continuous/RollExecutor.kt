@@ -41,7 +41,7 @@ internal class RollExecutor(
     fills: ContractFillLog,
     private val stops: Map<String, String>,
     private val refusals: RollRefusals,
-    hearsOldContract: Boolean = false,
+    hearsOldContract: Boolean,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
