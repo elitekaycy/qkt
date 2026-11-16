@@ -18,7 +18,8 @@ class GoldenDefaultOutputTest {
         transport.parent.let(Files::createDirectories)
         Files.writeString(
             audit,
-            """{"v":1,"ts":1100,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD","tick":{"timestampMs":310000,"price":"2001"}}""" +
+            """{"v":1,"ts":1100,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD",""" +
+                """"tick":{"timestampMs":310000,"price":"2001"}}""" +
                 "\n",
         )
         Files.writeString(transport, """{"v":1,"ts":1100,"method":"GET","path":"/account","responseCode":200}""" + "\n")
