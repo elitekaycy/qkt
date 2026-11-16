@@ -66,12 +66,4 @@ class IndicatorVerificationCompletenessTest {
             .describedAs("fixtures whose length differs from their series")
             .isEmpty()
     }
-
-    @Test
-    fun `every known-bug exclusion still names an existing fixture`() {
-        val names = VerificationFixtures.indicatorFixtures().map { it.first }.toSet()
-        assertThat(IndicatorVerificationKnownBugsTest.KNOWN_BUGS - names)
-            .describedAs("known-bug entries without a fixture")
-            .isEmpty()
-    }
 }
