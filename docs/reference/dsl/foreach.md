@@ -139,6 +139,47 @@ FOR EACH s IN [btc, eth] DO
 
 Three substitutions of `s` per rule for `btc`, three for `eth`, etc.
 
+## Cross-member functions
+
+Inside `FOR EACH m IN <set>`, a rule can read the whole set at once. The set is the last argument, by name, and the
+expression is written once with the loop variable, which ranges over the set's members inside the call:
+
+| Function | Value in the rule for member `m` |
+|---|---|
+| `RANK_OF(expr, set)` | 1 + the number of members whose `expr` is strictly greater than `m`'s (1 = highest; ties share a rank) |
+| `SUM_OF(expr, set)` | sum of `expr` over the members |
+| `AVG_OF(expr, set)` | mean of `expr` over the members |
+| `MAX_OF(expr, set)`, `MIN_OF(expr, set)` | largest / smallest `expr` over the members |
+| `COUNT_OF(test, set)` | how many members the test holds for |
+
+```qkt
+STRATEGY fx_rotation VERSION 1
+SYMBOLS
+    fx = EXNESS:{EURUSD, GBPUSD, AUDUSD, USDJPY} EVERY 1h
+RULES
+    FOR EACH m IN fx DO
+      WHEN RANK_OF(m.close / m.close[20] - 1, fx) <= 2 AND POSITION.m = 0
+       AND COUNT_OF(m.close > ema(m.close, 50), fx) >= 3
+      THEN BUY m SIZING 0.1
+    FOR EACH m IN fx DO
+      WHEN m.close / m.close[20] - 1 < AVG_OF(m.close / m.close[20] - 1, fx) AND POSITION.m > 0
+      THEN CLOSE m
+```
+
+- **A member with no value yet is left out**, as SQL aggregates skip null: a member still warming up (or with no
+  bar yet) does not count. `SUM_OF`, `AVG_OF`, `MAX_OF` and `MIN_OF` are undefined only when no member has a value;
+  `RANK_OF` is undefined while `m`'s own value is; `COUNT_OF` counts the members whose test is true and is 0 when
+  none is. This differs from `rank_of(a, b, c)` with peers listed by hand, which is undefined while any one of
+  them is.
+- The named set may be another set than the loop's (a union of picked sets included); `RANK_OF` then ranks `m`'s
+  value among that set's values. Both sets must resolve at the same time: two picked lists, or two filtered sets
+  in a backtest.
+- The expression must use the loop variable: `SUM_OF(gold.close, fx)` is refused, since it would be one value
+  counted once per member. A cross-member function cannot sit inside another's expression.
+- Outside `FOR EACH`, and over a name that is not a symbol set, these functions are refused.
+- Each member's value is read when that member's rule runs, the same cross-section the same rules written out by
+  hand with `rank_of(a, b, c)` read (`PickedSetEquivalenceTest` proves they trade identically).
+
 ## Limitations
 
 - **Stream list is static.** `FOR EACH s IN [btc, eth, sol] DO` — the streams are listed inline. A symbol set

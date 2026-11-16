@@ -67,6 +67,53 @@ class PickedSetEquivalenceTest {
             .isEqualTo(handReport.lines().filter { "\"totalPnL\"" in it || "\"trades\"" in it })
     }
 
+    private val ranked =
+        """
+        STRATEGY golden_rank VERSION 1
+        SYMBOLS
+            pair = BACKTEST:{XAUUSD, USDJPY} EVERY 15m
+        RULES
+            FOR EACH m IN pair DO
+              WHEN RANK_OF(ema(m.close, 3) / ema(m.close, 9), pair) = 1 AND POSITION.m = 0
+               AND COUNT_OF(m.close > 0, pair) = 2
+              THEN BUY m SIZING 0.1 BRACKET { STOP LOSS PCT 0.3, TAKE PROFIT RR 2 }
+            FOR EACH m IN pair DO
+              WHEN ema(m.close, 3) / ema(m.close, 9) < AVG_OF(ema(m.close, 3) / ema(m.close, 9), pair)
+               AND POSITION.m > 0
+              THEN CLOSE m
+        """.trimIndent()
+
+    private val rankedByHand =
+        """
+        STRATEGY golden_rank VERSION 1
+        SYMBOLS
+            gold = BACKTEST:XAUUSD EVERY 15m
+            jpy  = BACKTEST:USDJPY EVERY 15m
+        LET g = ema(gold.close, 3) / ema(gold.close, 9)
+        LET j = ema(jpy.close, 3) / ema(jpy.close, 9)
+        RULES
+            WHEN RANK_OF(g, j) = 1 AND POSITION.gold = 0 AND gold.close > 0 AND jpy.close > 0
+            THEN BUY gold SIZING 0.1 BRACKET { STOP LOSS PCT 0.3, TAKE PROFIT RR 2 }
+            WHEN RANK_OF(j, g) = 1 AND POSITION.jpy = 0 AND gold.close > 0 AND jpy.close > 0
+            THEN BUY jpy SIZING 0.1 BRACKET { STOP LOSS PCT 0.3, TAKE PROFIT RR 2 }
+            WHEN g < (g + j) / 2 AND POSITION.gold > 0
+            THEN CLOSE gold
+            WHEN j < (g + j) / 2 AND POSITION.jpy > 0
+            THEN CLOSE jpy
+        """.trimIndent()
+
+    @Test
+    fun `cross-member functions over a picked set trade like the same cross-section written by hand`() {
+        val dataRoot = tmp.resolve("data")
+        TickResolvedParityFixtures.seedTicks(dataRoot, days = 3)
+        GoldenRun.seedSine(dataRoot, "USDJPY", base = 150.0, amplitude = 0.6, decimals = 3)
+        val (_, setTrades) = run(dataRoot, "ranked", ranked)
+        val (_, handTrades) = run(dataRoot, "ranked-by-hand", rankedByHand)
+        assertThat(setTrades.lines().filter { "XAUUSD" in it }).isNotEmpty()
+        assertThat(setTrades.lines().filter { "USDJPY" in it }).isNotEmpty()
+        assertThat(setTrades).isEqualTo(handTrades)
+    }
+
     private fun run(
         dataRoot: Path,
         name: String,

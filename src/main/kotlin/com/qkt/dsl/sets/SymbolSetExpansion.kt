@@ -83,11 +83,48 @@ object SymbolSetExpansion {
                             "FOR EACH ${rule.iterVar} IN ${rule.set}: '${rule.set}' is not a symbol set declared " +
                                 "in SYMBOLS (a list of streams needs brackets: [${rule.set}])",
                         )
-                    resolved == null -> listOf(rule)
-                    else -> resolved.map { substituteIterVar(rule.template, rule.iterVar, it.alias) }
+                    else -> instantiate(rule, resolved, sets.keys, members)
                 }
             }
         return Expanded(outStreams, outRules)
+    }
+
+    /**
+     * One rule per member of [loop]'s set ([resolved], null while unknown), its set functions lowered over the members
+     * of the sets they name; [loop] itself while its set is unresolved. A set function's set resolves in the same
+     * pass as the loop's (both picked, or both filtered), since the loop's members are fixed once it expands.
+     */
+    private fun instantiate(
+        loop: ForEachSet,
+        resolved: List<StreamDecl>?,
+        sets: Set<String>,
+        members: Map<String, List<StreamDecl>>,
+    ): List<RuleAst> {
+        val named = SetFunctionLowering.setsNamed(loop.template, sets)
+        val apart = named.firstOrNull { (it in members) != (resolved != null) }
+        if (apart != null) {
+            throw SymbolSetError(
+                loop.line,
+                "FOR EACH ${loop.iterVar} IN ${loop.set}: '$apart' and '${loop.set}' resolve at different times (a " +
+                    "picked list at parse, a filtered set at start), so a cross-member function over '$apart' " +
+                    "needs a loop over a set of the same kind",
+            )
+        }
+        if (resolved == null) return listOf(loop)
+        val aliases = members.filterKeys { it in named }.mapValues { (_, decls) -> decls.map { it.alias } }
+        return resolved.map { member ->
+            val template =
+                if (named.isEmpty()) {
+                    loop.template
+                } else {
+                    SetFunctionLowering.lower(
+                        loop,
+                        member.alias,
+                        aliases,
+                    )
+                }
+            substituteIterVar(template, loop.iterVar, member.alias)
+        }
     }
 
     private fun expandedMembers(
