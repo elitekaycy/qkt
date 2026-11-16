@@ -238,6 +238,16 @@ settlement at 1 or 0 pays none. See [Event contracts](../how-to/import-data.md#e
 
 `TradeRecord.riskUsd` is `qty × |entry - stopLoss|` in the symbol's quote currency, captured at order submission. Surfaced in the HTML report's per-trade table. `n/a` when the order had no stop attached.
 
+## Verification
+
+The fill, bracket, sizing and cost rules on this page are checked against an independent reference engine
+(`verification/oracle/engine`, Python `Decimal`, written from this page and the DSL reference, never from qkt's
+code): each scenario under `verification/oracle/engine/scenarios` runs its `.qkt` through `qkt backtest` and
+`ExecutionVerificationTest` compares the trade tape and P&L with no tolerance on money. Tranche A covers
+market, limit, stop and stop-limit entries, bracket and OCO exits on both sides and both fill paths (ticks and the
+synthetic bar path), every `SIZING` form with lot quantization, and spread, commission and slippage costs. The
+oracle's README lists every rule with the line it comes from and the places where this page is silent.
+
 ## What's not in the model
 
 - FX conversion of cross-currency positions

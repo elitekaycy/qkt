@@ -1,0 +1,33 @@
+{
+  "name": "short-stop-entry-bracket-stop-ticks-mt5-slippage",
+  "proves": "mt5-sim slips a sell-stop entry and its protective buy-stop by slippagePoints, both against the trade",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.97",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP",
+      "stopLoss": "100.97",
+      "takeProfit": "98.97"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.00",
+      "realized": "-0.103",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.103",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

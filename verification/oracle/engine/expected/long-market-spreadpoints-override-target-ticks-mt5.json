@@ -1,0 +1,35 @@
+{
+  "name": "long-market-spreadpoints-override-target-ticks-mt5",
+  "proves": "spreadPoints 10 prices the entry at mid + 0.05; the target triggers on the feed's bid and, a limit, fills no worse than its price",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.55",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.55",
+      "takeProfit": "102.55"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "102.55",
+      "realized": "0.200",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.200",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "backtest-model.md:158 (fills at mid +- N/2) and :146 (a limit is never filled worse than its price) meet here; the limit price wins (README Q11)."
+  ]
+}

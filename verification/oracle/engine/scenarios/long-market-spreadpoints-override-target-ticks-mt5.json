@@ -1,0 +1,140 @@
+{
+  "name": "long-market-spreadpoints-override-target-ticks-mt5",
+  "proves": "spreadPoints 10 prices the entry at mid + 0.05; the target triggers on the feed's bid and, a limit, fills no worse than its price",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "target",
+    "sizing": "fixed",
+    "costs": "spreadPoints",
+    "broker": "mt5-sim",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "spreadPoints": 10
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "100.99",
+      "101.01"
+    ],
+    [
+      135,
+      "101.99",
+      "102.01"
+    ],
+    [
+      150,
+      "102.55",
+      "102.57"
+    ],
+    [
+      165,
+      "102.29",
+      "102.31"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "backtest-model.md:158 (fills at mid +- N/2) and :146 (a limit is never filled worse than its price) meet here; the limit price wins (README Q11)."
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "short-market-commission-spread-slippage-stop-ticks-mt5",
+  "proves": "mt5-sim with commission, feed spread and slippage: entry at bid minus slip, stop at ask plus slip, 0.35 per fill",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.47",
+      "realized": "-0.35",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.47",
+      "takeProfit": "98.47"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.49",
+      "realized": "-0.452",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.802",
+  "commission": "0.70",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

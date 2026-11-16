@@ -1,0 +1,33 @@
+{
+  "name": "short-market-gap-stop-ticks-mt5-slippage",
+  "proves": "a tick that gaps through a short stop fills at that tick's ask plus slippage",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.46",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.46",
+      "takeProfit": "98.46"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "102.04",
+      "realized": "-0.158",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.158",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

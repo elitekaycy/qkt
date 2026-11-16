@@ -1,0 +1,33 @@
+{
+  "name": "long-market-commission-bracket-target-ticks-paper",
+  "proves": "commissionPerLot 7 charges 0.70 on the 0.1-lot entry and again on the exit; realised is net per fill",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "-0.7",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.50",
+      "takeProfit": "102.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "102.51",
+      "realized": "-0.499",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "-1.199",
+  "commission": "1.4",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

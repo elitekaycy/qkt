@@ -1,0 +1,33 @@
+{
+  "name": "long-market-sizing-risk-usd-ticks-paper",
+  "proves": "SIZING RISK $ 50 over a 1.50 stop and contractSize 10 is 3.333 lots, quantized to 3.33; the 2.00 target fills",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "3.33",
+      "price": "100.50",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.00",
+      "takeProfit": "102.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "3.33",
+      "price": "102.51",
+      "realized": "66.9330",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "66.9330",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

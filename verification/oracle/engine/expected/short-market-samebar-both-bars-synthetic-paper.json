@@ -1,0 +1,35 @@
+{
+  "name": "short-market-samebar-both-bars-synthetic-paper",
+  "proves": "a bar spanning both levels replays its adverse extreme first: the short exits at the stop level",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "bar",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "barStart": 1704880860000,
+      "stopLoss": "101.50",
+      "takeProfit": "98.50"
+    },
+    {
+      "ts": 1704880920000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.50",
+      "realized": "-0.100",
+      "reason": "stop",
+      "orderType": "STOP",
+      "barStart": 1704880920000
+    }
+  ],
+  "realized": "-0.100",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

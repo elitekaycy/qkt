@@ -1,0 +1,7 @@
+STRATEGY long_limit_never_fills_ticks_paper VERSION 1
+-- a buy limit the ask never reaches books nothing
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 ORDER_TYPE = LIMIT AT 99.00 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }
