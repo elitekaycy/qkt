@@ -45,10 +45,10 @@ internal object StrategyRiskRuleFactory {
             }
             for ((set, caps) in limits.sets) {
                 caps.maxPositionSize?.let {
-                    riskRules.add(MaxSetPositionSize(strategyId, set, caps.members, it, strategyPositions))
+                    riskRules.add(MaxSetPositionSize(strategyId, set, caps::current, it, strategyPositions))
                 }
                 caps.maxOpenPositions?.let {
-                    riskRules.add(MaxSetOpenPositions(strategyId, set, caps.members, it, strategyPositions))
+                    riskRules.add(MaxSetOpenPositions(strategyId, set, caps::current, it, strategyPositions))
                 }
             }
             val strategyStartingBalance = startingBalances[strategyId] ?: startingBalance
