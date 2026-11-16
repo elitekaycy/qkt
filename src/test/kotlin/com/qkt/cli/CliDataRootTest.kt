@@ -118,4 +118,19 @@ class CliDataRootTest {
             System.clearProperty("QKT_DATA_HOME")
         }
     }
+
+    @Test
+    fun `a typed data root is used silently and each other origin is described`(
+        @TempDir dir: Path,
+    ) {
+        val typed = captureCliRun { if (CliDataRoot.of(args("--data-root", dir.toString())) == dir) 0 else 1 }
+        assertThat(typed.code).isZero()
+        assertThat(typed.err).isEmpty()
+
+        assertThat(CliDataRoot.describe(ResolvedDataRoot(dir, "default")))
+            .isEqualTo("default; move it with --data-root or QKT_DATA_HOME")
+        assertThat(CliDataRoot.describe(ResolvedDataRoot(dir, "QKT_DATA_HOME"))).isEqualTo("from QKT_DATA_HOME")
+        assertThat(CliDataRoot.describe(ResolvedDataRoot(dir, "data_root in /srv/qkt.config.yaml")))
+            .isEqualTo("from data_root in /srv/qkt.config.yaml")
+    }
 }

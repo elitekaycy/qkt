@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
 
@@ -23,6 +24,8 @@ internal fun rewriteExprs(
                             action = transform.action(rule.action),
                             line = rule.line,
                         )
+                    is ForEachSet ->
+                        ForEachSet(rule.iterVar, rule.set, rewriteTemplate(rule.template, transform), rule.line)
                 }
             },
         schedules = ast.schedules.map { it.copy(action = transform.action(it.action)) },
@@ -37,3 +40,8 @@ internal fun rewriteExprs(
             },
         defaults = ast.defaults?.let { transform.defaultsBlock(it) },
     )
+
+private fun rewriteTemplate(
+    template: WhenThen,
+    transform: ExprTransform,
+): WhenThen = WhenThen(transform.expr(template.cond), transform.action(template.action), template.line)

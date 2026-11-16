@@ -6,6 +6,7 @@ import com.qkt.accounting.requireCoinFeesBookable
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.instrument.SlotSymbol
 
 /**
  * The start-up checks a live or paper session runs on its traded [symbols]: every symbol must book in
@@ -13,14 +14,15 @@ import com.qkt.derivatives.options.chain.OptionRootSymbol
  * futures stream (`VENUE:ROOT@front`) must be one of the session's live streams ([continuous]: a declared
  * root with its roll history on disk); and a chain
  * analytics stream needs its option root fed (`OPTIONS:<VENUE>.<ROOT>`), because live chains are recorded
- * from the quotes of a fed root.
+ * from the quotes of a fed root. An event slot and an event family's `CHAIN:` stream read their family's own quotes.
  */
 internal fun requireLiveTradable(
     symbols: Collection<String>,
     accounting: AccountingEngine,
     continuous: ContinuousChains? = null,
 ) {
-    val unserved = symbols.filter { '@' in it && continuous?.isContinuous(it) != true }
+    val unserved =
+        symbols.filter { '@' in it && !SlotSymbol.isSlot(it) && continuous?.isContinuous(it) != true }
     require(unserved.isEmpty()) {
         "continuous futures streams $unserved need a declared futures root with its roll history (qkt fetch <ROOT> --rolls)"
     }

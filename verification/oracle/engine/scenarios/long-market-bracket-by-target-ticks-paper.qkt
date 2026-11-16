@@ -1,0 +1,7 @@
+STRATEGY long_market_bracket_by_target_ticks_paper VERSION 1
+-- a long target triggers on the bid reaching the level and fills at that tick's mid
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

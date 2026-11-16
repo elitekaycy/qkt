@@ -63,6 +63,7 @@ class ActionCompiler(
     private val resizes = ResizeActionCompiler(exprCompiler, sizingCompiler, ids)
     private val logs = LogActionCompiler(exprCompiler, strategyLogger)
     private val structures = StructureCompiler(exprCompiler, ids)
+    private val slotOrders = SlotOrders(exprCompiler.slots)
 
     /** True once any compiled action (or latch entry) sized `RISK … OF BOOK`. */
     val usesBookSizing: Boolean get() = sizingCompiler.compiledBookSizing
@@ -77,14 +78,14 @@ class ActionCompiler(
         ruleAlias: String? = null,
     ): (EvalContext) -> List<Signal> =
         when (action) {
-            is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
-            is Sell -> compileBuySell(action.stream, action.opts, Side.SELL)
+            is Buy -> slotOrders.route(action.stream, compileBuySell(action.stream, action.opts, Side.BUY))
+            is Sell -> slotOrders.route(action.stream, compileBuySell(action.stream, action.opts, Side.SELL))
             is Log -> logs.compile(action, ruleAlias)
             is Close ->
                 if (action.stream in exprCompiler.structures.aliases) {
                     structures.compileClose(action.stream)
                 } else {
-                    closes.compileClose(action.stream)
+                    slotOrders.closeOr(action.stream, closes.compileClose(action.stream))
                 }
             is CloseAll -> closes.compileCloseAll()
             is Cancel -> compileCancel(action.stream)

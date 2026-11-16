@@ -1,0 +1,35 @@
+{
+  "name": "short-stoplimit-marketable-ticks-paper",
+  "proves": "a sell stop-limit whose trigger tick already satisfies the limit fills on that tick",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.95",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP_LIMIT",
+      "stopLoss": "100.95",
+      "takeProfit": "98.95"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.94",
+      "realized": "0.101",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.101",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "Whether a stop-limit whose limit is already marketable fills on its trigger tick is not stated in the docs (README Q6)."
+  ]
+}

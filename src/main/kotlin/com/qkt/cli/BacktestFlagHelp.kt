@@ -79,6 +79,8 @@ internal object BacktestFlagHelp {
             "allow-incomplete" to "run on whatever days exist, gaps and all",
             "tick-fills" to "with --bars, resolve fills from ticks; on by default for backtest where valid",
             "no-tick-fills" to "with --bars, keep the synthetic open/low/high/close fill path everywhere",
+            "survivorship-accepted" to
+                "run a filtered symbol set over equities although the instruments file has no listing history",
             "enforce-live-breakers" to "halt replay at live runaway thresholds (default observe-only)",
             "chaos" to "seeded stress preset; cannot combine with --execution",
             "json" to "single-line JSON for tools (stdout stays pipe-clean)",

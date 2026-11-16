@@ -88,4 +88,15 @@ class DataSnapshotVerifyUsageTest {
         assertThat(noTicks.code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(noTicks.err).contains("qkt: no cached tick data for 'XAUUSD'")
     }
+
+    @Test
+    fun `a snapshot whose range ends before it starts is a user error`() {
+        val out = root.resolve("s.json")
+
+        val run = data("snapshot", "XAUUSD", "--from", "2024-01-05", "--to", "2024-01-05", "--out", out.toString())
+
+        assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(run.err).contains("qkt: error: --from must be before --to (exclusive)")
+        assertThat(out).doesNotExist()
+    }
 }

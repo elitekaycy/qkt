@@ -31,4 +31,11 @@ class LogScanTest {
         val trade = lines.single { it.realized != null }
         assertThat(trade.realized).isEqualByComparingTo("12.50")
     }
+
+    @Test
+    fun `a line whose timestamp does not parse is skipped`() {
+        val lines = LogScan.parse("not-a-time [INFO] submit Stop\n2026-06-04T07:55:01Z [WARN] slow\n")
+
+        assertThat(lines).containsExactly(LogLine(Instant.parse("2026-06-04T07:55:01Z"), "WARN", "slow"))
+    }
 }

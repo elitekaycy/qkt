@@ -396,7 +396,7 @@ data class Config(
                 brokerCapabilityRestrictions = parseBrokerStringList(map["brokers"], "capability_restrictions"),
                 brokerInstrumentOverrides = parseBrokerInstrumentOverrides(map["brokers"]),
                 risk = parseFlat(map["risk"]),
-                perStrategyRisk = parsePerStrategyRisk(map["risk"]),
+                perStrategyRisk = PerStrategyRisk.parseAll(map["risk"]),
                 state = parseFlat(map["state"]),
                 notify = NotifyConfig.parse(map["notify"]),
                 insights =
@@ -428,11 +428,7 @@ data class Config(
                 val overrides =
                     value as? Map<String, Any?>
                         ?: error("risk.per_strategy.$strategy must be a key-value block")
-                rejectUnknownKeys(
-                    "risk.per_strategy.$strategy",
-                    overrides.keys,
-                    PER_STRATEGY_RISK_KEYS,
-                )
+                rejectUnknownKeys("risk.per_strategy.$strategy", overrides.keys, PerStrategyRisk.KEYS)
             }
         }
 
@@ -471,21 +467,6 @@ data class Config(
                 "daily_dd_basis",
                 "live_equity_basis",
                 "per_strategy",
-            )
-
-        private val PER_STRATEGY_RISK_KEYS =
-            setOf(
-                "max_daily_loss",
-                "max_position_size",
-                "max_open_positions",
-                "max_drawdown_pct",
-                "max_daily_drawdown_pct",
-                "max_trades_per_day",
-                "cooldown_after_loss",
-                "cooldown_after_loss_ms",
-                "cooldown_after_loss_after_consecutive",
-                "loss_streak_halt",
-                "loss_streak_halt_scope",
             )
 
         @Suppress("UNCHECKED_CAST")
@@ -592,34 +573,6 @@ data class Config(
         }
 
         @Suppress("UNCHECKED_CAST")
-        private fun parsePerStrategyRisk(raw: Any?): Map<String, PerStrategyRisk> {
-            val risk = raw as? Map<String, Any?> ?: return emptyMap()
-            val perStrat = risk["per_strategy"] as? Map<String, Any?> ?: return emptyMap()
-            return perStrat.mapValues { (_, v) ->
-                val m = v as? Map<String, Any?> ?: return@mapValues PerStrategyRisk()
-                PerStrategyRisk(
-                    maxDailyLoss = m["max_daily_loss"]?.toString()?.let(::BigDecimal),
-                    maxPositionSize = m["max_position_size"]?.toString()?.let(::BigDecimal),
-                    maxOpenPositions = m["max_open_positions"]?.toString()?.toIntOrNull(),
-                    maxDrawdownPct = pctFraction(m["max_drawdown_pct"]?.toString()),
-                    maxDailyDrawdownPct = pctFraction(m["max_daily_drawdown_pct"]?.toString()),
-                    maxTradesPerDay = m["max_trades_per_day"]?.toString()?.toIntOrNull(),
-                    cooldownAfterLossMs =
-                        (m["cooldown_after_loss"] ?: m["cooldown_after_loss_ms"])
-                            ?.toString()
-                            ?.let(::durationMs),
-                    cooldownAfterLossAfterConsecutive =
-                        m["cooldown_after_loss_after_consecutive"]
-                            ?.toString()
-                            ?.toIntOrNull()
-                            ?: 1,
-                    lossStreakHalt = m["loss_streak_halt"]?.toString()?.toIntOrNull(),
-                    lossStreakHaltScope = parseHaltScope(m["loss_streak_halt_scope"]?.toString()),
-                )
-            }
-        }
-
-        @Suppress("UNCHECKED_CAST")
         private fun parseBookRisk(raw: Any?): com.qkt.risk.book.BookRiskConfig? {
             val m = raw as? Map<String, Any?> ?: return null
             val limits =
@@ -684,13 +637,13 @@ data class Config(
             return pct.divide(BigDecimal(100), java.math.MathContext.DECIMAL64)
         }
 
-        private fun durationMs(raw: String): Long =
+        internal fun durationMs(raw: String): Long =
             raw.toLongOrNull()
                 ?: com.qkt.candles.TimeWindow
                     .parse(raw)
                     .durationMs
 
-        private fun parseHaltScope(raw: String?): com.qkt.risk.HaltScope =
+        internal fun parseHaltScope(raw: String?): com.qkt.risk.HaltScope =
             when (raw?.trim()?.lowercase()) {
                 null, "", "persistent" -> com.qkt.risk.HaltScope.PERSISTENT
                 "daily" -> com.qkt.risk.HaltScope.DAILY

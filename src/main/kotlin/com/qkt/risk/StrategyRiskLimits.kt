@@ -6,7 +6,8 @@ import java.math.BigDecimal
  * Optional per-strategy risk limits shared by live and replay wiring.
  *
  * A null field disables that limit. Percentages are fractions in `(0, 1]`, quantities
- * and monetary limits must be positive, and counts must be greater than zero.
+ * and monetary limits must be positive, and counts must be greater than zero. [sets] caps the
+ * members of one symbol set each ([SetRiskLimits]), by set alias.
  */
 data class StrategyRiskLimits(
     val maxDailyLoss: BigDecimal? = null,
@@ -19,6 +20,7 @@ data class StrategyRiskLimits(
     val cooldownAfterLossAfterConsecutive: Int = 1,
     val lossStreakHalt: Int? = null,
     val lossStreakHaltScope: HaltScope = HaltScope.PERSISTENT,
+    val sets: Map<String, SetRiskLimits> = emptyMap(),
 ) {
     init {
         requirePositive(maxDailyLoss, "maxDailyLoss")

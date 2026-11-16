@@ -1,5 +1,6 @@
 package com.qkt.marketdata.ingest.plan
 
+import com.qkt.instrument.EventTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.QktSymbols
 import java.math.BigDecimal
@@ -7,11 +8,13 @@ import java.math.BigDecimal
 /**
  * The instrument an import writes: its qkt symbol (`EXNESS:XAUUSD`), the bare name the tick store keys
  * on, and what the instrument registry knows of its price precision. [fxOrMetal] instruments have a
- * weekly open at the New York rollover that proves (or disproves) a source's clock.
+ * weekly open at the New York rollover that proves (or disproves) a source's clock. [event] is true for an
+ * event contract, whose quotes may carry one side only (a side nobody bids or offers is absent).
  */
 data class ImportTarget(
     val qktSymbol: String,
     val digits: Int?,
+    val event: Boolean = false,
 ) {
     /** The name without its source prefix: the tick store directory. */
     val bare: String get() = qktSymbol.substringAfter(':')
@@ -81,7 +84,8 @@ data class ImportTarget(
             require(qktSymbol.substringAfter(':').matches(Regex("[A-Za-z0-9_.@-]+"))) {
                 "'$qktSymbol' cannot be a file name in the store; use letters, digits and _ . @ -"
             }
-            return ImportTarget(qktSymbol, digits ?: registry.lookup(qktSymbol)?.digits)
+            val meta = registry.lookup(qktSymbol)
+            return ImportTarget(qktSymbol, digits ?: meta?.digits, meta?.derivative is EventTerms)
         }
     }
 }

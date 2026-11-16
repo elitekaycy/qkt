@@ -1,0 +1,5 @@
+# Pinned oracle environment for gen.py. The ta-lib wheel bundles the C library (TA-Lib 0.6.4).
+ta-lib==0.6.8
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.16.3

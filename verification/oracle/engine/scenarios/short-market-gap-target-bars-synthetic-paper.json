@@ -1,0 +1,159 @@
+{
+  "name": "short-market-gap-target-bars-synthetic-paper",
+  "proves": "a target the next bar opens beyond fills at that open (the default take-profit pricing)",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "short",
+    "fills": "bars-synthetic",
+    "path": "gap-target",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "bars-synthetic",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "99.99",
+      "100.01"
+    ],
+    [
+      135,
+      "99.59",
+      "99.61"
+    ],
+    [
+      150,
+      "99.39",
+      "99.41"
+    ],
+    [
+      165,
+      "99.49",
+      "99.51"
+    ],
+    [
+      180,
+      "97.99",
+      "98.01"
+    ],
+    [
+      195,
+      "98.19",
+      "98.21"
+    ],
+    [
+      210,
+      "97.79",
+      "97.81"
+    ],
+    [
+      225,
+      "98.09",
+      "98.11"
+    ],
+    [
+      240,
+      "99.99",
+      "100.01"
+    ],
+    [
+      255,
+      "99.99",
+      "100.01"
+    ],
+    [
+      270,
+      "99.99",
+      "100.01"
+    ],
+    [
+      285,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "backtest-model.md:118 names --tp-fill print|level for a gap-crossed take-profit without stating the default; the oracle takes the open (print), per :84-85 (README Q7)."
+  ]
+}

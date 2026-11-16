@@ -1,0 +1,117 @@
+{
+  "name": "long-market-entry-and-stop-same-bar-bars-synthetic-paper",
+  "proves": "the entry fills at the bar open and the same bar's low takes the stop at its level",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "bars-synthetic",
+    "path": "entry-and-stop-same-bar",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "bars-synthetic",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.69",
+      "100.71"
+    ],
+    [
+      90,
+      "99.39",
+      "99.41"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "99.99",
+      "100.01"
+    ],
+    [
+      135,
+      "99.99",
+      "100.01"
+    ],
+    [
+      150,
+      "99.99",
+      "100.01"
+    ],
+    [
+      165,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": []
+}

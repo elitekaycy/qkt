@@ -77,4 +77,14 @@ class EventRingTest {
             .assertThatThrownBy { EventRing(capacity = -1) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
+
+    @Test
+    fun `size counts the entries held, never past capacity`() {
+        val ring = EventRing(capacity = 2)
+        assertThat(ring.size()).isZero()
+
+        repeat(3) { ring.append("tick", obj("x")) }
+
+        assertThat(ring.size()).isEqualTo(2)
+    }
 }

@@ -1,5 +1,6 @@
 package com.qkt.golden
 
+import com.qkt.backtest.EventSlotData
 import com.qkt.backtest.TickResolvedParityFixtures
 import com.qkt.cli.Args
 import com.qkt.cli.BacktestCommand
@@ -111,6 +112,7 @@ internal object GoldenRun {
                     amplitude = 300.0,
                     decimals = 1,
                 )
+            GoldenData.EVENT_FAMILY_HOURLY -> EventSlotData.seed(dataRoot)
         }
         val tf = case.barsTimeframe ?: return
         val symbol = if (case.data == GoldenData.EURUSD_REAL_DAY) "EURUSD" else "XAUUSD"
@@ -136,7 +138,7 @@ internal object GoldenRun {
     }
 
     /** Three days of one tick per minute: `base + amplitude × sin(minute / 7)`, rounded to [decimals]. */
-    private fun seedSine(
+    internal fun seedSine(
         dataRoot: Path,
         symbol: String,
         base: Double,

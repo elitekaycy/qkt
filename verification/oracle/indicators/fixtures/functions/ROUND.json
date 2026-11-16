@@ -1,0 +1,220 @@
+{
+ "function": "ROUND",
+ "oracle": "decimal, half-even; TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3",
+ "tolerance": {
+  "abs": 0.0,
+  "rel": 0.0
+ },
+ "cases": [
+  {
+   "args": [
+    "0"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "1"
+   ],
+   "expected": "1"
+  },
+  {
+   "args": [
+    "-1"
+   ],
+   "expected": "-1"
+  },
+  {
+   "args": [
+    "2"
+   ],
+   "expected": "2"
+  },
+  {
+   "args": [
+    "-2"
+   ],
+   "expected": "-2"
+  },
+  {
+   "args": [
+    "0.5"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "-0.5"
+   ],
+   "expected": "-0"
+  },
+  {
+   "args": [
+    "2.5"
+   ],
+   "expected": "2"
+  },
+  {
+   "args": [
+    "-2.5"
+   ],
+   "expected": "-2"
+  },
+  {
+   "args": [
+    "3.5"
+   ],
+   "expected": "4"
+  },
+  {
+   "args": [
+    "-3.5"
+   ],
+   "expected": "-4"
+  },
+  {
+   "args": [
+    "0.1"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "0.33333333"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "1e-12"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "-1e-12"
+   ],
+   "expected": "-0"
+  },
+  {
+   "args": [
+    "1e-6"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "0.00000001"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "16"
+   ],
+   "expected": "16"
+  },
+  {
+   "args": [
+    "9"
+   ],
+   "expected": "9"
+  },
+  {
+   "args": [
+    "100"
+   ],
+   "expected": "100"
+  },
+  {
+   "args": [
+    "94273.12345678"
+   ],
+   "expected": "94273"
+  },
+  {
+   "args": [
+    "2347"
+   ],
+   "expected": "2347"
+  },
+  {
+   "args": [
+    "-2347.5"
+   ],
+   "expected": "-2348"
+  },
+  {
+   "args": [
+    "1e12"
+   ],
+   "expected": "1E+12"
+  },
+  {
+   "args": [
+    "-1e12"
+   ],
+   "expected": "-1E+12"
+  },
+  {
+   "args": [
+    "1e300"
+   ],
+   "expected": "1E+300"
+  },
+  {
+   "args": [
+    "10000"
+   ],
+   "expected": "10000"
+  },
+  {
+   "args": [
+    "-800"
+   ],
+   "expected": "-800"
+  },
+  {
+   "args": [
+    "-20"
+   ],
+   "expected": "-20"
+  },
+  {
+   "args": [
+    "-8"
+   ],
+   "expected": "-8"
+  },
+  {
+   "args": [
+    "6"
+   ],
+   "expected": "6"
+  },
+  {
+   "args": [
+    "-6"
+   ],
+   "expected": "-6"
+  },
+  {
+   "args": [
+    "1.5"
+   ],
+   "expected": "2"
+  },
+  {
+   "args": [
+    "2.00000001"
+   ],
+   "expected": "2"
+  },
+  {
+   "args": [
+    "-0.49999999"
+   ],
+   "expected": "-0"
+  }
+ ]
+}

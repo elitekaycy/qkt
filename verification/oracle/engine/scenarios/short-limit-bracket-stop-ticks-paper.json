@@ -1,0 +1,141 @@
+{
+  "name": "short-limit-bracket-stop-ticks-paper",
+  "proves": "a sell limit rests until the bid rises to it, fills at mid, and its stop then fills on the ask",
+  "dimensions": {
+    "entry": "limit",
+    "exit": "bracket-by",
+    "side": "short",
+    "fills": "ticks",
+    "path": "stop",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.89",
+      "100.91"
+    ],
+    [
+      90,
+      "101.20",
+      "101.22"
+    ],
+    [
+      105,
+      "100.99",
+      "101.01"
+    ],
+    [
+      120,
+      "101.49",
+      "101.51"
+    ],
+    [
+      135,
+      "101.99",
+      "102.01"
+    ],
+    [
+      150,
+      "102.19",
+      "102.21"
+    ],
+    [
+      165,
+      "102.09",
+      "102.11"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "LIMIT",
+          "price": "101.20"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": []
+}

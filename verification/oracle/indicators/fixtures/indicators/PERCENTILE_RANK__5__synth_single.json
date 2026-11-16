@@ -1,0 +1,1 @@
+{"indicator":"PERCENTILE_RANK","args":["5"],"series":"synth_single","input":"close","oracle":"TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3","tolerance":{"abs":5e-09,"rel":1e-11},"note":"strictly-below count / N","values":[null]}

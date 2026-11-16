@@ -28,6 +28,9 @@ internal enum class GoldenData {
 
     /** Three days of one-tick-per-minute synthetic BTCUSDT (a fixed sine around 42,000). */
     BTCUSDT_SINE_3D,
+
+    /** The hourly event family `KALSHI:KXS` on 2024-03-04: its catalog and minute quotes (`EventSlotData`). */
+    EVENT_FAMILY_HOURLY,
 }
 
 internal object GoldenCases {
@@ -101,6 +104,22 @@ internal object GoldenCases {
             THEN CLOSE uj
         """.trimIndent()
 
+    /** A slot followed across three events: entries, a reduce-first sell, settlements at 1 and 0, probability fees. */
+    private val eventSlots =
+        """
+        STRATEGY golden_event_slots VERSION 1
+        SYMBOLS
+            p70 = KALSHI:KXS@front.p70 EVERY 1m
+            tail = KALSHI:KXS_H3_T4 EVERY 1m
+        RULES
+            WHEN POSITION.p70 = 0 AND p70.ask < 0.80
+            THEN BUY p70 SIZING 10
+            WHEN p70.contract = "KXS_H2_T2" AND POSITION.p70 > 0
+            THEN SELL p70 SIZING 14
+            WHEN tail.close > 2
+            THEN LOG "never"
+        """.trimIndent()
+
     val all: List<GoldenCase> =
         listOf(
             GoldenCase("eurusd-bracket-paper", GoldenData.EURUSD_REAL_DAY, eurusdBracket, "2024-01-10", "2024-01-11"),
@@ -170,6 +189,7 @@ internal object GoldenCases {
                 "2024-01-05",
                 instruments = GoldenInstruments.XAU,
             ),
+            GoldenCase("event-slots-paper", GoldenData.EVENT_FAMILY_HOURLY, eventSlots, "2024-03-04", "2024-03-05"),
             GoldenCase(
                 "example-momentum-paper",
                 GoldenData.BTCUSDT_SINE_3D,

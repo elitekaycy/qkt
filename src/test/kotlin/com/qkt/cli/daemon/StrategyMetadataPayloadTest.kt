@@ -26,6 +26,8 @@ class StrategyMetadataPayloadTest {
             SYMBOLS
                 x = BACKTEST:X EVERY 1m
             PARAM fast = 9
+            PARAM live = TRUE
+            PARAM tag = "gold"
             RULES
                 WHEN x.close > fast THEN BUY x
             """.trimIndent()
@@ -42,7 +44,10 @@ class StrategyMetadataPayloadTest {
         assertThat(metadata["deployName"]).isEqualTo("meta")
         assertThat(metadata["dslVersion"]).isEqualTo(3)
         assertThat(metadata["runtimeMode"]).isEqualTo("paper")
-        assertThat((metadata["params"] as Map<*, *>)["fast"].toString()).isEqualTo("9")
+        val params = metadata["params"] as Map<*, *>
+        assertThat(params["fast"].toString()).isEqualTo("9")
+        assertThat(params["live"]).isEqualTo(true)
+        assertThat(params["tag"].toString()).contains("gold")
         assertThat((metadata["defaults"] as Map<*, *>).keys).containsExactly("sizing", "tif", "stopLoss", "takeProfit")
     }
 }

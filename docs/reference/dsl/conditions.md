@@ -46,6 +46,16 @@ THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
                             -- (after a fill, POSITION.btc != 0 so it doesn't re-fire)
 ```
 
+### An undefined bar holds the edge
+
+A condition can be **undefined** on a bar rather than true or false — an indicator still warming
+up, a quote missing on a thin feed, a division by zero. An undefined bar says nothing about the
+condition, so the edge stays where the last defined bar left it: it is neither the falling edge
+that re-arms the rule nor a rising one. `TRUE → undefined → TRUE` fires **once**; only a bar on
+which the condition is actually `FALSE` re-arms it. A condition that mixes a solid term with a
+flickering one (`rsi(btc.close, 14) < 30 AND g.bid > 100` on a feed with intermittent quotes) therefore
+does not re-enter on every flicker.
+
 ### An exit the venue does not fill is sent again
 
 A rule's market exit — `CLOSE`, `CLOSE_ALL`, or a `BUY`/`SELL` that reduces the position the

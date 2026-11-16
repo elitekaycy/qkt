@@ -1,13 +1,15 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.Block
+import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.WhenThen
 
 /**
  * Parses the `RULES` block: `WHEN <cond> THEN <action> [; <action>]*` rules and
  * `FOR EACH x IN [a, b] DO WHEN ...` templates, which expand to one rule per alias here so the
- * compiler only ever sees plain rules.
+ * compiler only ever sees plain rules. `FOR EACH x IN <set> DO` keeps its template as a
+ * [ForEachSet] until the set's members are known.
  */
 internal class RuleParser(
     private val cursor: TokenCursor,
@@ -80,7 +82,16 @@ internal class RuleParser(
         cursor.expect(TokenKind.EACH, "expected EACH after FOR")
         val iterVar = cursor.expect(TokenKind.IDENT, "expected iteration variable").lexeme
         cursor.expect(TokenKind.IN, "expected IN after iteration variable")
-        cursor.expect(TokenKind.LBRACKET, "expected '[' to open stream alias list")
+        if (cursor.peek().kind == TokenKind.IDENT && cursor.peekAt(1).kind == TokenKind.DO) {
+            // `FOR EACH m IN fx DO`: one rule per member of the symbol set `fx`, instantiated by SymbolSetExpansion.
+            val set = cursor.advance().lexeme
+            cursor.advance()
+            return listOf(ForEachSet(iterVar, set, parseWhenThen(line), line))
+        }
+        cursor.expect(
+            TokenKind.LBRACKET,
+            "expected '[' to open stream alias list (a symbol set needs none: IN <set> DO)",
+        )
         val aliases = mutableListOf<String>()
         if (cursor.peek().kind != TokenKind.RBRACKET) {
             aliases.add(cursor.expect(TokenKind.IDENT, "expected stream alias").lexeme)

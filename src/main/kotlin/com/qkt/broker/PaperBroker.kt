@@ -18,7 +18,6 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
-import java.math.RoundingMode
 import org.slf4j.LoggerFactory
 
 /**
@@ -29,7 +28,8 @@ import org.slf4j.LoggerFactory
  * parked in a working list and resolved as ticks print through.
  *
  * No slippage model, no rejection model, no latency — by design. Strategies that want those
- * should test against an actual venue. It describes itself as the `paper` venue ([PaperVenue]).
+ * should test against an actual venue. It does apply the instrument's volume rules
+ * ([PaperVolumeRules]), as every venue does. It describes itself as the `paper` venue ([PaperVenue]).
  */
 class PaperBroker(
     private val bus: EventBus,
@@ -68,6 +68,7 @@ class PaperBroker(
 
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
+    private val volumeRules = PaperVolumeRules(instruments)
     private val working: MutableList<OrderRequest> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = mutableMapOf()
 
@@ -100,7 +101,11 @@ class PaperBroker(
             } else {
                 request
             }
-        val sized = sizeForVenue(expiring) ?: return rejectBelowMinimum(expiring)
+        val sized =
+            when (val outcome = volumeRules.apply(expiring)) {
+                is PaperVolumeRules.Outcome.Sized -> outcome.request
+                is PaperVolumeRules.Outcome.Refused -> return reject(expiring, outcome.reason)
+            }
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = sized.id,
@@ -166,23 +171,10 @@ class PaperBroker(
         )
     }
 
-    private fun sizeForVenue(request: OrderRequest): OrderRequest? {
-        val meta = instruments.lookup(request.symbol) ?: return request
-        val quantity =
-            request.quantity
-                .divide(meta.volumeStep, 0, RoundingMode.DOWN)
-                .multiply(meta.volumeStep)
-        return if (quantity.signum() == 0 || quantity < meta.volumeMin) null else request.withVolume(quantity)
-    }
-
-    private fun rejectBelowMinimum(request: OrderRequest): SubmitAck {
-        val meta = requireNotNull(instruments.lookup(request.symbol))
-        val quantized =
-            request.quantity
-                .divide(meta.volumeStep, 0, RoundingMode.DOWN)
-                .multiply(meta.volumeStep)
-        val reason =
-            "quantized volume $quantized below venue volumeMin ${meta.volumeMin} for ${request.symbol}"
+    private fun reject(
+        request: OrderRequest,
+        reason: String,
+    ): SubmitAck {
         bus.publish(
             BrokerEvent.OrderRejected(
                 clientOrderId = request.id,
