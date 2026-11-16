@@ -79,6 +79,8 @@ done <<< "$readers"
 # check.yml skips only on pull requests and gates the gradle steps on the classifier.
 grep -Fq 'bash scripts/classify-ci-changes.sh' "$workflow"
 grep -Fq 'if [ "$EVENT_NAME" != pull_request ]; then' "$workflow"
+# A merge-queue run is the combined result about to land on dev: it is not a pull_request event, so it never skips.
+grep -Eq '^  merge_group:$' "$workflow"
 test "$(grep -Fc "if: github.event_name == 'pull_request' && steps.changes.outputs.full == 'true'" "$workflow")" -eq 1
 test "$(grep -Fc 'run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon' "$workflow")" -eq 1
 

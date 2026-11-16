@@ -4,7 +4,8 @@ name: check
 # every push to dev or testing. This is the only CI a feature-branch PR runs. The heavier
 # black-box suite is integration.yml, which gates testing and main. A pull request
 # that changes only documentation no test reads skips the build steps and still
-# reports a green `build` (scripts/classify-ci-changes.sh); pushes never skip.
+# reports a green `build` (scripts/classify-ci-changes.sh); pushes and merge-queue
+# runs never skip.
 #
 # On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
 # testing via a merge commit that preserves prior testing promotion history. The push authenticates with PROMOTE_SSH_KEY
@@ -21,6 +22,8 @@ on:
     branches: [dev, testing]
   pull_request:
     branches: [dev]
+  # The merge queue's combined result about to land on dev; it always runs the full build.
+  merge_group:
 
 # A dev push gets a group of its own SHA, so no dev run is ever cancelled. GitHub
 # queues runs in webhook arrival order, not commit order: two merges seconds
@@ -47,7 +50,7 @@ jobs:
           bash scripts/check-commit-authors.sh "$BASE_SHA..$HEAD_SHA"
       # A pull request whose every changed path is documentation no test reads skips the steps below, and `build`
       # still reports success (docs/contributing/test-coverage.md, "Docs-only pull requests"). Pushes to dev and
-      # testing always run everything, so promotion and dev's coverage artifact never depend on this. The diff is
+      # testing and merge-queue runs (merge_group) always run everything, so promotion and dev's coverage artifact never depend on this. The diff is
       # the PR merge commit against its first parent: exactly what the merge would change. Inside this job, not a
       # separate one, so a classifier failure fails `build` instead of skipping it.
       - name: Classify changes

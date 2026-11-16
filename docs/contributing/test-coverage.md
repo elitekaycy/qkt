@@ -28,7 +28,8 @@ the PR merge commit's changed paths alone:
   `docs/index.md` and `docs/assets/`.
 - **Anything else**, an empty change, or a classifier error runs the full build.
 
-Pushes to `dev` and `testing` always run the full build, so promotion to `testing` and the
+Pushes to `dev` and `testing`, and merge-queue runs (`merge_group`, the combined result about to land on
+`dev`), always run the full build, so promotion to `testing` and the
 `coverage` artifact on every `dev` commit do not depend on this rule. A test that starts reading
 another docs page adds it to the classifier's list in the same PR;
 `tests/scripts/classify-ci-changes-test.sh` fails when a literal docs path in `src/test` or the
