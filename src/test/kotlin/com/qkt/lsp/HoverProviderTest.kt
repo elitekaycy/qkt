@@ -36,6 +36,19 @@ class HoverProviderTest {
     }
 
     @Test
+    fun `hover on a cross-member set function shows its signature and how it reads the set`() {
+        // Cursor on `sum_of` (char 14) in `WHEN SUM_OF(m.close, fx) > 1`, in either case.
+        for (call in listOf("sum_of", "SUM_OF")) {
+            val hover = HoverProvider.hover("WHEN $call(m.close, fx) > 1", 0, 8, null)
+            assertThat(textOf(hover)).contains("sum_of(expr, set)").contains("FOR EACH").contains("loop variable")
+        }
+        val rank = HoverProvider.hover("WHEN RANK_OF(m.close, fx) <= 2", 0, 8, null)
+        assertThat(textOf(rank)).contains("rank_of(self, other, ...)").contains("rank_of(expr, set)")
+        val count = HoverProvider.hover("WHEN COUNT_OF(m.close > 1, fx) >= 3", 0, 8, null)
+        assertThat(textOf(count)).contains("count_of(test, set)").contains("does not count")
+    }
+
+    @Test
     fun `hover on a constant shows its value`() {
         // Cursor inside `ONE_PERCENT` (char 16).
         val hover = HoverProvider.hover("SIZING RISK $ ONE_PERCENT", 0, 16, null)

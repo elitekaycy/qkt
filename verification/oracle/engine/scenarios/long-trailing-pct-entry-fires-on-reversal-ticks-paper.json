@@ -1,0 +1,142 @@
+{
+  "name": "long-trailing-pct-entry-fires-on-reversal-ticks-paper",
+  "proves": "BUY TRAILING PCT 0.5 ratchets its low-water mark to 99.40 and buys at market when the mark rises 0.5 %",
+  "dimensions": {
+    "feature": "trailing-entry",
+    "shape": "trailing-pct",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.19",
+      "100.21"
+    ],
+    [
+      90,
+      "99.79",
+      "99.81"
+    ],
+    [
+      105,
+      "99.39",
+      "99.41"
+    ],
+    [
+      120,
+      "99.69",
+      "99.71"
+    ],
+    [
+      135,
+      "99.94",
+      "99.96"
+    ],
+    [
+      150,
+      "100.09",
+      "100.11"
+    ],
+    [
+      165,
+      "100.19",
+      "100.21"
+    ],
+    [
+      180,
+      "100.29",
+      "100.31"
+    ],
+    [
+      195,
+      "100.29",
+      "100.31"
+    ],
+    [
+      210,
+      "100.29",
+      "100.31"
+    ],
+    [
+      225,
+      "100.29",
+      "100.31"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "TRAILING",
+          "pct": "0.5"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "100.20",
+        "position": "long"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": [
+    "0.5 % of the low-water mark (0.497) and of the placement price (0.5025) both first trip on the 99.95 tick (README QB6)."
+  ]
+}

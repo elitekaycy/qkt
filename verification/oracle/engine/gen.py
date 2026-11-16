@@ -40,7 +40,7 @@ def expectation(scenario: Scenario) -> dict:
         "realized": str(realized),
         "commission": str(fees),
         "rejections": st.rejections,
-        "openAtEnd": st.position is not None,
+        "openAtEnd": bool(st.open_legs),
         "notes": scenario.notes,
     }
 

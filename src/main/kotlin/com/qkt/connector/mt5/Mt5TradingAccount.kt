@@ -30,6 +30,8 @@ class Mt5TradingAccount internal constructor(
 
     override fun instrumentSpec(qktSymbol: String) = client.instrumentSpec(profile, qktSymbol)
 
+    override fun instrumentCatalog(kind: String?) = client.instrumentCatalog(profile, config)
+
     override fun directVenue(): com.qkt.connectivity.DirectVenue = Mt5DirectVenue.of(profile)
 
     override val orderEntry: BrokerFactory = { bus, clock, priceTracker, _, strategyName ->

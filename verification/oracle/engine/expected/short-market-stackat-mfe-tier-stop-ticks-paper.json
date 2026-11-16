@@ -1,0 +1,53 @@
+{
+  "name": "short-market-stackat-mfe-tier-stop-ticks-paper",
+  "proves": "a SELL primary's MFE tier fires on the mark falling to 100.10; its leg stops out alone, the primary takes its target",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.50",
+      "takeProfit": "98.50"
+    },
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.05",
+      "price": "100.10",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "100.40",
+      "takeProfit": "99.30"
+    },
+    {
+      "ts": 1704880920000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "100.39",
+      "realized": "-0.0145",
+      "reason": "stop",
+      "orderType": "STOP"
+    },
+    {
+      "ts": 1704880995000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.49",
+      "realized": "0.201",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.1865",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

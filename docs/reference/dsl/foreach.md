@@ -33,7 +33,9 @@ RULES
 
 A picked list (`VENUE:{A, B}`) and a union of them expand at parse time exactly like the bracket form: one rule
 per member, with `m` replaced by the member's alias (`fx.EURUSD`). A filtered set (`VENUE:* WHERE ...`) keeps the
-rule as a template until a backtest resolves its members at start, then expands the same way.
+rule as a template until the run resolves its members at start (a backtest from its instruments file, a live
+deploy from the venue's listing), then expands the same way.
+A portfolio does not resolve its children's sets, so a portfolio child accepts picked lists only, for now.
 
 The iteration variable substitutes textually for each stream in the list. Each substitution produces one rule.
 

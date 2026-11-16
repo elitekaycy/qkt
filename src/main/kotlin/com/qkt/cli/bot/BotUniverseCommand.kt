@@ -49,8 +49,15 @@ class BotUniverseCommand(
                     }
                 is SymbolSetSpec.Filtered -> {
                     SymbolSetResolution
-                        .members("universe", spec, catalog, nowMs, survivorshipAccepted = true)
-                        .map { name -> catalog.first { it.qktSymbol.equals("${spec.venue}:$name", ignoreCase = true) } }
+                        .members(
+                            "universe",
+                            spec,
+                            SymbolSetResolution.FileCatalog(catalog),
+                            nowMs,
+                            survivorshipAccepted = true,
+                        ).map { name ->
+                            catalog.first { it.qktSymbol.equals("${spec.venue}:$name", ignoreCase = true) }
+                        }
                 }
             }
         if (json) {

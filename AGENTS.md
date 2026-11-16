@@ -126,7 +126,8 @@ For Kotlin compiler instability in this workspace, prefer:
 ./gradlew <tasks> -Pkotlin.compiler.execution.strategy=daemon
 ```
 
-Use `./scripts/precheck.sh` when appropriate.
+Install the pre-push hook with `scripts/install-hooks.sh` (runs the fast `scripts/precheck.sh`: ktlint, file size, compile, policy tests).
+Skip it with `git push --no-verify` only for docs emergencies.
 
 ## Documentation
 

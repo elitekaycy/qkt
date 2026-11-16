@@ -11,7 +11,8 @@ import java.math.BigDecimal
  * it, the contract positions its venue account holds, the roll's own venue orders still out ([legs], and
  * the resting orders whose cancel is awaited, as they worked, in [cancelling]), and the [roll] still in
  * flight (null when none). A roll's leg can outlive its roll: an unwind is still out after the roll ended.
- * [settledCloses] are the closes the venue's settlements left, which only qkt can state as deals.
+ * [settledCloses] are the closes the venue's settlements left, which only qkt can state as deals. [contractShift] is
+ * [contract]'s shift in the series the lane's positions were booked at (null when saved by an older qkt).
  */
 data class PersistedStreamLane(
     val stream: String,
@@ -23,6 +24,7 @@ data class PersistedStreamLane(
     val cancelling: List<PersistedStreamOrder>,
     val roll: PersistedStreamRoll?,
     val settledCloses: List<SettledClose> = emptyList(),
+    val contractShift: BigDecimal? = null,
 )
 
 /** A roll's [leg] (a market order, or a live lane's collared limit) still out at the venue, with the [slices] of it filled so far, oldest first. */

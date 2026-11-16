@@ -5,6 +5,9 @@ import com.qkt.connectivity.transport.TransportRecorder
 import java.math.BigDecimal
 import java.time.Duration
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 
@@ -73,6 +76,16 @@ class MT5Client(
 
     /** See [MT5AccountReads.getSymbolInfo]. */
     fun getSymbolInfo(brokerSymbol: String): MT5SymbolInfo? = accountReads.getSymbolInfo(brokerSymbol)
+
+    /** Every symbol name the venue lists (`GET /symbols`), or null when the gateway does not answer. */
+    fun listSymbols(): List<String>? =
+        reads.get("$gatewayUrl/symbols")?.let { raw ->
+            json
+                .parseToJsonElement(raw)
+                .jsonObject["symbols"]
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+        }
 
     /** See [MT5AccountReads.getAccount]. */
     fun getAccount(): MT5AccountInfo? = accountReads.getAccount()?.also { lastAccount = it }

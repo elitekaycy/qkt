@@ -1,0 +1,147 @@
+{
+  "name": "long-market-stackat-recoil-tier-entry-qty-ticks-paper",
+  "proves": "MAE 0.50 arms the recoil tier, the anchor floats to 99.70, a 0.30 recovery fires ENTRY_QTY * 0.5",
+  "dimensions": {
+    "feature": "stack-at",
+    "shape": "stack-at-recoil",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.19",
+      "100.21"
+    ],
+    [
+      90,
+      "99.89",
+      "99.91"
+    ],
+    [
+      105,
+      "99.69",
+      "99.71"
+    ],
+    [
+      120,
+      "99.89",
+      "99.91"
+    ],
+    [
+      135,
+      "99.99",
+      "100.01"
+    ],
+    [
+      150,
+      "100.19",
+      "100.21"
+    ],
+    [
+      165,
+      "100.40",
+      "100.42"
+    ],
+    [
+      180,
+      "100.99",
+      "101.01"
+    ],
+    [
+      195,
+      "101.79",
+      "101.81"
+    ],
+    [
+      210,
+      "102.50",
+      "102.52"
+    ],
+    [
+      225,
+      "102.29",
+      "102.31"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.2"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.50"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        },
+        "stackAt": [
+          {
+            "kind": "mae",
+            "threshold": "0.50",
+            "recover": "0.30",
+            "withinSec": 300,
+            "entryQtyMul": "0.5",
+            "stop": "0.50",
+            "target": "0.40"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

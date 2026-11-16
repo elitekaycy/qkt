@@ -30,13 +30,18 @@ sealed interface SymbolSetSpec {
         override val canonical: String get() = "$venue:{${names.joinToString(", ")}}"
     }
 
-    /** `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC]`: the venue's catalog, filtered and ranked. */
+    /**
+     * `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]`: the venue's catalog, filtered and ranked.
+     * Resolved once at start, unless [dynamic]: then re-evaluated at each close of the set's `EVERY` window as of
+     * that close, members joining and leaving during the run (runtime membership plan, step 4).
+     */
     data class Filtered(
         val venue: String,
         val filter: UniverseFilter,
         val top: Int,
         val by: CatalogField,
-        val descending: Boolean = true,
+        val descending: Boolean,
+        val dynamic: Boolean,
     ) : SymbolSetSpec {
         init {
             require(top > 0) { "TOP must be a positive count: $top" }
@@ -44,7 +49,8 @@ sealed interface SymbolSetSpec {
 
         override val canonical: String
             get() =
-                "$venue:* WHERE ${filter.canonical} TOP $top BY ${by.token} ${if (descending) "DESC" else "ASC"}"
+                "$venue:* WHERE ${filter.canonical} TOP $top BY ${by.token} ${if (descending) "DESC" else "ASC"}" +
+                    if (dynamic) " DYNAMIC" else ""
     }
 
     /** `a + b`: the members of sets declared above, each keeping its own venue. */

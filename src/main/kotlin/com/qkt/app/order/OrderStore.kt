@@ -21,7 +21,7 @@ internal class OrderStore(
 ) {
     val book = OrderBook(isReferenced, reclaim)
     val exposure = PendingExposureBook(book)
-    val risk = BracketRiskRecorder(settings.trackRisk, settings.instruments)
+    val risk = BracketRiskRecorder(settings.trackRisk, settings.instruments, StackEntryRisk(book, settings.instruments))
     val stops = ManagedStopBook()
     val prices = ObservedPrices(settings.priceProvider)
     val closeTickets = EngineHeldCloseTickets()

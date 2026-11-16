@@ -1,6 +1,8 @@
 package com.qkt.dsl.compile
 
 import com.qkt.app.requireEventTerms
+import com.qkt.common.Clock
+import com.qkt.common.FixedClock
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.parse.Dsl
@@ -12,6 +14,7 @@ import com.qkt.instrument.ProbabilityFee
 import com.qkt.instrument.StrikePredicate
 import com.qkt.instrument.StrikeType
 import com.qkt.marketdata.Candle
+import com.qkt.strategy.Mode
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -55,6 +58,8 @@ class EventStreamFieldsTest {
         bid: String? = "0.40",
         ask: String? = "0.50",
         instruments: InstrumentRegistry = registry,
+        clock: Clock = FixedClock(time = 0L),
+        mode: Mode = Mode.BACKTEST,
         compiler: (StreamFieldRef) -> CompiledExpr = { ExprCompiler().compile(it) },
     ): Value {
         val one = BigDecimal.ONE
@@ -65,7 +70,7 @@ class EventStreamFieldsTest {
                 candle = candle,
                 streams = streams,
                 lets = emptyMap(),
-                strategyContext = testStrategyContext(instruments = instruments),
+                strategyContext = testStrategyContext(instruments = instruments, clock = clock, mode = mode),
                 evaluationTimeMs = at,
             )
         return compiler(StreamFieldRef(alias, field)).evaluate(ctx)
@@ -92,6 +97,19 @@ class EventStreamFieldsTest {
         assertThat(num(eval("k", "minutes_left", at = closeAtMs))).isEqualByComparingTo("0")
         assertThat(num(eval("k", "minutes_to_occurs", at = occursAtMs + 120_000L))).isEqualByComparingTo("-2")
         assertThat(listOf("occurs_at", "minutes_to_occurs").map { eval("b", it) }).containsOnly(Value.Undefined)
+    }
+
+    @Test
+    fun `a field reads the bar's close and never the session clock, live or not`() {
+        val at = closeAtMs - 90 * 60_000L - 30_000L
+        val skewed = listOf(FixedClock(time = at + 7), FixedClock(time = at + 3_600_000L), FixedClock(time = 0L))
+        for (field in listOf("minutes_left", "minutes_to_occurs", "taker_fee", "maker_fee")) {
+            val replay = eval("k", field, at = at)
+            for (clock in skewed) {
+                val live = eval("k", field, at = at, clock = clock, mode = Mode.LIVE)
+                assertThat(live).describedAs("$field with the clock at ${clock.now()}").isEqualTo(replay)
+            }
+        }
     }
 
     @Test

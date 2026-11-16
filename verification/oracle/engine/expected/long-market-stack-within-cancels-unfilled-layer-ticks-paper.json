@@ -1,0 +1,53 @@
+{
+  "name": "long-market-stack-within-cancels-unfilled-layer-ticks-paper",
+  "proves": "WITHIN 1m from the seed fill: layer 2 fills inside it, layer 3's rung is reached after it and never fills",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.50",
+      "takeProfit": "103.50"
+    },
+    {
+      "ts": 1704880875000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.00",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP",
+      "stopLoss": "100.00",
+      "takeProfit": "104.00"
+    },
+    {
+      "ts": 1704880995000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.01",
+      "realized": "-0.099",
+      "reason": "stop",
+      "orderType": "STOP"
+    },
+    {
+      "ts": 1704881025000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.51",
+      "realized": "-0.099",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.198",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

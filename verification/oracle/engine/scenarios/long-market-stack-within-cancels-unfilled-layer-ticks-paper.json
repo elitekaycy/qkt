@@ -1,0 +1,162 @@
+{
+  "name": "long-market-stack-within-cancels-unfilled-layer-ticks-paper",
+  "proves": "WITHIN 1m from the seed fill: layer 2 fills inside it, layer 3's rung is reached after it and never fills",
+  "dimensions": {
+    "feature": "stack",
+    "shape": "stack-within",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.99",
+      "101.01"
+    ],
+    [
+      90,
+      "101.09",
+      "101.11"
+    ],
+    [
+      105,
+      "101.19",
+      "101.21"
+    ],
+    [
+      120,
+      "101.29",
+      "101.31"
+    ],
+    [
+      135,
+      "101.39",
+      "101.41"
+    ],
+    [
+      150,
+      "101.49",
+      "101.51"
+    ],
+    [
+      165,
+      "101.29",
+      "101.31"
+    ],
+    [
+      180,
+      "100.79",
+      "100.81"
+    ],
+    [
+      195,
+      "100.00",
+      "100.02"
+    ],
+    [
+      210,
+      "99.79",
+      "99.81"
+    ],
+    [
+      225,
+      "99.50",
+      "99.52"
+    ],
+    [
+      240,
+      "99.39",
+      "99.41"
+    ],
+    [
+      255,
+      "99.39",
+      "99.41"
+    ],
+    [
+      270,
+      "99.39",
+      "99.41"
+    ],
+    [
+      285,
+      "99.44",
+      "99.46"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "3.00"
+          }
+        },
+        "stack": {
+          "n": 3,
+          "spacing": "0.50",
+          "dir": "ABOVE",
+          "withinSec": 60
+        }
+      }
+    }
+  ],
+  "notes": []
+}

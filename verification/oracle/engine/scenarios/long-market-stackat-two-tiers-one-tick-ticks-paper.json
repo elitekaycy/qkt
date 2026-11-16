@@ -1,0 +1,154 @@
+{
+  "name": "long-market-stackat-two-tiers-one-tick-ticks-paper",
+  "proves": "one tick lifts MFE past both 0.30 and 0.60: both tiers fire on it, each with its own size and bracket",
+  "dimensions": {
+    "feature": "stack-at",
+    "shape": "stack-at-two-tiers",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.59",
+      "100.61"
+    ],
+    [
+      90,
+      "101.19",
+      "101.21"
+    ],
+    [
+      105,
+      "101.39",
+      "101.41"
+    ],
+    [
+      120,
+      "101.70",
+      "101.72"
+    ],
+    [
+      135,
+      "101.89",
+      "101.91"
+    ],
+    [
+      150,
+      "102.00",
+      "102.02"
+    ],
+    [
+      165,
+      "101.49",
+      "101.51"
+    ],
+    [
+      180,
+      "100.49",
+      "100.51"
+    ],
+    [
+      195,
+      "99.89",
+      "99.91"
+    ],
+    [
+      210,
+      "99.50",
+      "99.52"
+    ],
+    [
+      225,
+      "99.69",
+      "99.71"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "3.00"
+          }
+        },
+        "stackAt": [
+          {
+            "kind": "mfe",
+            "threshold": "0.30",
+            "withinSec": 300,
+            "size": "0.05",
+            "stop": "1.00",
+            "target": "0.50"
+          },
+          {
+            "kind": "mfe",
+            "threshold": "0.60",
+            "withinSec": 300,
+            "size": "0.03",
+            "stop": "1.00",
+            "target": "0.80"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

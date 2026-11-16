@@ -44,6 +44,13 @@ interface TradingAccount : AutoCloseable {
      */
     fun instrumentSpec(qktSymbol: String): com.qkt.instrument.VenueInstrumentSpec? = null
 
+    /**
+     * Every instrument the venue lists now, as the rows a live filtered symbol set ranks, or null when the connector
+     * cannot list its venue. [kind] is the `kind` the set's filter pins, a hint a venue that filters its listing may
+     * narrow the read with. Read once at session start, outside the trading path.
+     */
+    fun instrumentCatalog(kind: String?): com.qkt.instrument.universe.VenueCatalog? = null
+
     /** Builds the catalogs of this account's futures roots from the venue's listing, or null when it lists none. */
     val contractCatalogs: com.qkt.instrument.ContractCatalogSource? get() = null
 

@@ -62,6 +62,28 @@ class PortfolioLoaderFileErrorsTest {
     }
 
     @Test
+    fun `a child with a filtered symbol set is refused, since portfolio children accept picked lists only`(
+        @TempDir tmp: Path,
+    ) {
+        tmp.resolve("metals.qkt").writeText(
+            """
+            STRATEGY metals VERSION 1
+            SYMBOLS
+                m = GW:* WHERE category = Metals TOP 5 BY symbol ASC EVERY 1m
+            RULES
+                FOR EACH s IN m DO
+                  WHEN s.close > 100 THEN BUY s SIZING 1
+            """.trimIndent(),
+        )
+        val path = portfolio(tmp, "IMPORT 'metals.qkt' AS m\nRULES\n    RUN m")
+
+        assertThatThrownBy { PortfolioLoader.load(path) }
+            .hasMessageContaining("child 'm'")
+            .hasMessageContaining("symbol set 'm' is a filtered universe")
+            .hasMessageContaining("portfolio children accept picked lists only, for now")
+    }
+
+    @Test
     fun `a portfolio importing itself is a cycle`(
         @TempDir tmp: Path,
     ) {

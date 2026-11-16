@@ -203,3 +203,11 @@ def gross_pnl(side: str, entry: Decimal, exit_price: Decimal, qty: Decimal, inst
     realised = (exit - entry) x qty x contractSize that qkt's own trades.csv reconciles to)."""
     diff = exit_price - entry if side == LONG else entry - exit_price
     return diff * qty * inst.contract_size
+
+
+def gross_pnl_on_cost(side: str, cost: Decimal, exit_price: Decimal, qty: Decimal, inst: Instrument) -> Decimal:
+    """The same relation over a netted position's fills: closing all of it realises exit x qty less the summed
+    entry cost (fill price x qty of every fill it netted), times contractSize; backtest-model.md:46 "a netted
+    position per strategy and symbol" is one position at its volume-weighted average entry."""
+    diff = exit_price * qty - cost if side == "BUY" else cost - exit_price * qty
+    return diff * inst.contract_size

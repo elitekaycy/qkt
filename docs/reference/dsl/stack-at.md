@@ -84,6 +84,10 @@ On every market tick after the primary fills:
 
 If a single big tick crosses multiple thresholds, all qualifying tiers fire on the same tick — they're independent.
 
+A tick that fills the primary's own stop or target ends its lifecycle before its tiers see that tick, so a
+tier that tick would have crossed does not fire. In a backtest this holds on every such tick; live, the
+close is known when the venue reports the fill, so it holds for every tick after that report.
+
 ### Where a stack's bracket is anchored
 
 Excursion (MFE/MAE) is measured on the tick's mark price — the mid on quote-driven venues

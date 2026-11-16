@@ -1,8 +1,8 @@
 package com.qkt.lsp
 
 /**
- * Hover documentation for the scalar functions and the parser's call-shaped clock predicates, keyed by their
- * registry name (upper case). [QktDocs] serves them; `DocsDriftTest` keeps them exhaustive both ways.
+ * Hover documentation for the scalar functions, the parser's call-shaped clock predicates and the cross-member
+ * functions over a symbol set, keyed by their name (upper case). [QktDocs] serves them; `DocsDriftTest` keeps them exhaustive both ways.
  */
 internal object QktFunctionDocs {
     val entries: Map<String, String> =
@@ -22,11 +22,28 @@ internal object QktFunctionDocs {
             "MAX" to doc("max(a, b, ...)", "Largest of two or more values."),
             "RANK_OF" to
                 doc(
-                    "rank_of(self, other, ...)",
+                    "rank_of(self, other, ...)  |  rank_of(expr, set)",
                     "Cross-sectional rank of the first value among all the values (1 = highest). " +
                         "List one expression per stream to rank a cross-section, e.g. " +
                         "`rank_of(a.mom, b.mom, c.mom) == 1` is true on the strongest stream and " +
-                        "`<= 2` selects the top two. Ties share the top rank.",
+                        "`<= 2` selects the top two. Ties share the top rank. Inside `FOR EACH m IN fx`, " +
+                        "`rank_of(m.close / m.close[20] - 1, fx)` ranks this member's value among every " +
+                        "member of the set; a member with no value yet is left out.",
+                ),
+            "SUM_OF" to
+                setDoc("sum_of(expr, set)", "Sum of `expr` over the members of the set that have a value."),
+            "AVG_OF" to
+                setDoc("avg_of(expr, set)", "Average of `expr` over the members of the set that have a value."),
+            "MAX_OF" to
+                setDoc("max_of(expr, set)", "Largest `expr` among the members of the set that have a value."),
+            "MIN_OF" to
+                setDoc("min_of(expr, set)", "Smallest `expr` among the members of the set that have a value."),
+            "COUNT_OF" to
+                setDoc(
+                    "count_of(test, set)",
+                    "How many members of the set the test holds for, e.g. " +
+                        "`count_of(m.close > ema(m.close, 50), fx) >= 3`. A member with no value yet does not " +
+                        "count; 0 when none holds.",
                 ),
             "MOD" to
                 doc(
@@ -84,4 +101,15 @@ internal object QktFunctionDocs {
         signature: String,
         description: String,
     ): String = "```qkt\n$signature\n```\n$description"
+
+    /** A cross-member function: the expression must use the loop variable, and the set may be another set. */
+    private fun setDoc(
+        signature: String,
+        description: String,
+    ): String =
+        doc(
+            signature,
+            "$description Written inside `FOR EACH m IN <set>`; `expr` must use the loop variable `m`, and the " +
+                "set may be another set than the loop's. Undefined when no member has a value.",
+        )
 }

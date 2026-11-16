@@ -1,0 +1,7 @@
+STRATEGY long_market_stack_list_custom_sizes_ticks_paper VERSION 1
+-- STACK [0.10, 0.20 AT entry + 0.50, 0.30 AT entry + 1.00]: each layer's own size and target
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn STACK [ 0.1, 0.2 AT entry + 0.50, 0.3 AT entry + 1.00 ] BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.50 }

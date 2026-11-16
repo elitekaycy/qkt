@@ -1,0 +1,31 @@
+{
+  "name": "long-market-trailing-by-exit-netting-ticks-paper",
+  "proves": "on a netted long, SELL TRAILING BY 0.40 rides the high to 101.60 and closes the long on a 0.41 reversal",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880995000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "101.19",
+      "realized": "0.069",
+      "reason": "close",
+      "orderType": "TRAILING"
+    }
+  ],
+  "realized": "0.069",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

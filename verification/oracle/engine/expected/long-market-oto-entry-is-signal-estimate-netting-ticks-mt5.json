@@ -1,0 +1,42 @@
+{
+  "name": "long-market-oto-entry-is-signal-estimate-netting-ticks-mt5",
+  "proves": "for a MARKET parent `entry` is the signal-time estimate 100.50, not the 100.52 fill: the child limit is 100.00",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.52",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.00",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.2",
+      "price": "100.98",
+      "realized": "0.144",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.144",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "oto.md:34: `entry` is the signal-time estimate for a MARKET parent; the ask touches 100.01 first (the fill-based level) and 100.00 later."
+  ]
+}

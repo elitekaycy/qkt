@@ -148,11 +148,22 @@ internal class CompiledStrategy(
         hub: CandleHub,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
+    ) = bindToHubAs(ctx.strategyId, hub, ctx, emit)
+
+    /**
+     * [bindToHub] with the hub listeners owned by [owner] instead of the strategy id, so one symbol-set member's
+     * instance can be dropped from the hub on its own while it trades under the strategy's id.
+     */
+    fun bindToHubAs(
+        owner: String,
+        hub: CandleHub,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
     ) {
         check(!binding.hubBound) { "CompiledStrategy already bound to a hub" }
         validateMetaRefs(metaRefs, ctx)
         binding.bind(hub, ctx)
-        wiring.wire(hub, ctx, emit)
+        wiring.wire(hub, ctx, emit, owner)
     }
 
     override fun onTick(

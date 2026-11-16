@@ -1,0 +1,142 @@
+{
+  "name": "short-trailing-by-entry-fires-on-reversal-ticks-paper",
+  "proves": "SELL TRAILING BY 0.50 ratchets its high-water mark to 101.10 and sells at market when the mark falls 0.51",
+  "dimensions": {
+    "feature": "trailing-entry",
+    "shape": "trailing-by",
+    "side": "short",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.69",
+      "100.71"
+    ],
+    [
+      90,
+      "100.89",
+      "100.91"
+    ],
+    [
+      105,
+      "101.09",
+      "101.11"
+    ],
+    [
+      120,
+      "100.79",
+      "100.81"
+    ],
+    [
+      135,
+      "100.58",
+      "100.60"
+    ],
+    [
+      150,
+      "100.39",
+      "100.41"
+    ],
+    [
+      165,
+      "100.29",
+      "100.31"
+    ],
+    [
+      180,
+      "100.19",
+      "100.21"
+    ],
+    [
+      195,
+      "100.19",
+      "100.21"
+    ],
+    [
+      210,
+      "100.19",
+      "100.21"
+    ],
+    [
+      225,
+      "100.19",
+      "100.21"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "TRAILING",
+          "by": "0.50"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "100.30",
+        "position": "short"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": [
+    "The spread is constant, so a mark measured on mid, bid or ask gives the same trigger tick (README QB6)."
+  ]
+}
