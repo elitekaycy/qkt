@@ -27,7 +27,7 @@ class MT5PartialPlacementRetryTest {
     private val scheduler = MT5UnknownResolveScheduler(profile.name, periodicResolveMs = 1L)
     private val request =
         OrderRequest.Market("entry-1", "EXNESS:XAUUSD", Side.BUY, BigDecimal("1.00"), TimeInForce.GTC, sentAt, "gold")
-    private val placement = MT5OrderRequest("XAUUSDm", BigDecimal("1.00"), "BUY", 10001, comment = "entry-1")
+    private val placement = MT5OrderRequest("XAUUSDm", BigDecimal("1.00"), "BUY", magic = 10001, comment = "entry-1")
     private val response =
         MT5OrderResponse(
             MT5OrderResult(MT5_TRADE_RETCODE_DONE_PARTIAL, 7001L, 7001L, BigDecimal("2400"), "", BigDecimal("0.40")),
