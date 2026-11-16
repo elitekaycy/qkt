@@ -17,8 +17,8 @@ private fun literalPayload(expr: ExprAst): Any =
     when (expr) {
         is NumLit -> expr.value
         is BoolLit -> expr.value
-        // A ParamDecl admits only these three literals, so anything else here is the string one.
-        else -> (expr as StringLit).value
+        is StringLit -> expr.value
+        else -> expr.toString()
     }
 
 private fun defaultsPayload(defaults: DefaultsBlock?): Map<String, String>? {
