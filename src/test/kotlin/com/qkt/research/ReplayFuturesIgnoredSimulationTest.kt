@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.qkt.accounting.AccountingConfig
 import com.qkt.backtest.BarFills
+import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.broker.continuous.ContinuousFixture
 import com.qkt.broker.continuous.ContinuousFixture.Companion.ms
@@ -48,7 +49,7 @@ class ReplayFuturesIgnoredSimulationTest {
 
     @Test
     fun `asking for latency on a futures run is warned about`() {
-        assertThat(warningsFor(ExecutionSimulationConfig(latencyMs = 50)))
+        assertThat(warningsFor(ExecutionSimulationConfig(preset = ExecutionPreset.MT5_BASIC, latencyMs = 50)))
             .containsExactly(
                 "futures fill on the exchange simulator, which ignores latency, rejection and partial-fill settings",
             )
