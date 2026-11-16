@@ -1,0 +1,140 @@
+{
+  "name": "long-market-digits-half-even-stop-ticks-mt5",
+  "proves": "spreadPoints 3 puts fills on half a point; digits 2 rounds half to even: buy 100.525 -> 100.52, sell 99.485 -> 99.48",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "gap-stop",
+    "sizing": "fixed",
+    "costs": "spreadPoints",
+    "broker": "mt5-sim",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "spreadPoints": 3
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.50",
+      "100.52"
+    ],
+    [
+      60,
+      "100.50",
+      "100.52"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.29",
+      "100.31"
+    ],
+    [
+      105,
+      "100.59",
+      "100.61"
+    ],
+    [
+      120,
+      "99.99",
+      "100.01"
+    ],
+    [
+      135,
+      "99.79",
+      "99.81"
+    ],
+    [
+      150,
+      "99.49",
+      "99.51"
+    ],
+    [
+      165,
+      "99.69",
+      "99.71"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.51",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "backtest-model.md:121-122: mt5-sim rounds fill prices to digits half to even (README Q5)."
+  ]
+}

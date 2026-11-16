@@ -2,7 +2,7 @@
   "name": "short-market-gap-target-bars-synthetic-paper",
   "proves": "a target the next bar opens beyond fills at that open (the default take-profit pricing)",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
-  "timestampGranularity": "bar",
+  "timestampGranularity": "tick",
   "trades": [
     {
       "ts": 1704880860000,
@@ -32,6 +32,6 @@
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "backtest-model.md:118 names --tp-fill print|level for a gap-crossed take-profit without stating the default; the oracle takes the open (print), per :84-85 (README Q7)."
+    "backtest-model.md:87-88: a take-profit the next bar opens beyond always fills at that open on paper (README Q7)."
   ]
 }

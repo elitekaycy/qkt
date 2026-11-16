@@ -82,7 +82,23 @@ Two simulated brokers, chosen with `--broker`:
   apply to `mt5-sim` only. A symbol replayed from
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
-  level, and one the next bar opens beyond (a gap) fills at that open.
+  level, and one the next bar opens beyond (a gap) fills at that open. The same holds for every
+  resting order, entries included: a pending `LIMIT`, `STOP` or stop-limit entry the bar trades
+  through fills at its price, one the bar opens beyond fills at that open. A take-profit the
+  next bar opens beyond always fills at that open on `paper` (`--tp-fill` is an `mt5-sim` setting).
+- **When a bar-close order fills.** A bar closes on the first tick at or after its end: the symbol's
+  own next tick, or, when the symbol goes quiet, the first tick of any symbol at or past the 1 s
+  heartbeat step `runtime.candle_close_grace_ms` (2 s by default) after the bar's end. A market
+  order from that close fills at that moment, at the symbol's latest quote: the closing tick's own
+  when the symbol closed its bar itself (`paper`: its mid; `mt5-sim`: its ask for a buy, bid for a
+  sell), the symbol's last tick when the heartbeat closed it. The closing tick has already been
+  offered to the orders working before the close, and orders the close places start working from
+  the next tick. On the synthetic bar path the closing tick is the next bar's open.
+- **Synthetic print times.** A bar replayed without ticks emits four prints: the open at the bar's
+  start, the first extreme a quarter of the bar later, the second extreme halfway through, and the
+  close 1 ms before the bar's end (a 1-minute bar starting at 10:01:00 prints at 10:01:00.000,
+  10:01:15.000, 10:01:30.000 and 10:01:59.999). A fill on a synthetic print carries that print's
+  time, whichever extreme comes first.
 - `qkt backtest --bars` resolves fills on the recorded ticks inside each bar by default (tick-resolved
   fills), wherever the store has them: signals come from bars, fills from real prints. On a golden XAUUSD
   run this reproduced a full tick replay fill for fill (170 of 170), where the synthetic bar path matched
@@ -102,7 +118,9 @@ Two simulated brokers, chosen with `--broker`:
   bar without ticks fills at its levels as above (stops then slip by `slippagePoints`), never at the
   bar's synthetic extreme.
 - **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
-  `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
+  `volumeMin` are rejected; fill prices round to `digits`, half to even (with `digits: 2`, 100.525
+  fills at 100.52 and 99.485 at 99.48), after slippage and the limit cap. A price is already on the
+  grid unless `spreadPoints`, `minSpreadPoints` or the synthetic spread put half a point on it. A BUY fills at the ask and a SELL at the
   bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`
   in `qkt.config.yaml`) adds the rest:
 
@@ -114,7 +132,9 @@ Two simulated brokers, chosen with `--broker`:
 
 Each knob can be set on its own, on the command line or under `execution:` in the config:
 `--execution-latency` (entry latency), `--stop-latency` (a crossed protective stop fills at the first
-quote at or after trigger + latency), `--tp-fill print|level` (pricing of a gap-crossed take-profit),
+quote at or after trigger + latency), `--tp-fill print|level` (pricing of a gap-crossed take-profit:
+`print`, the default, fills at the crossing price when it beats the level, the same rule as every
+other limit; `level` fills exactly at the level, as retail MT5 does; `touch` is accepted for `print`),
 `--slippage`, `--reject-every`, `--partial-fill`, `--order-spacing`. The run's `result.json` records the
 model used in `evidence.execution`.
 
@@ -144,7 +164,8 @@ no spread and nothing was charged.
 `paper` fills have none. `mt5-sim` slips market and stop fills against you by the instrument's
 `slippagePoints` (`instruments.yaml`, each point one `pointSize` wide) under `mt5-basic` and
 `mt5-realistic`, or as the `--slippage` option states. A limit, take-profit included, is never filled
-worse than its price, so it is not slipped.
+worse than its price, so it is not slipped, and the cap holds against a stated spread too: a target
+the feed's quote reaches while `spreadPoints` would price it past its level fills at the level.
 
 ## Spread
 
@@ -245,12 +266,22 @@ The fill, bracket, sizing and cost rules on this page are checked against an ind
 code): each scenario under `verification/oracle/engine/scenarios` runs its `.qkt` through `qkt backtest` and
 `ExecutionVerificationTest` compares the trade tape and P&L with no tolerance on money. Tranche A covers
 market, limit, stop and stop-limit entries, bracket and OCO exits on both sides and both fill paths (ticks and the
-synthetic bar path), every `SIZING` form with lot quantization, and spread, commission and slippage costs. The
-oracle's README lists every rule with the line it comes from and the places where this page is silent.
+synthetic bar path), every `SIZING` form with lot quantization, spread, commission and slippage costs, and
+partial closes and reversals on netting and hedging accounts. The oracle's README lists every rule with the line it
+comes from, and the questions this page once left open with the answer each now has here.
+
+## Currency conversion
+
+A symbol quoted in another currency than the account's (`--account-currency`, `account.currency`,
+`USD` by default) books its P&L and swap in the account currency at the rate of the moment
+(`commissionPerLot` is already in the account currency): from the symbol's own price when it is that currency pair (USDJPY's yen P&L at 1/price),
+otherwise from the mark of the pair `fx_conversion.symbols` (or `--fx-symbol USDJPY=...`) names.
+Sizing converts its budget through the same rate (see [SIZING](../reference/dsl/sizing.md#the-price-and-the-notional-sizing-uses)).
+A missing rate fails the run unless `fx_conversion.missing_policy` is `warn`; see
+[`account` and `fx_conversion`](../reference/config-schema.md#account-and-fx_conversion).
 
 ## What's not in the model
 
-- FX conversion of cross-currency positions
 - Borrowing costs for shorts
 - Tax effects
 

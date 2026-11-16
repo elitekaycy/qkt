@@ -2,11 +2,13 @@
 
 Two paths, as backtest-model.md "Fills" describes them:
 
-- `ticks` and `bars-ticks`: every fill resolves on a recorded tick (backtest-model.md:76-79 paper, :104-106
-  mt5-sim; :86-88 `--bars` "signals come from bars, fills from real prints").
+- `ticks` and `bars-ticks`: every fill resolves on a recorded tick (backtest-model.md:76-79 paper, :120-124
+  mt5-sim; :102-104 `--bars` "signals come from bars, fills from real prints").
 - `bars-synthetic`: a bar "has no prints between a bar's open, low, high and close" (backtest-model.md:83-85);
-  it replays "its synthetic open, extremes (the open position's adverse one first) and close" (:90-91); "an exit
-  the bar trades through fills at its level, and one the next bar opens beyond (a gap) fills at that open" (:84-85).
+  it replays "its synthetic open, extremes (the open position's adverse one first) and close" (:105-107); "an exit
+  the bar trades through fills at its level, and one the next bar opens beyond (a gap) fills at that open" (:84-85),
+  and "the same holds for every resting order, entries included" (:85-88). Each print carries the time :97-101 gives
+  it: the open at the bar's start, the extremes a quarter and half of the bar later, the close 1 ms before its end.
 """
 
 from __future__ import annotations
@@ -109,9 +111,8 @@ class State:
         side = action.side
         assert side in (LONG, SHORT)
         if self.position is not None and self.position.side != side:
-            # actions.md:93-97 and backtest-model.md:45-47: an opposite-side entry nets against the open
-            # position; the oracle only models reductions (reduce actions), never reversals.
-            raise AssertionError("oracle: opposite-side entry over an open position is out of scope")
+            self._opposite_entry(p, action, qty, price, label)
+            return
         stop = target = None
         if action.exit is not None:
             stop = rules.stop_level(side, price, action.exit.stop, self.inst)
@@ -119,6 +120,27 @@ class State:
         fill = self.book(p, side, qty, price, Decimal(0), "entry", label)
         fill.stop, fill.target = stop, target
         self.position = Position(side, qty, price, stop, target)
+
+    def _opposite_entry(self, p: Print, action: Action, qty: Decimal, price: Decimal, label: str) -> None:
+        """actions.md:100-108: an opposite-side order smaller than the position reduces it (hedging: part of the
+        oldest leg, closed by ticket); a larger one ends with the excess open on the other side. Hedging books
+        that as a close of every opposite leg then a fresh entry for the excess, two deals at the same price;
+        netting reverses the position in one fill that realises the closed part. The oracle holds one leg, and an
+        opposite entry carrying a BRACKET opens a coexisting leg on hedging (actions.md:109-110): out of scope."""
+        pos = self.position
+        assert pos is not None
+        assert action.exit is None, "oracle: an opposite entry with exits opens a hedged leg (out of scope)"
+        closed = min(qty, pos.qty)
+        excess = qty - closed
+        if excess == 0 or self.scenario.position_mode == "hedging":
+            self._close(p, closed, "close", label)
+            if excess > 0:
+                self.book(p, action.side, excess, price, Decimal(0), "entry", label)
+                self.position = Position(action.side, excess, price, None, None)
+            return
+        gross = rules.gross_pnl(pos.side, pos.entry, price, closed, self.inst)
+        self.book(p, action.side, qty, price, gross, "reverse", label)
+        self.position = Position(action.side, excess, price, None, None)
 
     def fire(self, bar: Bar, p: Print) -> None:
         """strategy-block.md:205,230: rules are evaluated on every candle close and are edge-triggered;
@@ -147,12 +169,13 @@ class State:
         return self.position is not None and self.position.side == (LONG if action.requires == "long" else SHORT)
 
     def _enter(self, action: Action, bar: Bar, p: Print) -> None:
+        price = rules.sizing_price(action.order_type, bar.close)
         stop_dist = None
         if action.exit is not None:
-            stop_dist = rules.stop_distance(action.side, bar.close, action.exit.stop, self.inst)
-        qty = rules.size(action.sizing, bar.close, self.balance, self.balance, stop_dist, self.inst)
+            stop_dist = rules.stop_distance(action.side, price, action.exit.stop, self.inst)
+        qty = rules.size(action.sizing, price, self.balance, self.balance, stop_dist, self.inst)
         if qty is None:
-            self.rejections += 1  # below volumeMin (sizing.md:220-224): "counted in the report's rejections"
+            self.rejections += 1  # below volumeMin (sizing.md:241-243): "counted in the report's rejections"
             return
         ot = action.order_type
         if ot.kind == "MARKET":
@@ -167,8 +190,9 @@ class State:
             raise ValueError(ot.kind)
 
     def work_pending(self, p: Print) -> None:
-        """actions.md:104-123: a limit rests at its price, a stop "triggers when price hits" its level, a
-        stop-limit rests a limit at the limit price once the stop trades. Triggers read the side's quote
+        """actions.md:112-135: a limit rests at its price, a stop "triggers when price hits" its level, a
+        stop-limit rests a limit at the limit price once the stop trades, filling on that tick when its quote already
+        satisfies the limit (actions.md:133-135). Triggers read the side's quote
         (rules.quote_for); fills price per venue (rules.paper_fill / rules.mt5_fill)."""
         still = []
         for o in self.pending:
@@ -190,7 +214,7 @@ class State:
     def work_exits(self, p: Print) -> None:
         """bracket.md:3: "when either side fills, the other auto-cancels"; backtest-model.md:77-79: the exit
         triggers on the first tick whose quote for its side reaches the level. The stop is a stop order (slipped on
-        mt5-sim, backtest-model.md:144-147), the target a limit (never slipped)."""
+        mt5-sim, backtest-model.md:164-167), the target a limit (never slipped)."""
         pos = self.position
         if pos is None:
             return
@@ -246,9 +270,9 @@ def replay_ticks(scenario: Scenario) -> State:
 
 
 def replay_synthetic(scenario: Scenario) -> State:
-    """Each bar replays open, adverse extreme, other extreme, close (backtest-model.md:90-91); with no open
+    """Each bar replays open, adverse extreme, other extreme, close (backtest-model.md:105-107); with no open
     position the order is open, low, high, close (backtest-data.md:25-27). The bar before it closes the rules."""
-    assert scenario.broker == "paper", "backtest-model.md:100-101: mt5-sim refuses the synthetic path"
+    assert scenario.broker == "paper", "backtest-model.md:116-117: mt5-sim refuses the synthetic path"
     st = State(scenario, scenario.instrument, scenario.starting_balance)
     prev: Optional[Bar] = None
     for bar in bars_of(scenario):
@@ -259,8 +283,10 @@ def replay_synthetic(scenario: Scenario) -> State:
         st.work_exits(open_print)
         adverse_first_low = st.position is None or st.position.side == LONG
         extremes = [bar.low, bar.high] if adverse_first_low else [bar.high, bar.low]
-        for price in extremes + [bar.close]:
-            p = Print(bar.start, Tick(bar.start, price, price), synthetic=True, bar_start=bar.start)
+        quarter = (bar.end - bar.start) // 4
+        times = [bar.start + quarter, bar.start + 2 * quarter, bar.end - 1]  # backtest-model.md:97-101
+        for ts, price in zip(times, extremes + [bar.close]):
+            p = Print(ts, Tick(ts, price, price), synthetic=True, bar_start=bar.start)
             st.work_pending(p)
             st.work_exits(p)
         prev = bar

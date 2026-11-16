@@ -2,8 +2,9 @@
 every SIZING form with lot quantization, spread/commission/slippage costs. Each case is named for what it proves.
 
 Bars are lists of four mid prices (ticks at :00/:15/:30/:45). The signal bar is bar 0 (close 100.50) unless the
-case says otherwise; the rule fires when that bar closes, i.e. on bar 1's first tick, which is quoted at 100.50
-so the sizing price and the market fill are the same number (see README Q1).
+case says otherwise; the rule fires when that bar closes, i.e. on bar 1's first tick, which is usually quoted at
+100.50. A market entry sizes at the signal bar's close and fills on that first tick (sizing.md:61-71,
+backtest-model.md:89-96); the `gap-open` cases quote that tick elsewhere to tell the two apart.
 """
 
 from __future__ import annotations
@@ -73,6 +74,12 @@ def oco(stop, limit):
 
 def close(side, at):
     return {"when": {"barClose": at, "position": side}, "do": {"kind": "close"}}
+
+
+def reverse(side, order_side, qty, at):
+    """An opposite-side market entry while `side` is held (actions.md:100-108)."""
+    do = {"kind": "entry", "side": order_side, "sizing": {"form": "fixed", "value": qty}}
+    return {"when": {"barClose": at, "position": side}, "do": do}
 
 
 def reduce(side, order_side, fraction, at):
@@ -234,7 +241,7 @@ CASES: list = [
         dims(entry="stop-limit", side="short", path="target"),
         [SIGNAL, ["100.50", "100.20", "99.95", "99.80"], ["99.50", "99.00", "98.94", "99.10"], TAIL],
         [entry("SELL", order_type={"type": "STOP_LIMIT", "stop": "100.00", "limit": "99.90"}, exit=by("1.00", "1.00"))],
-        notes=["Whether a stop-limit whose limit is already marketable fills on its trigger tick is not stated in the docs (README Q6)."],
+        notes=["actions.md:133-135: a stop-limit whose trigger price already satisfies its limit fills on that tick (README Q6)."],
     ),
     Case(
         "long-stoplimit-limit-never-fills-ticks-paper",
@@ -320,7 +327,7 @@ CASES: list = [
         [SIGNAL, FLAT_UP, ["100.00", "99.60", "99.40", "99.50"], ["98.00", "98.20", "97.80", "98.10"], TAIL],
         [entry("SELL", exit=by("1.00", "2.00"))],
         fill_mode="bars-synthetic",
-        notes=["backtest-model.md:118 names --tp-fill print|level for a gap-crossed take-profit without stating the default; the oracle takes the open (print), per :84-85 (README Q7)."],
+        notes=["backtest-model.md:87-88: a take-profit the next bar opens beyond always fills at that open on paper (README Q7)."],
     ),
     Case(
         "long-market-entry-and-stop-same-bar-bars-synthetic-paper",
@@ -337,7 +344,7 @@ CASES: list = [
         [SIGNAL, ["100.50", "100.80", "101.30", "101.20"], ["101.50", "101.80", "102.30", "101.90"], TAIL],
         [entry("BUY", order_type={"type": "STOP", "price": "101.00"}, exit=by("1.00", "1.00"))],
         fill_mode="bars-synthetic",
-        notes=["backtest-model.md:84-85 states the at-level rule for exits; the oracle applies it to pending entries too (README Q8)."],
+        notes=["backtest-model.md:85-88: the at-level rule holds for every resting order, entries included (README Q8)."],
     ),
     # --- --bars with tick-resolved fills: the same tapes as the tick replays ----------------------------
     Case(
@@ -395,7 +402,7 @@ CASES: list = [
         [SIGNAL, FLAT_UP, LONG_TARGET_HIT, TAIL],
         [entry("BUY", sizing=("usd", "1000"), exit=by("1.00", "2.00"))],
         instrument=dict(CS10),
-        notes=["sizing.md:51-57 does not say whether USD notional divides by price alone or price x contractSize; the oracle uses price x contractSize (README Q3)."],
+        notes=["sizing.md:73-78: one lot's notional is price x contractSize x the quote-to-account rate (README Q3)."],
     ),
     Case(
         "short-market-sizing-pct-equity-ticks-paper",
@@ -462,7 +469,7 @@ CASES: list = [
         [entry("BUY", exit=by("1.00", "2.00"))],
         instrument={**BASE, "spreadPoints": 10},
         broker="mt5-sim",
-        notes=["backtest-model.md:158 (fills at mid +- N/2) and :146 (a limit is never filled worse than its price) meet here; the limit price wins (README Q11)."],
+        notes=["backtest-model.md:166-168: a limit's cap holds against a stated spread, so the target fills at its level (README Q11)."],
     ),
     Case(
         "long-market-gap-stop-ticks-paper",
@@ -479,5 +486,84 @@ CASES: list = [
         [entry("SELL", exit=by("1.00", "2.00"))],
         instrument={**BASE, "slippagePoints": 3},
         broker="mt5-sim",
+    ),
+    # --- answered doc questions (README "Questions the docs now answer") ---------------------------------
+    Case(
+        "long-market-sizing-usd-gap-open-ticks-paper",
+        "SIZING 1000 USD sizes at the signal close 100.50 (9.95 lots) and fills on the next tick at 101.00",
+        dims(sizing="usd", path="target"),
+        [SIGNAL, ["101.00", "101.20", "100.80", "101.10"], ["101.50", "102.50", "103.01", "102.80"], TAIL],
+        [entry("BUY", sizing=("usd", "1000"), exit=by("1.00", "2.00"))],
+        notes=["sizing.md:66-68 sizes a market order at the signal bar's close; backtest-model.md:89-96 fills it on the tick that closed the bar (README Q1, Q2)."],
+    ),
+    Case(
+        "long-limit-sizing-pct-equity-ticks-paper",
+        "SIZING 5 PCT OF EQUITY on a LIMIT AT 99.80 sizes at the limit price: 500 / 99.80 = 5.01 lots",
+        dims(entry="limit", sizing="pct-equity", path="target"),
+        [SIGNAL, ["100.50", "100.30", "100.00", "99.90"], ["99.81", "99.79", "99.60", "99.70"], ["100.00", "100.50", "100.80", "100.60"], TAIL],
+        [entry("BUY", sizing=("pctEquity", "5"), order_type={"type": "LIMIT", "price": "99.80"}, exit=by("1.00", "1.00"))],
+        notes=["sizing.md:69-70: a LIMIT entry sizes at its own price, not the signal close (README Q1)."],
+    ),
+    Case(
+        "long-market-digits-half-even-stop-ticks-mt5",
+        "spreadPoints 3 puts fills on half a point; digits 2 rounds half to even: buy 100.525 -> 100.52, sell 99.485 -> 99.48",
+        dims(broker="mt5-sim", costs="spreadPoints", path="gap-stop"),
+        [["100.00", "100.10", "99.90", "100.51"], ["100.51", "100.80", "100.30", "100.60"], ["100.00", "99.80", "99.50", "99.70"], TAIL],
+        [entry("BUY", exit=by("1.00", "2.00"), at="100.51")],
+        instrument={**BASE, "spreadPoints": 3},
+        broker="mt5-sim",
+        notes=["backtest-model.md:121-122: mt5-sim rounds fill prices to digits half to even (README Q5)."],
+    ),
+    Case(
+        "short-stoplimit-marketable-ticks-mt5",
+        "a sell stop-limit whose trigger bid 99.94 already satisfies its 99.90 limit fills on that tick at the bid",
+        dims(entry="stop-limit", side="short", path="target", broker="mt5-sim", costs="spread"),
+        [SIGNAL, ["100.50", "100.20", "99.95", "99.80"], ["99.50", "99.00", "98.93", "99.10"], TAIL],
+        [entry("SELL", order_type={"type": "STOP_LIMIT", "stop": "100.00", "limit": "99.90"}, exit=by("1.00", "1.00"))],
+        broker="mt5-sim",
+        notes=["actions.md:133-135: the limit fills on the tick that trips the stop when that tick already satisfies it (README Q6)."],
+    ),
+    Case(
+        "short-market-gap-target-ticks-mt5",
+        "a tick whose ask gaps through a short's target fills at that ask, better than the level (--tp-fill print, the default)",
+        dims(side="short", path="gap-target", broker="mt5-sim", costs="spread"),
+        [SIGNAL, FLAT_UP, ["100.00", "99.80", "97.50", "98.00"], TAIL],
+        [entry("SELL", exit=by("1.00", "2.00"))],
+        broker="mt5-sim",
+        notes=["backtest-model.md:135-137: --tp-fill defaults to print, the crossing price when it beats the level (README Q7)."],
+    ),
+    Case(
+        "short-limit-entry-gap-bars-synthetic-paper",
+        "a pending sell limit the next bar opens beyond fills at that open on the synthetic path",
+        dims(fills="bars-synthetic", entry="limit", side="short", path="target"),
+        [SIGNAL, ["100.50", "100.90", "100.70", "101.00"], ["101.50", "101.80", "101.40", "101.60"], ["101.00", "100.80", "100.40", "100.60"], TAIL],
+        [entry("SELL", order_type={"type": "LIMIT", "price": "101.20"}, exit=by("1.00", "1.00"))],
+        fill_mode="bars-synthetic",
+        notes=["backtest-model.md:85-88: a resting entry the bar opens beyond fills at that open (README Q8)."],
+    ),
+    Case(
+        "long-market-partial-close-then-close-hedging-ticks-paper",
+        "on a hedging account SELL 0.5 * POSITION closes half the leg by ticket; CLOSE realises the rest",
+        dims(exit="partial-close", path="close", mode="hedging"),
+        [SIGNAL, FLAT_UP, ["101.00", "101.50", "101.80", "102.00"], ["102.00", "102.20", "102.60", "102.80"], ["102.90", "103.20", "102.80", "103.00"], ["103.00", "103.10", "102.90", "103.05"], TAIL],
+        [entry("BUY"), reduce("long", "SELL", "0.5", "102.00"), close("long", "103.00")],
+        notes=["actions.md:102-104: a smaller opposite order closes that part of the oldest leg (README Q9)."],
+    ),
+    Case(
+        "long-market-reverse-netting-ticks-paper",
+        "SELL 0.2 over a 0.1 long on a netting account reverses in one fill: realises the long, opens a 0.1 short",
+        dims(exit="close-rule", path="close", mode="netting"),
+        [SIGNAL, FLAT_UP, ["100.50", "101.00", "101.50", "102.00"], ["102.00", "101.50", "101.20", "101.00"], TAIL],
+        [entry("BUY"), reverse("long", "SELL", "0.2", "102.00"), close("short", "101.00")],
+        position_mode="netting",
+        notes=["actions.md:105-108: netting reverses an oversized opposite order in one fill (README Q10)."],
+    ),
+    Case(
+        "long-market-reverse-hedging-ticks-paper",
+        "SELL 0.2 over a 0.1 long on a hedging account closes the leg by ticket and opens the 0.1 excess as a short",
+        dims(exit="close-rule", path="close", mode="hedging"),
+        [SIGNAL, FLAT_UP, ["100.50", "101.00", "101.50", "102.00"], ["102.00", "101.50", "101.20", "101.00"], TAIL],
+        [entry("BUY"), reverse("long", "SELL", "0.2", "102.00"), close("short", "101.00")],
+        notes=["actions.md:105-108: hedging closes the opposite legs, then opens the excess, two deals at one price (README Q10)."],
     ),
 ]

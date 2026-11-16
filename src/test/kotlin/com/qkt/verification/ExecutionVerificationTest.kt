@@ -16,8 +16,8 @@ import org.junit.jupiter.api.io.TempDir
  * derived from qkt's docs (`verification/oracle/engine`, see its README for every rule and its doc line).
  *
  * Comparison is exact: side, quantity, price, realised (net of that fill's commission) and the armed stop and
- * target levels compare as decimals with no tolerance; timestamps compare exactly on tick-resolved fills and at
- * bar granularity on the synthetic bar path (the position of a synthetic print inside its bar is not documented).
+ * target levels compare as decimals with no tolerance; timestamps compare exactly, on the synthetic bar path too
+ * (`docs/concepts/backtest-model.md` "Synthetic print times"), unless an expectation states bar granularity.
  * The run's `finalRealized` and `commissionPaid` are compared at the two decimals `--json` rounds them to.
  * Scenarios that expose a bug are held in [ExecutionVerificationKnownBugsTest] instead of here.
  */

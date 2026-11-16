@@ -1,0 +1,173 @@
+{
+  "name": "long-market-reverse-hedging-ticks-paper",
+  "proves": "SELL 0.2 over a 0.1 long on a hedging account closes the leg by ticket and opens the 0.1 excess as a short",
+  "dimensions": {
+    "entry": "market",
+    "exit": "close-rule",
+    "side": "long",
+    "fills": "ticks",
+    "path": "close",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "100.49",
+      "100.51"
+    ],
+    [
+      135,
+      "100.99",
+      "101.01"
+    ],
+    [
+      150,
+      "101.49",
+      "101.51"
+    ],
+    [
+      165,
+      "101.99",
+      "102.01"
+    ],
+    [
+      180,
+      "101.99",
+      "102.01"
+    ],
+    [
+      195,
+      "101.49",
+      "101.51"
+    ],
+    [
+      210,
+      "101.19",
+      "101.21"
+    ],
+    [
+      225,
+      "100.99",
+      "101.01"
+    ],
+    [
+      240,
+      "99.99",
+      "100.01"
+    ],
+    [
+      255,
+      "99.99",
+      "100.01"
+    ],
+    [
+      270,
+      "99.99",
+      "100.01"
+    ],
+    [
+      285,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "102.00",
+        "position": "long"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.2"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "101.00",
+        "position": "short"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": [
+    "actions.md:105-108: hedging closes the opposite legs, then opens the excess, two deals at one price (README Q10)."
+  ]
+}
