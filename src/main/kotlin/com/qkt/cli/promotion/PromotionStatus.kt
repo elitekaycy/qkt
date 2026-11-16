@@ -17,9 +17,9 @@ internal fun promotionStatus(
 ): Int {
     val subject = args.requirePositional(1, "<strategy|strategy.qkt>")
     val explicitPath = args.option("strategy")?.let(options::strategyPath)
+    val subjectPath = Path.of(subject)
     val positionalPath =
-        Path
-            .of(subject)
+        subjectPath
             .takeIf { explicitPath == null && (Files.exists(it) || subject.endsWith(".qkt")) }
             ?.let { options.strategyPath(it.toString()) }
     val path = explicitPath ?: positionalPath

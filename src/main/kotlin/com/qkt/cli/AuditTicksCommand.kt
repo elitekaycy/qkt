@@ -28,19 +28,6 @@ class AuditTicksCommand(
     /** Test seam: the TradingView drift audit, which needs the live TradingView feed. */
     private val tradingViewAudit: TradingViewAudit = ::runTradingViewDriftAudit,
 ) {
-    /** Signature of the TradingView drift audit: client, symbol, broker symbol, seconds, poll ms, json, out path. */
-    fun interface TradingViewAudit {
-        fun run(
-            client: MT5Client,
-            symbol: String,
-            brokerSymbol: String,
-            durationSeconds: Long,
-            pollMs: Long,
-            jsonOutput: Boolean,
-            outPath: String?,
-        ): Int
-    }
-
     /** Run the selected audit and return a process exit code. */
     fun run(): Int {
         val symbol = args.option("symbol") ?: return missing("symbol")
@@ -124,14 +111,14 @@ class AuditTicksCommand(
                 outPath = args.option("out"),
             )
         }
-        return tradingViewAudit.run(
-            client = mt5Client,
-            symbol = symbol,
-            brokerSymbol = brokerSymbol,
-            durationSeconds = duration,
-            pollMs = pollMs,
-            jsonOutput = args.flag("json"),
-            outPath = args.option("out"),
+        return tradingViewAudit(
+            mt5Client,
+            symbol,
+            brokerSymbol,
+            duration,
+            pollMs,
+            args.flag("json"),
+            args.option("out"),
         )
     }
 
@@ -152,3 +139,6 @@ class AuditTicksCommand(
         private const val DEFAULT_MT5_HISTORY_SETTLE_MS = 15_000L
     }
 }
+
+/** The TradingView drift audit: client, symbol, broker symbol, seconds, poll ms, json, out path; returns an exit code. */
+typealias TradingViewAudit = (MT5Client, String, String, Long, Long, Boolean, String?) -> Int

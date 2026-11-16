@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import com.qkt.app.LiveSession
+import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
 import com.qkt.app.SessionPnl
 import com.qkt.cli.observe.ObservabilityServer
@@ -51,7 +51,7 @@ internal fun pendingStackLayers(infos: List<OrderManager.PendingStackLayerInfo>)
 
 /** What a `qkt run` does on SIGTERM/SIGINT: stop the session, wait, close the observability server. */
 internal fun gracefulShutdown(
-    session: LiveSession,
+    session: LiveSessionHandle,
     server: ObservabilityServer?,
     shutdownTimeoutMs: Long,
     flattenOnStop: Boolean,

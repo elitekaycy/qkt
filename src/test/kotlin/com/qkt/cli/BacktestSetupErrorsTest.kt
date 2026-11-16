@@ -74,6 +74,28 @@ class BacktestSetupErrorsTest : BacktestCommandFixture() {
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(err).contains("--starting-balance 5000 conflicts with portfolio CAPITAL 10000")
+
+        val direct =
+            Args(
+                arrayOf(
+                    "backtest",
+                    book.toString(),
+                    "--from",
+                    "2024-01-15",
+                    "--to",
+                    "2024-01-17",
+                    "--starting-balance",
+                    "5000",
+                ),
+            )
+        assertThatThrownBy {
+            BacktestContext.buildPortfolio(
+                direct,
+                com.qkt.dsl.portfolio.PortfolioLoader
+                    .load(book),
+            )
+        }.isInstanceOf(BacktestContext.Companion.SetupError::class.java)
+            .hasMessageContaining("conflicts with portfolio CAPITAL 10000")
     }
 
     @Test
