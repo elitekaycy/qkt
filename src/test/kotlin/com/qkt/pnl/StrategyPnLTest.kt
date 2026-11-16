@@ -3,6 +3,7 @@ package com.qkt.pnl
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.Trade
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.IntentBook
 import com.qkt.positions.StrategyPositionTracker
@@ -178,5 +179,17 @@ class StrategyPnLTest {
         val pnl = StrategyPnL(StrategyPositionTracker(), MarketPriceTracker())
         pnl.restore("A")
         assertThat(pnl.realizedFor("A")).isEqualByComparingTo(Money.ZERO)
+    }
+
+    @Test
+    fun `a netted primary with no leg book is valued at the closing mark`() {
+        val tracker = StrategyPositionTracker()
+        val prices = MarketPriceTracker()
+        val pnl = StrategyPnL(tracker, prices)
+
+        tracker.apply("A", Trade("t1", "BTCUSDT", Money.of("80000"), Money.of("1"), Side.BUY, 0L))
+        prices.update("BTCUSDT", Money.of("81500"))
+
+        assertThat(pnl.unrealizedFor("A", "BTCUSDT")).isEqualByComparingTo("1500")
     }
 }

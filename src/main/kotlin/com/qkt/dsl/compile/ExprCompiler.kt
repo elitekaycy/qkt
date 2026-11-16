@@ -130,6 +130,5 @@ class ExprCompiler(
                     }
                 }
             }
-            else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
 }

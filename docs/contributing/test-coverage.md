@@ -15,7 +15,7 @@ end state is `line=100` and `branch=100`.
 ## Docs-only pull requests
 
 A pull request whose every changed path is documentation that nothing reads skips the build, tests,
-coverage gates and data e2e suite; the `build` check still reports success, with a `docs-only`
+coverage gates, data e2e suite and script tests; the `build` and `scripts` checks still report success, with a `docs-only`
 notice on the run. Commit authors are still checked. `scripts/classify-ci-changes.sh` decides from
 the PR merge commit's changed paths alone:
 

@@ -97,7 +97,6 @@ class ActionCompiler(
             }
             is Resize -> resizes.compile(action)
             is com.qkt.dsl.ast.OpenStructure -> structures.compile(action)
-            else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 
     private fun compileBlock(

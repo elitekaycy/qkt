@@ -123,8 +123,6 @@ internal class OrderRouter(
             is OrderRequest.TimeExit -> timeExits.submit(request)
 
             is OrderRequest.Stack -> stackExecution.submit(request)
-
-            else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
 
     private fun submitOto(req: OrderRequest.OTO): SubmitAck {

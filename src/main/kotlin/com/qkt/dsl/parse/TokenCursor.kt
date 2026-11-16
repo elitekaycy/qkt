@@ -125,18 +125,16 @@ internal class TokenCursor(
             ),
         )
     }
-
-    private companion object {
-        val SYNC_KINDS =
-            setOf(
-                TokenKind.DEFAULTS,
-                TokenKind.SYMBOLS,
-                TokenKind.LET,
-                TokenKind.PARAM,
-                TokenKind.RULES,
-                TokenKind.WHEN,
-                TokenKind.FOR,
-                TokenKind.EOF,
-            )
-    }
 }
+
+private val SYNC_KINDS =
+    setOf(
+        TokenKind.DEFAULTS,
+        TokenKind.SYMBOLS,
+        TokenKind.LET,
+        TokenKind.PARAM,
+        TokenKind.RULES,
+        TokenKind.WHEN,
+        TokenKind.FOR,
+        TokenKind.EOF,
+    )
