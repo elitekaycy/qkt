@@ -1,0 +1,2165 @@
+{
+    "schema": "qkt-backtest-result-v1",
+    "schemaVersion": 1,
+    "trades": 8,
+    "roundTrips": 4,
+    "roundTripsWon": 4,
+    "finalRealized": 9.99,
+    "finalUnrealized": 0.0,
+    "totalPnL": 9.99,
+    "commissionPaid": 0.57,
+    "swapPaid": 0.0,
+    "winRate": 1.0,
+    "maxDrawdown": 3.5E-5,
+    "profitFactor": null,
+    "avgWin": 2.4975,
+    "avgLoss": 0.0,
+    "largestWin": 3.11,
+    "largestLoss": 0.0,
+    "maxConsecutiveLosses": 0,
+    "sharpeRatio": 80.45085662,
+    "calmarRatio": 28.54285714,
+    "sortinoRatio": 721.4479108,
+    "turnover": 0.005316,
+    "executionModel": "paper",
+    "maxDailyDrawdown": 3.5E-5,
+    "dailyPnL": {
+        "2024-03-04": 9.99
+    },
+    "halts": 0,
+    "runawayBreaker": {
+        "enforceLiveBreakers": false,
+        "maxRoundTrips": 10,
+        "roundTripWindowMs": 600000,
+        "maxRejections": 5,
+        "rejectionWindowMs": 60000,
+        "trips": []
+    },
+    "inputSummary": {
+        "attemptedFeedTicks": 1620,
+        "liveTicks": 1620,
+        "warmupTicks": 0,
+        "warmupCandles": 0,
+        "liveCandles": 1620,
+        "malformedTicks": 0,
+        "droppedLateTicks": 0,
+        "streamCandles": {
+            "KALSHI:KXS@front.p70:1m": 179,
+            "KALSHI:KXS_H3_T4:1m": 181
+        },
+        "strategyCandleEvaluations": {
+            "golden_event_slots:p70:KALSHI:KXS@front.p70:1m": 179,
+            "golden_event_slots:tail:KALSHI:KXS_H3_T4:1m": 181
+        }
+    },
+    "cadence": "CANDLE_CLOSE",
+    "conditionalAutocorr": {
+        "KALSHI:KXS@front.p70": {
+            "perHour": {
+                "11": -0.28656853,
+                "12": -0.01694915
+            },
+            "perRegime": {
+                "high": -0.28376436
+            },
+            "hourCounts": {
+                "10": 56,
+                "11": 60,
+                "12": 60,
+                "13": 1
+            },
+            "regimeCounts": {
+                "high": 62,
+                "low": 115
+            }
+        },
+        "KALSHI:KXS_H1_T1": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 1
+            },
+            "regimeCounts": {
+                "high": 58
+            }
+        },
+        "KALSHI:KXS_H1_T2": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 1
+            },
+            "regimeCounts": {
+                "high": 58
+            }
+        },
+        "KALSHI:KXS_H1_T3": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 1
+            },
+            "regimeCounts": {
+                "high": 58
+            }
+        },
+        "KALSHI:KXS_H1_T4": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 1
+            },
+            "regimeCounts": {
+                "high": 58
+            }
+        },
+        "KALSHI:KXS_H2_T1": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 1
+            },
+            "regimeCounts": {
+                "high": 118
+            }
+        },
+        "KALSHI:KXS_H2_T2": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 1
+            },
+            "regimeCounts": {
+                "high": 118
+            }
+        },
+        "KALSHI:KXS_H2_T3": {
+            "perHour": {
+                "11": -0.01694915
+            },
+            "perRegime": {
+                "high": -0.01111111
+            },
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 1
+            },
+            "regimeCounts": {
+                "high": 91,
+                "low": 27
+            }
+        },
+        "KALSHI:KXS_H2_T4": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 1
+            },
+            "regimeCounts": {
+                "high": 118
+            }
+        },
+        "KALSHI:KXS_H3_T1": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 60,
+                "13": 1
+            },
+            "regimeCounts": {
+                "high": 178
+            }
+        },
+        "KALSHI:KXS_H3_T2": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 60,
+                "13": 1
+            },
+            "regimeCounts": {
+                "high": 178
+            }
+        },
+        "KALSHI:KXS_H3_T3": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 60,
+                "13": 1
+            },
+            "regimeCounts": {
+                "high": 178
+            }
+        },
+        "KALSHI:KXS_H3_T4": {
+            "perHour": {},
+            "perRegime": {},
+            "hourCounts": {
+                "10": 57,
+                "11": 60,
+                "12": 60,
+                "13": 2
+            },
+            "regimeCounts": {
+                "high": 179
+            }
+        }
+    },
+    "tradeSummary": {
+        "fills": 8,
+        "buyFills": 4,
+        "sellFills": 4,
+        "sideAttribution": "fill_side",
+        "longEntryFills": 3,
+        "shortEntryFills": 1,
+        "longExitFills": 3,
+        "shortExitFills": 1,
+        "unknownPositionFills": 0,
+        "positionAttribution": "strategy_position_transition",
+        "buyRealized": 2.72,
+        "sellRealized": 7.27,
+        "grossProfit": 10.48,
+        "grossLoss": -0.49,
+        "rejections": 0,
+        "rejectionRate": 0.0,
+        "riskAuditedFills": 0,
+        "minRiskUsd": null,
+        "avgRiskUsd": null,
+        "maxRiskUsd": null,
+        "tradedNotional": 53.16,
+        "maxFillNotional": 10.0
+    },
+    "global": {
+        "realizedTotal": 9.99,
+        "unrealizedTotal": 0.0,
+        "totalPnL": 9.99,
+        "commissionPaid": 0.57,
+        "swapPaid": 0.0,
+        "tradeCount": 8,
+        "roundTrips": 4,
+        "roundTripsWon": 4,
+        "roundTripsBreakEven": 0,
+        "winRate": 1.0,
+        "maxDrawdown": 3.5E-5,
+        "profitFactor": null,
+        "avgWin": 2.4975,
+        "avgLoss": 0.0,
+        "largestWin": 3.11,
+        "largestLoss": 0.0,
+        "maxConsecutiveLosses": 0,
+        "sharpeRatio": 80.45085662,
+        "calmarRatio": 28.54285714,
+        "sortinoRatio": 721.4479108,
+        "turnover": 0.005316,
+        "maxDailyDrawdown": 3.5E-5,
+        "annualizationFactor": 375685.7142857143,
+        "dailyPnL": {
+            "2024-03-04": 9.99
+        },
+        "drawdownPeriods": [],
+        "monteCarlo": null,
+        "equityCurve": [
+            {
+                "timestamp": 1709546520000,
+                "iso": "2024-03-04T10:02:00Z",
+                "equity": 10000.0
+            },
+            {
+                "timestamp": 1709546580000,
+                "iso": "2024-03-04T10:03:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546640000,
+                "iso": "2024-03-04T10:04:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546700000,
+                "iso": "2024-03-04T10:05:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546760000,
+                "iso": "2024-03-04T10:06:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546820000,
+                "iso": "2024-03-04T10:07:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546880000,
+                "iso": "2024-03-04T10:08:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709546940000,
+                "iso": "2024-03-04T10:09:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547000000,
+                "iso": "2024-03-04T10:10:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547060000,
+                "iso": "2024-03-04T10:11:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547120000,
+                "iso": "2024-03-04T10:12:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547180000,
+                "iso": "2024-03-04T10:13:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547240000,
+                "iso": "2024-03-04T10:14:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547300000,
+                "iso": "2024-03-04T10:15:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547360000,
+                "iso": "2024-03-04T10:16:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547420000,
+                "iso": "2024-03-04T10:17:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547480000,
+                "iso": "2024-03-04T10:18:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547540000,
+                "iso": "2024-03-04T10:19:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547600000,
+                "iso": "2024-03-04T10:20:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547660000,
+                "iso": "2024-03-04T10:21:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547720000,
+                "iso": "2024-03-04T10:22:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547780000,
+                "iso": "2024-03-04T10:23:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547840000,
+                "iso": "2024-03-04T10:24:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547900000,
+                "iso": "2024-03-04T10:25:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709547960000,
+                "iso": "2024-03-04T10:26:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548020000,
+                "iso": "2024-03-04T10:27:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548080000,
+                "iso": "2024-03-04T10:28:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548140000,
+                "iso": "2024-03-04T10:29:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548200000,
+                "iso": "2024-03-04T10:30:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548260000,
+                "iso": "2024-03-04T10:31:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548320000,
+                "iso": "2024-03-04T10:32:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548380000,
+                "iso": "2024-03-04T10:33:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548440000,
+                "iso": "2024-03-04T10:34:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548500000,
+                "iso": "2024-03-04T10:35:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548560000,
+                "iso": "2024-03-04T10:36:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548620000,
+                "iso": "2024-03-04T10:37:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548680000,
+                "iso": "2024-03-04T10:38:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548740000,
+                "iso": "2024-03-04T10:39:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548800000,
+                "iso": "2024-03-04T10:40:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548860000,
+                "iso": "2024-03-04T10:41:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548920000,
+                "iso": "2024-03-04T10:42:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709548980000,
+                "iso": "2024-03-04T10:43:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549040000,
+                "iso": "2024-03-04T10:44:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549100000,
+                "iso": "2024-03-04T10:45:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549160000,
+                "iso": "2024-03-04T10:46:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549220000,
+                "iso": "2024-03-04T10:47:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549280000,
+                "iso": "2024-03-04T10:48:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549340000,
+                "iso": "2024-03-04T10:49:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549400000,
+                "iso": "2024-03-04T10:50:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549460000,
+                "iso": "2024-03-04T10:51:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549520000,
+                "iso": "2024-03-04T10:52:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549580000,
+                "iso": "2024-03-04T10:53:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549640000,
+                "iso": "2024-03-04T10:54:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549700000,
+                "iso": "2024-03-04T10:55:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549760000,
+                "iso": "2024-03-04T10:56:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549820000,
+                "iso": "2024-03-04T10:57:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549880000,
+                "iso": "2024-03-04T10:58:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709549940000,
+                "iso": "2024-03-04T10:59:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709550000000,
+                "iso": "2024-03-04T11:00:00Z",
+                "equity": 9999.65
+            },
+            {
+                "timestamp": 1709550060000,
+                "iso": "2024-03-04T11:01:00Z",
+                "equity": 10002.75
+            },
+            {
+                "timestamp": 1709550120000,
+                "iso": "2024-03-04T11:02:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550180000,
+                "iso": "2024-03-04T11:03:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550240000,
+                "iso": "2024-03-04T11:04:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550300000,
+                "iso": "2024-03-04T11:05:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550360000,
+                "iso": "2024-03-04T11:06:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550420000,
+                "iso": "2024-03-04T11:07:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550480000,
+                "iso": "2024-03-04T11:08:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550540000,
+                "iso": "2024-03-04T11:09:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550600000,
+                "iso": "2024-03-04T11:10:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550660000,
+                "iso": "2024-03-04T11:11:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550720000,
+                "iso": "2024-03-04T11:12:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550780000,
+                "iso": "2024-03-04T11:13:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550840000,
+                "iso": "2024-03-04T11:14:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550900000,
+                "iso": "2024-03-04T11:15:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709550960000,
+                "iso": "2024-03-04T11:16:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551020000,
+                "iso": "2024-03-04T11:17:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551080000,
+                "iso": "2024-03-04T11:18:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551140000,
+                "iso": "2024-03-04T11:19:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551200000,
+                "iso": "2024-03-04T11:20:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551260000,
+                "iso": "2024-03-04T11:21:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551320000,
+                "iso": "2024-03-04T11:22:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551380000,
+                "iso": "2024-03-04T11:23:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551440000,
+                "iso": "2024-03-04T11:24:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551500000,
+                "iso": "2024-03-04T11:25:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551560000,
+                "iso": "2024-03-04T11:26:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551620000,
+                "iso": "2024-03-04T11:27:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551680000,
+                "iso": "2024-03-04T11:28:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551740000,
+                "iso": "2024-03-04T11:29:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551800000,
+                "iso": "2024-03-04T11:30:00Z",
+                "equity": 10002.4
+            },
+            {
+                "timestamp": 1709551860000,
+                "iso": "2024-03-04T11:31:00Z",
+                "equity": 10004.4
+            },
+            {
+                "timestamp": 1709551920000,
+                "iso": "2024-03-04T11:32:00Z",
+                "equity": 10004.4
+            },
+            {
+                "timestamp": 1709551980000,
+                "iso": "2024-03-04T11:33:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552040000,
+                "iso": "2024-03-04T11:34:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552100000,
+                "iso": "2024-03-04T11:35:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552160000,
+                "iso": "2024-03-04T11:36:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552220000,
+                "iso": "2024-03-04T11:37:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552280000,
+                "iso": "2024-03-04T11:38:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552340000,
+                "iso": "2024-03-04T11:39:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552400000,
+                "iso": "2024-03-04T11:40:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552460000,
+                "iso": "2024-03-04T11:41:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552520000,
+                "iso": "2024-03-04T11:42:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552580000,
+                "iso": "2024-03-04T11:43:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552640000,
+                "iso": "2024-03-04T11:44:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552700000,
+                "iso": "2024-03-04T11:45:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552760000,
+                "iso": "2024-03-04T11:46:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552820000,
+                "iso": "2024-03-04T11:47:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552880000,
+                "iso": "2024-03-04T11:48:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709552940000,
+                "iso": "2024-03-04T11:49:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553000000,
+                "iso": "2024-03-04T11:50:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553060000,
+                "iso": "2024-03-04T11:51:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553120000,
+                "iso": "2024-03-04T11:52:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553180000,
+                "iso": "2024-03-04T11:53:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553240000,
+                "iso": "2024-03-04T11:54:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553300000,
+                "iso": "2024-03-04T11:55:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553360000,
+                "iso": "2024-03-04T11:56:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553420000,
+                "iso": "2024-03-04T11:57:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553480000,
+                "iso": "2024-03-04T11:58:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553540000,
+                "iso": "2024-03-04T11:59:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553600000,
+                "iso": "2024-03-04T12:00:00Z",
+                "equity": 10004.19
+            },
+            {
+                "timestamp": 1709553660000,
+                "iso": "2024-03-04T12:01:00Z",
+                "equity": 10007.43
+            },
+            {
+                "timestamp": 1709553720000,
+                "iso": "2024-03-04T12:02:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709553780000,
+                "iso": "2024-03-04T12:03:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709553840000,
+                "iso": "2024-03-04T12:04:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709553900000,
+                "iso": "2024-03-04T12:05:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709553960000,
+                "iso": "2024-03-04T12:06:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554020000,
+                "iso": "2024-03-04T12:07:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554080000,
+                "iso": "2024-03-04T12:08:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554140000,
+                "iso": "2024-03-04T12:09:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554200000,
+                "iso": "2024-03-04T12:10:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554260000,
+                "iso": "2024-03-04T12:11:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554320000,
+                "iso": "2024-03-04T12:12:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554380000,
+                "iso": "2024-03-04T12:13:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554440000,
+                "iso": "2024-03-04T12:14:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554500000,
+                "iso": "2024-03-04T12:15:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554560000,
+                "iso": "2024-03-04T12:16:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554620000,
+                "iso": "2024-03-04T12:17:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554680000,
+                "iso": "2024-03-04T12:18:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554740000,
+                "iso": "2024-03-04T12:19:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554800000,
+                "iso": "2024-03-04T12:20:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554860000,
+                "iso": "2024-03-04T12:21:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554920000,
+                "iso": "2024-03-04T12:22:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709554980000,
+                "iso": "2024-03-04T12:23:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555040000,
+                "iso": "2024-03-04T12:24:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555100000,
+                "iso": "2024-03-04T12:25:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555160000,
+                "iso": "2024-03-04T12:26:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555220000,
+                "iso": "2024-03-04T12:27:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555280000,
+                "iso": "2024-03-04T12:28:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555340000,
+                "iso": "2024-03-04T12:29:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555400000,
+                "iso": "2024-03-04T12:30:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555460000,
+                "iso": "2024-03-04T12:31:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555520000,
+                "iso": "2024-03-04T12:32:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555580000,
+                "iso": "2024-03-04T12:33:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555640000,
+                "iso": "2024-03-04T12:34:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555700000,
+                "iso": "2024-03-04T12:35:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555760000,
+                "iso": "2024-03-04T12:36:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555820000,
+                "iso": "2024-03-04T12:37:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555880000,
+                "iso": "2024-03-04T12:38:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709555940000,
+                "iso": "2024-03-04T12:39:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556000000,
+                "iso": "2024-03-04T12:40:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556060000,
+                "iso": "2024-03-04T12:41:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556120000,
+                "iso": "2024-03-04T12:42:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556180000,
+                "iso": "2024-03-04T12:43:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556240000,
+                "iso": "2024-03-04T12:44:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556300000,
+                "iso": "2024-03-04T12:45:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556360000,
+                "iso": "2024-03-04T12:46:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556420000,
+                "iso": "2024-03-04T12:47:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556480000,
+                "iso": "2024-03-04T12:48:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556540000,
+                "iso": "2024-03-04T12:49:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556600000,
+                "iso": "2024-03-04T12:50:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556660000,
+                "iso": "2024-03-04T12:51:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556720000,
+                "iso": "2024-03-04T12:52:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556780000,
+                "iso": "2024-03-04T12:53:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556840000,
+                "iso": "2024-03-04T12:54:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556900000,
+                "iso": "2024-03-04T12:55:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709556960000,
+                "iso": "2024-03-04T12:56:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709557020000,
+                "iso": "2024-03-04T12:57:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709557080000,
+                "iso": "2024-03-04T12:58:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709557140000,
+                "iso": "2024-03-04T12:59:00Z",
+                "equity": 10007.09
+            },
+            {
+                "timestamp": 1709557260000,
+                "iso": "2024-03-04T13:01:00Z",
+                "equity": 10009.99
+            }
+        ]
+    },
+    "perStrategy": {
+        "golden_event_slots": {
+            "realizedTotal": 9.99,
+            "unrealizedTotal": 0.0,
+            "totalPnL": 9.99,
+            "commissionPaid": 0.57,
+            "swapPaid": 0.0,
+            "tradeCount": 8,
+            "roundTrips": 4,
+            "roundTripsWon": 4,
+            "roundTripsBreakEven": 0,
+            "winRate": 1.0,
+            "maxDrawdown": 3.5E-5,
+            "profitFactor": null,
+            "avgWin": 2.4975,
+            "avgLoss": 0.0,
+            "largestWin": 3.11,
+            "largestLoss": 0.0,
+            "maxConsecutiveLosses": 0,
+            "sharpeRatio": 80.45085662,
+            "calmarRatio": 28.54285714,
+            "sortinoRatio": 721.4479108,
+            "turnover": 0.005316,
+            "maxDailyDrawdown": 3.5E-5,
+            "annualizationFactor": 375685.7142857143,
+            "dailyPnL": {
+                "2024-03-04": 9.99
+            },
+            "drawdownPeriods": [],
+            "monteCarlo": null,
+            "equityCurve": [
+                {
+                    "timestamp": 1709546520000,
+                    "iso": "2024-03-04T10:02:00Z",
+                    "equity": 10000.0
+                },
+                {
+                    "timestamp": 1709546580000,
+                    "iso": "2024-03-04T10:03:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546640000,
+                    "iso": "2024-03-04T10:04:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546700000,
+                    "iso": "2024-03-04T10:05:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546760000,
+                    "iso": "2024-03-04T10:06:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546820000,
+                    "iso": "2024-03-04T10:07:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546880000,
+                    "iso": "2024-03-04T10:08:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709546940000,
+                    "iso": "2024-03-04T10:09:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547000000,
+                    "iso": "2024-03-04T10:10:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547060000,
+                    "iso": "2024-03-04T10:11:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547120000,
+                    "iso": "2024-03-04T10:12:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547180000,
+                    "iso": "2024-03-04T10:13:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547240000,
+                    "iso": "2024-03-04T10:14:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547300000,
+                    "iso": "2024-03-04T10:15:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547360000,
+                    "iso": "2024-03-04T10:16:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547420000,
+                    "iso": "2024-03-04T10:17:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547480000,
+                    "iso": "2024-03-04T10:18:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547540000,
+                    "iso": "2024-03-04T10:19:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547600000,
+                    "iso": "2024-03-04T10:20:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547660000,
+                    "iso": "2024-03-04T10:21:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547720000,
+                    "iso": "2024-03-04T10:22:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547780000,
+                    "iso": "2024-03-04T10:23:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547840000,
+                    "iso": "2024-03-04T10:24:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547900000,
+                    "iso": "2024-03-04T10:25:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709547960000,
+                    "iso": "2024-03-04T10:26:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548020000,
+                    "iso": "2024-03-04T10:27:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548080000,
+                    "iso": "2024-03-04T10:28:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548140000,
+                    "iso": "2024-03-04T10:29:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548200000,
+                    "iso": "2024-03-04T10:30:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548260000,
+                    "iso": "2024-03-04T10:31:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548320000,
+                    "iso": "2024-03-04T10:32:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548380000,
+                    "iso": "2024-03-04T10:33:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548440000,
+                    "iso": "2024-03-04T10:34:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548500000,
+                    "iso": "2024-03-04T10:35:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548560000,
+                    "iso": "2024-03-04T10:36:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548620000,
+                    "iso": "2024-03-04T10:37:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548680000,
+                    "iso": "2024-03-04T10:38:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548740000,
+                    "iso": "2024-03-04T10:39:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548800000,
+                    "iso": "2024-03-04T10:40:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548860000,
+                    "iso": "2024-03-04T10:41:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548920000,
+                    "iso": "2024-03-04T10:42:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709548980000,
+                    "iso": "2024-03-04T10:43:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549040000,
+                    "iso": "2024-03-04T10:44:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549100000,
+                    "iso": "2024-03-04T10:45:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549160000,
+                    "iso": "2024-03-04T10:46:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549220000,
+                    "iso": "2024-03-04T10:47:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549280000,
+                    "iso": "2024-03-04T10:48:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549340000,
+                    "iso": "2024-03-04T10:49:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549400000,
+                    "iso": "2024-03-04T10:50:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549460000,
+                    "iso": "2024-03-04T10:51:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549520000,
+                    "iso": "2024-03-04T10:52:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549580000,
+                    "iso": "2024-03-04T10:53:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549640000,
+                    "iso": "2024-03-04T10:54:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549700000,
+                    "iso": "2024-03-04T10:55:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549760000,
+                    "iso": "2024-03-04T10:56:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549820000,
+                    "iso": "2024-03-04T10:57:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549880000,
+                    "iso": "2024-03-04T10:58:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709549940000,
+                    "iso": "2024-03-04T10:59:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709550000000,
+                    "iso": "2024-03-04T11:00:00Z",
+                    "equity": 9999.65
+                },
+                {
+                    "timestamp": 1709550060000,
+                    "iso": "2024-03-04T11:01:00Z",
+                    "equity": 10002.75
+                },
+                {
+                    "timestamp": 1709550120000,
+                    "iso": "2024-03-04T11:02:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550180000,
+                    "iso": "2024-03-04T11:03:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550240000,
+                    "iso": "2024-03-04T11:04:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550300000,
+                    "iso": "2024-03-04T11:05:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550360000,
+                    "iso": "2024-03-04T11:06:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550420000,
+                    "iso": "2024-03-04T11:07:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550480000,
+                    "iso": "2024-03-04T11:08:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550540000,
+                    "iso": "2024-03-04T11:09:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550600000,
+                    "iso": "2024-03-04T11:10:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550660000,
+                    "iso": "2024-03-04T11:11:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550720000,
+                    "iso": "2024-03-04T11:12:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550780000,
+                    "iso": "2024-03-04T11:13:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550840000,
+                    "iso": "2024-03-04T11:14:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550900000,
+                    "iso": "2024-03-04T11:15:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709550960000,
+                    "iso": "2024-03-04T11:16:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551020000,
+                    "iso": "2024-03-04T11:17:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551080000,
+                    "iso": "2024-03-04T11:18:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551140000,
+                    "iso": "2024-03-04T11:19:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551200000,
+                    "iso": "2024-03-04T11:20:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551260000,
+                    "iso": "2024-03-04T11:21:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551320000,
+                    "iso": "2024-03-04T11:22:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551380000,
+                    "iso": "2024-03-04T11:23:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551440000,
+                    "iso": "2024-03-04T11:24:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551500000,
+                    "iso": "2024-03-04T11:25:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551560000,
+                    "iso": "2024-03-04T11:26:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551620000,
+                    "iso": "2024-03-04T11:27:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551680000,
+                    "iso": "2024-03-04T11:28:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551740000,
+                    "iso": "2024-03-04T11:29:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551800000,
+                    "iso": "2024-03-04T11:30:00Z",
+                    "equity": 10002.4
+                },
+                {
+                    "timestamp": 1709551860000,
+                    "iso": "2024-03-04T11:31:00Z",
+                    "equity": 10004.4
+                },
+                {
+                    "timestamp": 1709551920000,
+                    "iso": "2024-03-04T11:32:00Z",
+                    "equity": 10004.4
+                },
+                {
+                    "timestamp": 1709551980000,
+                    "iso": "2024-03-04T11:33:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552040000,
+                    "iso": "2024-03-04T11:34:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552100000,
+                    "iso": "2024-03-04T11:35:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552160000,
+                    "iso": "2024-03-04T11:36:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552220000,
+                    "iso": "2024-03-04T11:37:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552280000,
+                    "iso": "2024-03-04T11:38:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552340000,
+                    "iso": "2024-03-04T11:39:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552400000,
+                    "iso": "2024-03-04T11:40:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552460000,
+                    "iso": "2024-03-04T11:41:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552520000,
+                    "iso": "2024-03-04T11:42:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552580000,
+                    "iso": "2024-03-04T11:43:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552640000,
+                    "iso": "2024-03-04T11:44:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552700000,
+                    "iso": "2024-03-04T11:45:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552760000,
+                    "iso": "2024-03-04T11:46:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552820000,
+                    "iso": "2024-03-04T11:47:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552880000,
+                    "iso": "2024-03-04T11:48:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709552940000,
+                    "iso": "2024-03-04T11:49:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553000000,
+                    "iso": "2024-03-04T11:50:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553060000,
+                    "iso": "2024-03-04T11:51:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553120000,
+                    "iso": "2024-03-04T11:52:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553180000,
+                    "iso": "2024-03-04T11:53:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553240000,
+                    "iso": "2024-03-04T11:54:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553300000,
+                    "iso": "2024-03-04T11:55:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553360000,
+                    "iso": "2024-03-04T11:56:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553420000,
+                    "iso": "2024-03-04T11:57:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553480000,
+                    "iso": "2024-03-04T11:58:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553540000,
+                    "iso": "2024-03-04T11:59:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553600000,
+                    "iso": "2024-03-04T12:00:00Z",
+                    "equity": 10004.19
+                },
+                {
+                    "timestamp": 1709553660000,
+                    "iso": "2024-03-04T12:01:00Z",
+                    "equity": 10007.43
+                },
+                {
+                    "timestamp": 1709553720000,
+                    "iso": "2024-03-04T12:02:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709553780000,
+                    "iso": "2024-03-04T12:03:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709553840000,
+                    "iso": "2024-03-04T12:04:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709553900000,
+                    "iso": "2024-03-04T12:05:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709553960000,
+                    "iso": "2024-03-04T12:06:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554020000,
+                    "iso": "2024-03-04T12:07:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554080000,
+                    "iso": "2024-03-04T12:08:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554140000,
+                    "iso": "2024-03-04T12:09:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554200000,
+                    "iso": "2024-03-04T12:10:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554260000,
+                    "iso": "2024-03-04T12:11:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554320000,
+                    "iso": "2024-03-04T12:12:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554380000,
+                    "iso": "2024-03-04T12:13:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554440000,
+                    "iso": "2024-03-04T12:14:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554500000,
+                    "iso": "2024-03-04T12:15:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554560000,
+                    "iso": "2024-03-04T12:16:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554620000,
+                    "iso": "2024-03-04T12:17:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554680000,
+                    "iso": "2024-03-04T12:18:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554740000,
+                    "iso": "2024-03-04T12:19:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554800000,
+                    "iso": "2024-03-04T12:20:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554860000,
+                    "iso": "2024-03-04T12:21:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554920000,
+                    "iso": "2024-03-04T12:22:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709554980000,
+                    "iso": "2024-03-04T12:23:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555040000,
+                    "iso": "2024-03-04T12:24:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555100000,
+                    "iso": "2024-03-04T12:25:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555160000,
+                    "iso": "2024-03-04T12:26:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555220000,
+                    "iso": "2024-03-04T12:27:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555280000,
+                    "iso": "2024-03-04T12:28:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555340000,
+                    "iso": "2024-03-04T12:29:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555400000,
+                    "iso": "2024-03-04T12:30:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555460000,
+                    "iso": "2024-03-04T12:31:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555520000,
+                    "iso": "2024-03-04T12:32:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555580000,
+                    "iso": "2024-03-04T12:33:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555640000,
+                    "iso": "2024-03-04T12:34:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555700000,
+                    "iso": "2024-03-04T12:35:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555760000,
+                    "iso": "2024-03-04T12:36:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555820000,
+                    "iso": "2024-03-04T12:37:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555880000,
+                    "iso": "2024-03-04T12:38:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709555940000,
+                    "iso": "2024-03-04T12:39:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556000000,
+                    "iso": "2024-03-04T12:40:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556060000,
+                    "iso": "2024-03-04T12:41:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556120000,
+                    "iso": "2024-03-04T12:42:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556180000,
+                    "iso": "2024-03-04T12:43:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556240000,
+                    "iso": "2024-03-04T12:44:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556300000,
+                    "iso": "2024-03-04T12:45:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556360000,
+                    "iso": "2024-03-04T12:46:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556420000,
+                    "iso": "2024-03-04T12:47:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556480000,
+                    "iso": "2024-03-04T12:48:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556540000,
+                    "iso": "2024-03-04T12:49:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556600000,
+                    "iso": "2024-03-04T12:50:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556660000,
+                    "iso": "2024-03-04T12:51:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556720000,
+                    "iso": "2024-03-04T12:52:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556780000,
+                    "iso": "2024-03-04T12:53:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556840000,
+                    "iso": "2024-03-04T12:54:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556900000,
+                    "iso": "2024-03-04T12:55:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709556960000,
+                    "iso": "2024-03-04T12:56:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709557020000,
+                    "iso": "2024-03-04T12:57:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709557080000,
+                    "iso": "2024-03-04T12:58:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709557140000,
+                    "iso": "2024-03-04T12:59:00Z",
+                    "equity": 10007.09
+                },
+                {
+                    "timestamp": 1709557260000,
+                    "iso": "2024-03-04T13:01:00Z",
+                    "equity": 10009.99
+                }
+            ],
+            "realized": 9.99,
+            "trades": 8,
+            "unrealized": 0.0
+        }
+    },
+    "windows": {},
+    "bookAnalytics": null,
+    "bookRisk": null,
+    "evidence": {
+        "dslPercentConvention": "whole-percentage-points",
+        "strategyHash": "sha256:967681679f42ffad2d67e3f01cf51dfe0a98340da62bace8da3d3c4f63ee6c57",
+        "configHash": null,
+        "dataset": {
+            "id": null,
+            "hash": null,
+            "qualityPolicy": "allow-incomplete",
+            "mutableStore": true,
+            "warning": "Dataset is a mutable local store, not an immutable snapshot."
+        },
+        "execution": {
+            "preset": "paper-fast",
+            "broker": "paper",
+            "seed": null,
+            "realistic": false,
+            "fillPriceSource": "latest tracked price / trigger level for bars",
+            "latencyModel": "zero",
+            "stopLatencyModel": "on-trigger",
+            "takeProfitFillModel": "print",
+            "candleCloseModel": "heartbeat:1000ms grace:2000ms",
+            "slippageModel": "zero",
+            "rejectionModel": "none",
+            "partialFillModel": "none",
+            "venueRules": "none",
+            "commissionModel": "per-lot instruments.yaml commissionPerLot",
+            "financingModel": "signed swap points at configured UTC rollover; triple configured weekday",
+            "ocoMode": "engine-managed deterministic siblings",
+            "warning": "Optimistic fills: no spread, slippage, latency, rejection, queue, or partial-fill model."
+        },
+        "experiment": null,
+        "accounting": {
+            "accountCurrency": "USD",
+            "missingPolicy": "fail",
+            "source": "market",
+            "configuredFxSymbols": {},
+            "conversions": {},
+            "costKinds": [
+                "COMMISSION",
+                "SWAP",
+                "FUNDING",
+                "BORROW",
+                "EXCHANGE_FEE",
+                "SPREAD_COST",
+                "TAX"
+            ],
+            "warnings": [],
+            "warning": null
+        },
+        "promotion": null,
+        "warnings": []
+    },
+    "monteCarlo": null
+}
