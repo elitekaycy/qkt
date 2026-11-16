@@ -119,7 +119,7 @@ internal class RollLegs {
     private fun stopped(
         venueId: String,
         reason: String,
-        retryable: Boolean = false,
+        retryable: Boolean,
     ): Boolean {
         val leg = pending[venueId] ?: return false
         val outcome =

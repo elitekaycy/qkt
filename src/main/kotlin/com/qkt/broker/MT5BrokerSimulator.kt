@@ -153,10 +153,8 @@ class MT5BrokerSimulator(
         )
         when (sized) {
             is OrderRequest.Market -> fillMarket(sized, meta)
-            is OrderRequest.Limit, is OrderRequest.Stop,
-            is OrderRequest.StopLimit, is OrderRequest.IfTouched,
-            -> working.add(sized)
-            else -> error("MT5BrokerSimulator received unexpected order type: ${sized::class.simpleName}")
+            // withVolume above admits only Market, Limit, Stop, StopLimit and IfTouched.
+            else -> working.add(sized)
         }
         return SubmitAck(sized.id, sized.id, accepted = true)
     }
@@ -315,22 +313,9 @@ class MT5BrokerSimulator(
         }
         // MT5 triggers on the side's own quote, so a level the move [from] -> tick traded through is that price.
         val level = entryPrice(req)?.takeIf { from != null && tradedThrough(from, triggeringTick.price, it) }
-        val rawFair =
-            level ?: when (req) {
-                is OrderRequest.Limit ->
-                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
-                is OrderRequest.Stop ->
-                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
-                is OrderRequest.IfTouched ->
-                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
-                is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
-                is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
-                else -> error("MT5BrokerSimulator fillFromTrigger unexpected type: ${req::class.simpleName}")
-            }
         val fair =
-            rawFair ?: run {
-                reject(req, "no fill price for ${req.symbol} on trigger")
-                return
+            level ?: checkNotNull(fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)) {
+                "the trigger tick always carries a price"
             }
         val limit = (req as? OrderRequest.Limit)?.limitPrice
         val fillPrice =
@@ -499,22 +484,6 @@ class MT5BrokerSimulator(
                     "(tradeStopsLevel=${meta.tradeStopsLevelPoints}, pointSize=${meta.pointSize.toPlainString()})"
             }
         }
-        if (request is OrderRequest.Bracket) {
-            val entry = entryPrice(request.entry) ?: ref
-            val exits =
-                buildList {
-                    add("takeProfit" to request.takeProfit)
-                    (request.stopLoss as? com.qkt.execution.StopLossSpec.Fixed)
-                        ?.let { add("stopLoss" to it.price) }
-                }
-            for ((label, price) in exits) {
-                val distance = price.subtract(entry).abs()
-                if (distance < minDistance) {
-                    return "$label ${price.toPlainString()} is inside tradeStopsLevel " +
-                        "${minDistance.toPlainString()} from entry ${entry.toPlainString()}"
-                }
-            }
-        }
         return null
     }
 
@@ -528,8 +497,6 @@ class MT5BrokerSimulator(
                     "triggerPrice" to request.triggerPrice,
                     request.limitPrice?.let { "limitPrice" to it },
                 )
-            is OrderRequest.Market -> emptyList()
-            is OrderRequest.Bracket -> pendingPrices(request.entry)
             else -> emptyList()
         }
 

@@ -130,12 +130,8 @@ class LegBook(
             notional = notional.add(leg.entryPrice.multiply(leg.quantity))
             qty = qty.add(leg.quantity)
         }
-        val avg =
-            if (qty.signum() > 0) {
-                notional.divide(qty, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
-            } else {
-                BigDecimal.ZERO
-            }
+        // A non-zero net always leaves at least one leg on [netSide], so [qty] is positive here.
+        val avg = notional.divide(qty, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
         val earliest = legs.values.minOf { it.openedAt }
         return Position(symbol, netQty, avg, openedAt = earliest)
     }

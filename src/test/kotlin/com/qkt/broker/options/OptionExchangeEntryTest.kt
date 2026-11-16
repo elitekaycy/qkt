@@ -6,6 +6,9 @@ import com.qkt.derivatives.options.chain.ChainQuoteLookup
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import com.qkt.instrument.OptionCatalog
+import com.qkt.instrument.OptionCatalogRegistry
+import com.qkt.instrument.OptionListing
 import java.math.BigDecimal
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -98,5 +101,34 @@ class OptionExchangeEntryTest {
         val cancelled = f.last<BrokerEvent.OrderCancelled>()
         assertThat(cancelled.clientOrderId).isEqualTo(resting.id)
         assertThat(cancelled.reason).isEqualTo(liquidationReason(f.symbol))
+    }
+
+    @Test
+    fun `an option whose root declares no chain series is refused`(
+        @TempDir dir: Path,
+    ) {
+        val f = fixture(dir)
+        val bare = f.chain.root.copy(chains = null)
+        val registry =
+            OptionCatalogRegistry(
+                listOf(bare),
+                mapOf(
+                    bare.root to
+                        OptionCatalog(
+                            bare.root,
+                            listOf(OptionListing(f.chain.venueName, "92000", "call", f.chain.expiryMs)),
+                            emptyMap(),
+                        ),
+                ),
+                dir,
+            )
+        val exchange = OptionExchange(f.bus, f.clock, registry, ChainQuoteLookup(dir, registry))
+
+        val ack = exchange.submit(f.market(Side.BUY))
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(
+            ack.rejectReason,
+        ).isEqualTo("DERIBIT:BTC_USDC declares no chain series to trade on (chains: trade | book)")
     }
 }

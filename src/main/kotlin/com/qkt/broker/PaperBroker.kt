@@ -325,11 +325,12 @@ class PaperBroker(
                         req.side,
                         req.quantity,
                     )
-                is OrderRequest.IfTouched ->
-                    Triple(if (at(req.triggerPrice)) req.triggerPrice else tickPrice, req.side, req.quantity)
-                is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
-                is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
-                else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
+                // Only resting Limit, Stop and IfTouched orders trigger here: Market never rests and StopLimit
+                // activated a Limit above.
+                else -> {
+                    val touched = req as OrderRequest.IfTouched
+                    Triple(if (at(touched.triggerPrice)) touched.triggerPrice else tickPrice, req.side, req.quantity)
+                }
             }
         publishFill(req.id, req.symbol, side, fillPrice, qty, req.strategyId)
     }
