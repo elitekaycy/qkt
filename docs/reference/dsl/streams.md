@@ -526,7 +526,7 @@ member without naming them twice. Three forms, all in the stream position of `SY
 ```qkt
 SYMBOLS
     <set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [WARMUP <n> BARS]      -- picked
-    <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- filtered
+    <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC] EVERY <timeframe>   -- filtered
     <union> = <set> + <set> [+ <set> ...]                                                 -- union
 ```
 
@@ -549,7 +549,9 @@ RULES
   takes every instrument the venue's catalog lists, keeps those passing the filter, ranks them by one field
   (`DESC` is the default; ties and instruments missing the field sort by symbol, the latter last) and declares the
   top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when the run starts**, and do
-  not change during it (runtime joins and leaves are a later step). Where the instruments come from is the only
+  not change during it. Ending the spec with `DYNAMIC` (`... TOP 20 BY volume DYNAMIC EVERY 1m`) asks for members
+  that join and leave during the run, re-evaluated at each close of the set's `EVERY` window; runs refuse it until
+  that lands (runtime membership plan, step 4). Where the instruments come from is the only
   difference between a backtest and a live run; both rank them with the same code, so the same instruments give the
   same members. See [where membership comes from](#where-a-filtered-sets-members-come-from).
 - **Union.** `majors = fx + crypto` names the members of sets declared above it, each keeping its own venue; the
@@ -591,7 +593,7 @@ caps in the config refer to ([config schema](../config-schema.md#risk)).
 A filter is a boolean expression over the instrument metadata every venue already publishes: comparisons
 (`=`, `!=`, `<`, `<=`, `>`, `>=`), `IN (a, b)`, `GLOB "pattern"` (the `*` glob calendar rules use), `AND`, `OR`,
 `NOT` and parentheses. Numbers compare numerically, words ignoring case; a field the instrument lacks compares
-false. `WHERE`, `TOP`, `GLOB`, `ASC` and `DESC` are words with meaning only inside a set declaration.
+false. `WHERE`, `TOP`, `GLOB`, `ASC`, `DESC` and `DYNAMIC` are words with meaning only inside a set declaration.
 
 | Field | Value |
 |---|---|

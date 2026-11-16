@@ -85,6 +85,12 @@ internal object SymbolSetResolution {
         nowMs: Long,
         survivorshipAccepted: Boolean,
     ): List<String> {
+        if (spec.dynamic) {
+            throw BacktestContext.Companion.SetupError(
+                "symbol set '$alias' is DYNAMIC: members that join and leave during a run are not wired into runs " +
+                    "yet; drop DYNAMIC to resolve its members once, at start",
+            )
+        }
         if (spec.top > UniverseResolver.DEFAULT_MAX_MEMBERS) {
             throw BacktestContext.Companion.SetupError(
                 "symbol set '$alias': TOP ${spec.top} is above the member cap of " +
