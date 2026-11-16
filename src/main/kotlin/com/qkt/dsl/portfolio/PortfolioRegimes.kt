@@ -46,11 +46,11 @@ internal class PortfolioRegimes(
         val name = selected?.name
         val entries = name?.let { allocate.entries[it] } ?: emptyMap()
         val weights =
-            if (allocate.method == PortfolioAllocationMethod.REGIME_WEIGHTED) {
-                val nonCash = entries.filterKeys { !it.equals("cash", ignoreCase = true) }
-                ast.imports.associate { it.alias to (nonCash[it.alias] ?: BigDecimal.ZERO) }
-            } else {
-                emptyMap()
+            when (allocate.method) {
+                PortfolioAllocationMethod.REGIME_WEIGHTED -> {
+                    val nonCash = entries.filterKeys { !it.equals("cash", ignoreCase = true) }
+                    ast.imports.associate { it.alias to (nonCash[it.alias] ?: BigDecimal.ZERO) }
+                }
             }
         return name to weights
     }

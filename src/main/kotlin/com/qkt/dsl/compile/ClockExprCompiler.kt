@@ -15,27 +15,27 @@ internal object ClockExprCompiler {
     fun compileNow(acc: NowAccessor): CompiledExpr =
         CompiledExpr { ctx ->
             val nowMs = ctx.nowMs()
-            when (acc.field) {
-                NowField.EPOCH_MS -> Value.Num(BigDecimal.valueOf(nowMs))
-                else -> {
-                    val z =
-                        java.time.Instant
-                            .ofEpochMilli(nowMs)
-                            .atZone(java.time.ZoneOffset.UTC)
-                    val n =
-                        when (acc.field) {
-                            NowField.HOUR_UTC -> z.hour
-                            NowField.MINUTE_UTC -> z.minute
-                            NowField.WEEKDAY -> z.dayOfWeek.value - 1
-                            NowField.MONTH -> z.monthValue
-                            NowField.DAY -> z.dayOfMonth
-                            NowField.DAYS_IN_MONTH -> z.toLocalDate().lengthOfMonth()
-                            NowField.DATE_UTC -> z.toLocalDate().toEpochDay().toInt()
-                            NowField.EPOCH_MS -> error("handled above")
-                        }
-                    Value.Num(BigDecimal.valueOf(n.toLong()))
+            val z =
+                java.time.Instant
+                    .ofEpochMilli(nowMs)
+                    .atZone(java.time.ZoneOffset.UTC)
+            val n: Long =
+                when (acc.field) {
+                    NowField.EPOCH_MS -> nowMs
+                    NowField.HOUR_UTC -> z.hour.toLong()
+                    NowField.MINUTE_UTC -> z.minute.toLong()
+                    NowField.WEEKDAY -> (z.dayOfWeek.value - 1).toLong()
+                    NowField.MONTH -> z.monthValue.toLong()
+                    NowField.DAY -> z.dayOfMonth.toLong()
+                    NowField.DAYS_IN_MONTH -> z.toLocalDate().lengthOfMonth().toLong()
+                    NowField.DATE_UTC ->
+                        z
+                            .toLocalDate()
+                            .toEpochDay()
+                            .toInt()
+                            .toLong()
                 }
-            }
+            Value.Num(BigDecimal.valueOf(n))
         }
 
     fun compileCalendarWindow(win: CalendarWindow): CompiledExpr {

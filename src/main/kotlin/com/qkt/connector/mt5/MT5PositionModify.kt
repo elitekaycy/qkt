@@ -135,7 +135,7 @@ internal class MT5PositionModify(
     private fun positionModifyAck(
         ticket: String,
         accepted: Boolean,
-        reason: String? = null,
+        reason: String?,
     ): SubmitAck = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
 
     fun isExpectedProtectionChange(event: BrokerEvent.PositionProtectionChanged): Boolean {

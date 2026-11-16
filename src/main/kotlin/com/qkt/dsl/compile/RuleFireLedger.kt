@@ -87,21 +87,7 @@ internal class RuleFireLedger(
         if (fired.isEmpty()) {
             val committed = rule.commitFire(true)
             if (committed != null) ruleDecisionObserver(ruleDecision(rule, ec, ctx, signalCount = 0))
-            return when (committed) {
-                RuleCommitOutcome.ACCEPTED ->
-                    if (rule.consumesSequenceCompletion) {
-                        SequenceFireOutcome.ACCEPTED
-                    } else {
-                        SequenceFireOutcome.NOT_CONSUMING
-                    }
-                RuleCommitOutcome.REARMED ->
-                    if (rule.consumesSequenceCompletion) {
-                        SequenceFireOutcome.SUPPRESSED
-                    } else {
-                        SequenceFireOutcome.NOT_CONSUMING
-                    }
-                null -> SequenceFireOutcome.NOT_CONSUMING
-            }
+            return sequenceOutcome(committed, rule)
         }
         val orderIds =
             fired
@@ -129,12 +115,18 @@ internal class RuleFireLedger(
             fired.forEach(ruleBySignal::remove)
             orderIds.forEach(ruleByOrderId::remove)
         }
-        return when {
+        return sequenceOutcome(committed, rule)
+    }
+
+    private fun sequenceOutcome(
+        committed: RuleCommitOutcome?,
+        rule: CompiledRule,
+    ): SequenceFireOutcome =
+        when {
             committed == null || !rule.consumesSequenceCompletion -> SequenceFireOutcome.NOT_CONSUMING
             committed == RuleCommitOutcome.ACCEPTED -> SequenceFireOutcome.ACCEPTED
             else -> SequenceFireOutcome.SUPPRESSED
         }
-    }
 
     private fun ruleDecision(
         rule: CompiledRule,

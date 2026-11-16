@@ -71,10 +71,8 @@ class StreamingMedian {
             markerHeights[MARKER_COUNT - 1] = value
             return MARKER_COUNT - 2
         }
-        for (i in 1 until MARKER_COUNT) {
-            if (value < markerHeights[i]) return i - 1
-        }
-        return MARKER_COUNT - 2
+        // A value inside the markers lands in the first cell above it; only a NaN falls through.
+        return (1 until MARKER_COUNT).firstOrNull { value < markerHeights[it] }?.minus(1) ?: (MARKER_COUNT - 2)
     }
 
     /** Move each interior marker toward its desired position, parabolic step with linear fallback. */

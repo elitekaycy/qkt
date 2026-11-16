@@ -15,8 +15,8 @@ internal fun registerPendingStack(
     symbol: String,
     side: Side,
     stackAtTiers: List<CompiledStackTier>,
-    exitAfterMs: Long? = null,
-    parentExitId: String? = null,
+    exitAfterMs: Long?,
+    parentExitId: String?,
 ) {
     pendingStacks.register(
         PendingStack(
