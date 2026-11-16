@@ -169,7 +169,8 @@ Slots run in backtests and live. In a backtest a slot reads its family's stored 
 own, so warmup starts cold, and `--tick-fills` is refused. Live, on a gateway account, a slot subscribes its whole
 family (the gateway's `roots=<series>` quote subscription, every contract of the series including ones listed after
 start) and picks the same way at each close of its window; the family is the gateway's `kind: event` listing of the
-series, polled for changes each minute, so a live slot needs no `events:` declaration or imported catalog (one that
+series, polled for changes each minute (the gateway lists only the series its account is scoped to, so a slot's series must be
+in that scope), so a live slot needs no `events:` declaration or imported catalog (one that
 is declared still resolves its catalogued contracts from the file). A contract the venue has paused (`trading:
 disabled`) or closes out only is not picked, and orders on it are refused. Live warmup starts cold too. After a
 restart, the contracts a slot held come back into its book from the venue's positions, oldest first (two slots of

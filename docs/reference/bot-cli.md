@@ -103,6 +103,9 @@ qkt bot buy  10 KALSHI:KXINXU@front.p70 --limit 0.71                         # Y
 qkt bot sell 10 KALSHI:KXINXU_26NOV06H1500_T7425 --limit 0.74                # NO, by its own symbol
 ```
 
+- Both read what the gateway account lists: a venue with a very large catalogue (Kalshi lists 100k+ markets)
+  lists only the series its gateway account is configured with (the adapter's `series` setting; `*` lists every
+  series, opt-in), so `markets` and `chain` see that scope, not the whole venue.
 - `markets VENUE` reads the gateway's event listing (`kind: event`) through its filters: `--category` (the
   venue's grouping), `--family` (a series, `KXINXU` or `KALSHI:KXINXU`) and `--open` (listed, trading, and its
   close and expiry still ahead), so an agent sees the contracts a strategy's slot would.
