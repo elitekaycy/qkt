@@ -35,8 +35,7 @@ private fun bound(
     limits: PerStrategyRisk,
     members: Map<String, Set<String>>,
 ): StrategyRiskLimits =
-    try {
-        limits.toLimits(members)
-    } catch (e: IllegalStateException) {
+    runCatching { limits.toLimits(members) }.getOrElse { e ->
+        if (e !is IllegalStateException) throw e
         error("risk.per_strategy.$strategy.${e.message}")
     }
