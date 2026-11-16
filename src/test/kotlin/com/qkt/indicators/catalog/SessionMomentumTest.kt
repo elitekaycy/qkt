@@ -53,6 +53,30 @@ class SessionMomentumTest {
     }
 
     @Test
+    fun `a session opening at a zero price is undefined until it leaves the window`() {
+        val sm = SessionMomentum(startHour = 12, endHour = 14, nDays = 2)
+        // Day 0 opens at 0: its return has no base, so it is undefined rather than an exception.
+        sm.update(candle(day0 + 12 * hourMs, "0", "101"))
+        // Day 1: +0.05. Day 2's first bar completes the two-day window.
+        sm.update(candle(day0 + dayMs + 12 * hourMs, "200", "210"))
+        sm.update(candle(day0 + 2 * dayMs + 12 * hourMs, "300", "303"))
+        assertThat(sm.isReady).isTrue()
+        assertThat(sm.value()).isNull()
+        // Day 3's first bar completes Day 2 (+0.01) and rolls Day 0 out: 0.05 + 0.01.
+        sm.update(candle(day0 + 3 * dayMs + 12 * hourMs, "400", "404"))
+        assertThat(sm.value()).isEqualByComparingTo("0.06")
+    }
+
+    @Test
+    fun `a session opening at a negative price is undefined`() {
+        val sm = SessionMomentum(startHour = 12, endHour = 14, nDays = 1)
+        sm.update(candle(day0 + 12 * hourMs, "-2", "101"))
+        sm.update(candle(day0 + dayMs + 12 * hourMs, "200", "210"))
+        assertThat(sm.isReady).isTrue()
+        assertThat(sm.value()).isNull()
+    }
+
+    @Test
     fun `rejects a window that wraps midnight`() {
         assertThatThrownBy { SessionMomentum(startHour = 22, endHour = 2, nDays = 3) }
             .isInstanceOf(IllegalArgumentException::class.java)
