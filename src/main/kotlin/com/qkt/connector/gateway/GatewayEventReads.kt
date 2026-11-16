@@ -80,7 +80,12 @@ internal class GatewayEventReads(
     }
 
     override fun refusal(qktSymbol: String): String? {
-        val instrument = client.instruments().firstOrNull { symbols.qkt(it.code) == qktSymbol && it.kind == "event" }
+        // An event code holds no `_`, so its symbol names it; one the gateway does not answer for is no event of it.
+        val code = qktSymbol.removePrefix(prefix).replace('_', '-')
+        val instrument =
+            runCatching { client.read("/v1/instruments/$code", WireInstrument.serializer()) }
+                .getOrNull()
+                ?.takeIf { it.kind == "event" }
         return when (instrument?.trading) {
             "disabled" -> "$qktSymbol is paused by the venue (trading: disabled); nothing was sent"
             "close_only" -> "$qktSymbol only closes out (trading: close_only); close a holding with qkt bot close"

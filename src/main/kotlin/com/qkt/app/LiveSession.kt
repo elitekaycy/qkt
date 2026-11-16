@@ -11,6 +11,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
@@ -18,6 +19,7 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
+import com.qkt.instrument.QuoteCurrencyGuard
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
@@ -80,7 +82,7 @@ class LiveSession(
     private val equityBasis: LiveEquityBasis = LiveEquityBasis.VENUE,
     private val warmupOverride: WarmupSpec? = null,
     private val mdcStrategy: String? = null,
-    private val candleHub: com.qkt.dsl.compile.CandleHub? = null,
+    private val candleHub: CandleHub? = null,
     private val onWarmupTick: (Tick) -> Unit = {},
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
@@ -423,11 +425,7 @@ class LiveSession(
         // unit-contract default for paper/crypto paths.
         if (instruments !is com.qkt.instrument.NoopInstrumentRegistry) {
             for (symbol in symbols) {
-                if (!com.qkt.instrument.QuoteCurrencyGuard
-                        .requiresContractSizeMeta(symbol)
-                ) {
-                    continue
-                }
+                if (!QuoteCurrencyGuard.requiresContractSizeMeta(symbol)) continue
                 requireNotNull(instruments.lookup(symbol)) {
                     "InstrumentMeta unresolvable for $symbol at deploy — refusing to start " +
                         "(PnL would silently book contractSize=1)"
@@ -544,9 +542,7 @@ class LiveSession(
             )
         val trades = RecentTrades()
 
-        val pipelineCandleHub =
-            candleHub ?: com.qkt.dsl.compile
-                .CandleHub()
+        val pipelineCandleHub = candleHub ?: CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
         val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)

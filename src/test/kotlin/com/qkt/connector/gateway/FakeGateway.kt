@@ -119,6 +119,7 @@ internal class FakeGateway(
             path == "/v1/health" -> FakeWire.ok(health())
             path == "/v1/account" -> FakeWire.ok(account)
             path == "/v1/instruments" -> listing(url)
+            path.startsWith("/v1/instruments/") -> instrument(path.removePrefix("/v1/instruments/"))
             path == "/v1/positions" ->
                 FakeWire.ok(
                     json.encodeToString(WirePositions.serializer(), WirePositions("netting", venue.positions())),

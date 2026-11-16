@@ -39,3 +39,9 @@ internal fun FakeGateway.listing(url: HttpUrl): MockResponse {
 
 private fun page(page: WireInstrumentPage) =
     FakeWire.ok(listingJson.encodeToString(WireInstrumentPage.serializer(), page))
+
+/** `GET /v1/instruments/{code}` of a [FakeGateway]: the listed instrument, or `404`. */
+internal fun FakeGateway.instrument(code: String): MockResponse =
+    instruments[code]?.takeIf { it.code in codes }?.let {
+        FakeWire.ok(listingJson.encodeToString(WireInstrument.serializer(), it))
+    } ?: MockResponse().setResponseCode(404)
