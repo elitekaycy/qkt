@@ -331,6 +331,8 @@ set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.cooldown_after_loss_after_consecutive` | `1` | PACER pre-trade controls and DSL | Number of consecutive losing closes required before cooldown starts. |
 | `per_strategy.<name>.loss_streak_halt` | unset | halt rules | Halts the strategy once consecutive losing closes reach N. |
 | `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
+| `per_strategy.<name>.sets.<set>.max_open_positions` | unset | backtest pre-trade controls | Caps the non-zero symbols one strategy holds, or has entering, among the members of its [symbol set](dsl/streams.md#symbol-sets-exnesseurusd-xauusd-alpaca-where-) `<set>`: 40 members firing on one bar open at most N. In-flight entries count, like `max_open_positions`. Naming a set the strategy does not declare fails the run. Not yet applied by the daemon. |
+| `per_strategy.<name>.sets.<set>.max_position_size` | unset | backtest pre-trade controls | Caps the absolute position on each member of `<set>` for one strategy, pending orders included. Not yet applied by the daemon. |
 
 Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy.
 

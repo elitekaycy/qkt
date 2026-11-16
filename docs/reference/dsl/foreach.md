@@ -11,7 +11,29 @@ RULES
       <rule body using iter_var>
 ```
 
-`FOR EACH` goes inside `RULES`, and the stream list needs its square brackets.
+`FOR EACH` goes inside `RULES`, and the stream list needs its square brackets. Over a [symbol set](streams.md#symbol-sets-exnesseurusd-xauusd-alpaca-where-)
+declared in `SYMBOLS` the brackets go away:
+
+<!-- qkt-doc: grammar -->
+```qkt
+RULES
+    FOR EACH <iter_var> IN <set> DO
+      <rule body using iter_var>
+```
+
+```qkt
+SYMBOLS
+    fx = EXNESS:{EURUSD, XAUUSD, USDJPY} EVERY 15m
+
+RULES
+    FOR EACH m IN fx DO
+      WHEN rsi(m.close, 14) < 30 AND POSITION.m = 0
+      THEN BUY m SIZING 0.1
+```
+
+A picked list (`VENUE:{A, B}`) and a union of them expand at parse time exactly like the bracket form: one rule
+per member, with `m` replaced by the member's alias (`fx.EURUSD`). A filtered set (`VENUE:* WHERE ...`) keeps the
+rule as a template until a backtest resolves its members at start, then expands the same way.
 
 The iteration variable substitutes textually for each stream in the list. Each substitution produces one rule.
 
@@ -119,15 +141,19 @@ Three substitutions of `s` per rule for `btc`, three for `eth`, etc.
 
 ## Limitations
 
-- **Stream list is static.** `FOR EACH s IN [btc, eth, sol] DO` — the streams are listed inline. You can't reference a variable or a config-driven list.
+- **Stream list is static.** `FOR EACH s IN [btc, eth, sol] DO` — the streams are listed inline. A symbol set
+  (`FOR EACH m IN fx DO`) is the one indirection: its members come from the declaration, or from the catalog at the
+  start of a backtest, never from a variable.
 - **No nested iteration.** `FOR EACH a IN ... FOR EACH b IN ...` is **not supported**. If you genuinely need a Cartesian product across symbols, write the rules explicitly.
-- **No filtering.** `FOR EACH s IN [btc, eth, sol] WHERE s.kind = "spot"` is **not supported**. Filter the list manually.
+- **No filtering in the loop.** `FOR EACH s IN [btc, eth, sol] WHERE s.kind = "spot"` is **not supported**. Filter
+  at the declaration instead: `spot = BINANCE:* WHERE kind = spot TOP 20 BY contract_size EVERY 1m`.
 - **Iteration variable can't be used in `LET`.** `LET` clauses are file-level; they can't reference the iteration variable.
 
 ## Common gotchas
 
 - **The iteration variable shadows declared streams of the same name.** Don't pick `btc` as the iterator if you have a stream called `btc`. The parser may not catch this; the substitution will silently misbehave.
-- **`FOR EACH` lives inside `RULES`.** Placing it before the `RULES` keyword is a parse error; anywhere among the `WHEN` rules is fine. The stream list needs its brackets: `FOR EACH s IN btc, eth DO` is rejected with `expected '[' to open stream alias list`.
+- **`FOR EACH` lives inside `RULES`.** Placing it before the `RULES` keyword is a parse error; anywhere among the `WHEN` rules is fine. The stream list needs its brackets: `FOR EACH s IN btc, eth DO` is rejected with `expected '[' to open stream alias list (a symbol set needs none: IN <set> DO)`.
+- **A bare name after `IN` must be a set.** `FOR EACH s IN btc DO` over a plain stream `btc` is rejected: `'btc' is not a symbol set declared in SYMBOLS (a list of streams needs brackets: [btc])`.
 - **One iterator per `FOR EACH`.** No tuples; no multiple variables. `FOR EACH s, c IN ...` is invalid.
 - **No range syntax.** No `FOR EACH i IN 1..5`. The iteration list is always streams.
 

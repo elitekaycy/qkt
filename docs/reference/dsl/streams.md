@@ -517,6 +517,72 @@ FOR EACH s IN [btc, eth, sol] DO
 
 `s` is a textual substitution at compile time, not a runtime variable. See [FOR EACH](foreach.md).
 
+## Symbol sets (`EXNESS:{EURUSD, XAUUSD}`, `ALPACA:* WHERE ...`)
+
+A **symbol set** declares many streams of one venue at once, and `FOR EACH m IN <set> DO` runs a rule over every
+member without naming them twice. Three forms, all in the stream position of `SYMBOLS`:
+
+<!-- qkt-doc: grammar -->
+```qkt
+SYMBOLS
+    <set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [WARMUP <n> BARS]      -- picked
+    <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- filtered
+    <union> = <set> + <set> [+ <set> ...]                                                 -- union
+```
+
+```qkt
+SYMBOLS
+    fx     = EXNESS:{EURUSD, XAUUSD, USDJPY} EVERY 15m
+    crypto = BINANCE:{BTCUSDT, ETHUSDT} EVERY 15m
+    majors = fx + crypto
+RULES
+    FOR EACH m IN majors DO
+      WHEN rsi(m.close, 14) < 30 AND POSITION.m = 0
+      THEN BUY m SIZING 0.1
+```
+
+- **Picked list.** `EXNESS:{EURUSD, XAUUSD}` is exactly the streams `EXNESS:EURUSD` and `EXNESS:XAUUSD` at the
+  set's `EVERY` (and `WARMUP`). It expands when the file is parsed, so a strategy written this way backtests to the
+  same trades as the same rules written out per symbol by hand; each name is listed once. Each member must have
+  instrument metadata at start, as any declared stream must.
+- **Filtered universe.** `ALPACA:* WHERE category = "us_equity" AND contract_size >= 1 TOP 50 BY contract_size`
+  takes every instrument the venue's catalog lists, keeps those passing the filter, ranks them by one field
+  (`DESC` is the default; ties and instruments missing the field sort by symbol, the latter last) and declares the
+  top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when a backtest starts**, from
+  the instruments file's `instruments:` list as of `--from`; they do not change during the run. A set over equities is
+  refused unless the backtest passes `--survivorship-accepted`, because a flat instruments file has no listing
+  history. Live and daemon runs do not resolve filtered sets yet; a picked list runs everywhere.
+- **Union.** `majors = fx + crypto` names the members of sets declared above it, each keeping its own venue; the
+  operands must share `EVERY`, and a symbol in two operands counts once. A union has no `EVERY` of its own.
+- **`FOR EACH m IN <set> DO <rule>`** runs the rule once per member; `m` substitutes textually, as the bracket form
+  does. The bracket form `FOR EACH s IN [a, b] DO` is unchanged. A set has no stream of its own: `fx.close` is an
+  error, and buying every member on one condition is `FOR EACH m IN fx DO WHEN <condition> THEN BUY m`.
+
+Each member's stream alias is `<set>.<symbol>` (`fx.EURUSD`), which reports and `risk.per_strategy.<name>.sets`
+caps in the config refer to ([config schema](../config-schema.md#risk)).
+
+### The filter vocabulary
+
+A filter is a boolean expression over the instrument metadata every venue already publishes: comparisons
+(`=`, `!=`, `<`, `<=`, `>`, `>=`), `IN (a, b)`, `GLOB "pattern"` (the `*` glob calendar rules use), `AND`, `OR`,
+`NOT` and parentheses. Numbers compare numerically, words ignoring case; a field the instrument lacks compares
+false. `WHERE`, `TOP`, `GLOB`, `ASC` and `DESC` are words with meaning only inside a set declaration.
+
+| Field | Value |
+|---|---|
+| `symbol` | the venue's bare symbol (`XAUUSD`) |
+| `kind` | `spot`, `equity`, `future`, `perpetual`, `option` or `event` |
+| `category` | the venue's folder or grouping (`Stocks\US`, `us_equity`) |
+| `currency` | the quote currency when the instruments file states it |
+| `contract_size`, `tick_size` | the contract multiplier; the smallest price step |
+| `trade_mode` | `full`, `long_only`, `short_only`, `close_only`, `disabled` |
+| `family`, `underlying` | a derivative's root (`ES`, `KXINXU`); an option's underlying index |
+| `expiry_at`, `dte` | a dated contract's expiry in epoch milliseconds; its days to expiry as of `--from` |
+
+As-of market fields (`volume`, `close`, `open_interest`) and event-slot universes (`KALSHI:*@front.p70 WHERE ...`)
+are not in this vocabulary yet; they arrive with runtime membership. `qkt bot universe "<spec>"` lists what a spec
+resolves to ([bot CLI](../bot-cli.md#universe)).
+
 ## Synchronizing streams
 
 Strategies that act on **multiple streams together** — pairs trading, basket strategies, lead-lag rules — usually want the engine to evaluate the rule body once per *matched* bar window, with every member's candle current. Without synchronization, each stream's close triggers an independent evaluation that reads the other side's last-known value — which is the **previous** window's bar if the other stream hasn't closed yet. For a slow signal that's noise; for a tight spread that's the wrong trade.
