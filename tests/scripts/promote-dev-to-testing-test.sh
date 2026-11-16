@@ -9,6 +9,8 @@ trap 'rm -rf "$tmp"' EXIT
 test "$(grep -Fc '    branches: [dev, testing]' "$workflow")" -eq 1
 test "$(grep -Fc '    branches: [dev]' "$workflow")" -eq 1
 test "$(grep -Fc "    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'" "$workflow")" -eq 1
+# Promotion waits for both check jobs.
+test "$(grep -Fc '    needs: [build, scripts]' "$workflow")" -eq 1
 # Dev runs are keyed by SHA so an older push can never cancel a newer one (#1627).
 test "$(grep -Fc "format('check-dev-{0}', github.sha)" "$workflow")" -eq 1
 test "$(grep -c '^  group: check-\${{ github.ref }}$' "$workflow")" -eq 0

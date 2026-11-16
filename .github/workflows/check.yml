@@ -1,13 +1,14 @@
 name: check
 
 # Fast essentials — compile + ktlint + unit tests — on every PR into dev and
-# every push to dev or testing. This is the only CI a feature-branch PR runs. The heavier
+# every push to dev or testing, in two parallel jobs: `build` (gradle: compile, ktlint, unit tests, coverage, data
+# e2e) and `scripts` (the bash and python script tests). This is the only CI a feature-branch PR runs. The heavier
 # black-box suite is integration.yml, which gates testing and main. A pull request
 # that changes only documentation no test reads skips the build steps and still
-# reports a green `build` (scripts/classify-ci-changes.sh); pushes and merge-queue
+# reports a green `build` and `scripts` (scripts/classify-ci-changes.sh); pushes and merge-queue
 # runs never skip.
 #
-# On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
+# On a push to dev (i.e. a merged PR), green `build` and `scripts` jobs auto-promote dev to
 # testing via a merge commit that preserves prior testing promotion history. The push authenticates with PROMOTE_SSH_KEY
 # (a repo-scoped deploy key) rather than GITHUB_TOKEN, because a GITHUB_TOKEN
 # push does not trigger downstream workflows — integration.yml must fire on
@@ -80,6 +81,97 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
         if: steps.changes.outputs.full == 'true'
+      # Python 3.12 and diff-cover for the diff-coverage gate and the data e2e suite below.
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.full == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install diff-coverage tools
+        if: steps.changes.outputs.full == 'true'
+        run: pip install --quiet -r config/coverage-requirements.txt
+      - name: Build + test + ktlint + coverage floor
+        if: steps.changes.outputs.full == 'true'
+        run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
+      # Every line a pull request adds or edits under src/main must run under test
+      # (docs/contributing/test-coverage.md). Kover's XML report is read locally; nothing is uploaded.
+      - name: Diff coverage (100% of changed lines)
+        if: github.event_name == 'pull_request' && steps.changes.outputs.full == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          DIFF_COVERAGE_HTML=build/reports/diff-coverage.html DIFF_COVERAGE_MARKDOWN=build/reports/diff-coverage.md \
+            bash scripts/check-diff-coverage.sh "$BASE_SHA" || { cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"; exit 1; }
+          cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage reports
+        if: always() && steps.changes.outputs.full == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            build/reports/kover/
+            build/reports/diff-coverage.*
+          retention-days: 14
+      # Real vendor files through the built qkt, checked against independent readers and the vendors' own data
+      # (docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md). The corpus is private third-party data,
+      # pinned by commit in tests/data-e2e/corpus.lock and read with a read-only deploy key.
+      - name: Read the pinned data corpus commit
+        if: steps.changes.outputs.full == 'true'
+        id: corpus
+        run: echo "sha=$(cut -d' ' -f1 tests/data-e2e/corpus.lock)" >> "$GITHUB_OUTPUT"
+      - name: Check out the data corpus
+        if: steps.changes.outputs.full == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: elitekaycy/qkt-data-corpus
+          ref: ${{ steps.corpus.outputs.sha }}
+          ssh-key: ${{ secrets.QKT_DATA_CORPUS_KEY }}
+          path: qkt-data-corpus
+      - name: Real-data end-to-end suite (pull-request tier)
+        if: steps.changes.outputs.full == 'true'
+        run: |
+          ./gradlew installDist --no-daemon
+          python3 -I qkt-data-corpus/tools/provenance.py --check
+          python3 -I tests/data-e2e/run.py --tier pr --corpus qkt-data-corpus --report build/data-e2e.json
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/
+            build/test-results/
+            build/data-e2e.json
+          retention-days: 7
+
+  # Script tests (bash and python) that need neither the JDK nor the gradle build, in parallel with `build` so its
+  # wall clock is the gradle step alone. Same triggers and the same docs-only rule as `build`, decided inside the job
+  # so a classifier failure fails `scripts` instead of skipping it (a skipped required check counts as passing).
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both parents of the PR merge commit, for the classifier's HEAD^1..HEAD diff.
+          fetch-depth: 2
+      - name: Classify changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if ! git rev-parse -q --verify HEAD^2 >/dev/null; then
+            echo "::notice::HEAD is not a PR merge commit; running the full build"
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          kind="$(git diff --name-only HEAD^1 HEAD | bash scripts/classify-ci-changes.sh)"
+          if [ "$kind" = docs-only ]; then
+            echo "::notice title=docs-only::Every changed path is documentation no test reads; script tests skipped. Pushes to dev and testing still run the full build."
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Test commit author check
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/check-commit-authors-test.sh
@@ -146,62 +238,10 @@ jobs:
         run: |
           pip install --quiet -r config/coverage-requirements.txt
           bash tests/scripts/check-diff-coverage-test.sh
-      - name: Build + test + ktlint + coverage floor
-        if: steps.changes.outputs.full == 'true'
-        run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
-      # Every line a pull request adds or edits under src/main must run under test
-      # (docs/contributing/test-coverage.md). Kover's XML report is read locally; nothing is uploaded.
-      - name: Diff coverage (100% of changed lines)
-        if: github.event_name == 'pull_request' && steps.changes.outputs.full == 'true'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          DIFF_COVERAGE_HTML=build/reports/diff-coverage.html DIFF_COVERAGE_MARKDOWN=build/reports/diff-coverage.md \
-            bash scripts/check-diff-coverage.sh "$BASE_SHA" || { cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"; exit 1; }
-          cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload coverage reports
-        if: always() && steps.changes.outputs.full == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: |
-            build/reports/kover/
-            build/reports/diff-coverage.*
-          retention-days: 14
-      # Real vendor files through the built qkt, checked against independent readers and the vendors' own data
-      # (docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md). The corpus is private third-party data,
-      # pinned by commit in tests/data-e2e/corpus.lock and read with a read-only deploy key.
-      - name: Read the pinned data corpus commit
-        if: steps.changes.outputs.full == 'true'
-        id: corpus
-        run: echo "sha=$(cut -d' ' -f1 tests/data-e2e/corpus.lock)" >> "$GITHUB_OUTPUT"
-      - name: Check out the data corpus
-        if: steps.changes.outputs.full == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: elitekaycy/qkt-data-corpus
-          ref: ${{ steps.corpus.outputs.sha }}
-          ssh-key: ${{ secrets.QKT_DATA_CORPUS_KEY }}
-          path: qkt-data-corpus
-      - name: Real-data end-to-end suite (pull-request tier)
-        if: steps.changes.outputs.full == 'true'
-        run: |
-          ./gradlew installDist --no-daemon
-          python3 -I qkt-data-corpus/tools/provenance.py --check
-          python3 -I tests/data-e2e/run.py --tier pr --corpus qkt-data-corpus --report build/data-e2e.json
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            build/reports/tests/
-            build/test-results/
-            build/data-e2e.json
-          retention-days: 7
 
   promote-to-testing:
-    needs: build
+    # Promote only when every check job passed: the gradle build and the script tests.
+    needs: [build, scripts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:

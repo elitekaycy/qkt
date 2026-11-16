@@ -1,5 +1,8 @@
 // Unit-test wiring: tag filtering for the default run, soak knobs forwarded to the test
 // JVM, and the per-suite log budget that keeps CI logs readable.
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import java.util.concurrent.ConcurrentHashMap
+
 plugins {
     java
 }
@@ -18,9 +21,21 @@ tasks.test {
             includeTags(*included.toTypedArray())
         }
     }
-    testLogging {
-        events("passed", "failed", "skipped")
-        showStandardStreams = true
+    // On CI (GitHub Actions sets CI=true) the console carries only failed and skipped tests: full stack traces,
+    // plus the output a failing test wrote. Every suite's output still lands in build/test-results, which
+    // checkTestLogBudget reads and the failed-run artifact keeps. Locally every event and stream prints.
+    if (System.getenv("CI") == "true") {
+        testLogging {
+            events("failed", "skipped")
+            exceptionFormat = TestExceptionFormat.FULL
+            showStandardStreams = false
+        }
+        printOutputOfFailedTests()
+    } else {
+        testLogging {
+            events("passed", "failed", "skipped")
+            showStandardStreams = true
+        }
     }
     // The CLI logs to stderr, which test reports keep; tests log to stdout so suites stay within their log budget.
     systemProperty("QKT_CONSOLE_TARGET", "System.out")
@@ -123,4 +138,41 @@ fun org.w3c.dom.Document.textFor(tag: String): String {
         out.append(nodes.item(i).textContent ?: "")
     }
     return out.toString()
+}
+
+// Buffers each test's (and each suite's) stdout/stderr and prints it only when that test or suite fails.
+fun Test.printOutputOfFailedTests() {
+    fun key(descriptor: TestDescriptor): String =
+        generateSequence(descriptor) { it.parent }.joinToString(" < ") { it.name }
+    val buffers = ConcurrentHashMap<String, StringBuilder>()
+    addTestOutputListener { descriptor, event ->
+        buffers.computeIfAbsent(key(descriptor)) { StringBuilder() }.append(event.message)
+    }
+
+    fun flush(
+        descriptor: TestDescriptor,
+        result: TestResult,
+    ) {
+        val output = buffers.remove(key(descriptor))
+        if (result.resultType == TestResult.ResultType.FAILURE && !output.isNullOrBlank()) {
+            logger.lifecycle("\n----- output of ${descriptor.className ?: ""} > ${descriptor.name} -----\n$output")
+        }
+    }
+    addTestListener(
+        object : TestListener {
+            override fun beforeSuite(suite: TestDescriptor) = Unit
+
+            override fun afterSuite(
+                suite: TestDescriptor,
+                result: TestResult,
+            ) = flush(suite, result)
+
+            override fun beforeTest(testDescriptor: TestDescriptor) = Unit
+
+            override fun afterTest(
+                testDescriptor: TestDescriptor,
+                result: TestResult,
+            ) = flush(testDescriptor, result)
+        },
+    )
 }
