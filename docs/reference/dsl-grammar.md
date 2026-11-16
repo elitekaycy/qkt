@@ -149,6 +149,17 @@ SYMBOLS
     eur = backtest:EURUSD EVERY 15m
 ```
 
+A **symbol set** declares many streams of one venue at once (see [streams](dsl/streams.md#symbol-sets-exnesseurusd-xauusd-alpaca-where-)):
+
+<!-- qkt-doc: grammar -->
+```qkt
+<set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [ WARMUP <N> BARS ]
+<set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ ASC | DESC ] EVERY <timeframe>
+<union> = <set> + <set>
+```
+
+`WHERE`, `TOP`, `GLOB`, `ASC` and `DESC` are ordinary identifiers everywhere else.
+
 ## Actions
 
 | Action | Effect |
@@ -377,7 +388,8 @@ RULES
 
 Iterates over streams; the loop variable substitutes textually into the rule body, so this is one
 rule per stream. The stream list needs its square brackets: `FOR EACH s IN btc, gold DO` is a parse
-error (`expected '[' to open stream alias list`).
+error (`expected '[' to open stream alias list`). Over a symbol set the brackets go away:
+`FOR EACH m IN fx DO ...` runs the rule once per member of the set `fx` ([FOR EACH](dsl/foreach.md)).
 
 ## See also
 

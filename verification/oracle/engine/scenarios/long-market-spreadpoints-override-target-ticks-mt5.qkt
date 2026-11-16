@@ -1,0 +1,7 @@
+STRATEGY long_market_spreadpoints_override_target_ticks_mt5 VERSION 1
+-- spreadPoints 10 prices the entry at mid + 0.05; the target triggers on the feed's bid and, a limit, fills no worse than its price
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

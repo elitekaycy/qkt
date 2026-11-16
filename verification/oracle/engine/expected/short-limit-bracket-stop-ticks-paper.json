@@ -1,0 +1,33 @@
+{
+  "name": "short-limit-bracket-stop-ticks-paper",
+  "proves": "a sell limit rests until the bid rises to it, fills at mid, and its stop then fills on the ask",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "101.21",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "102.21",
+      "takeProfit": "100.21"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "102.20",
+      "realized": "-0.099",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.099",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

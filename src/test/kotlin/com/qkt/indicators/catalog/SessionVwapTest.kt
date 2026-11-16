@@ -101,6 +101,59 @@ class SessionVwapTest {
     }
 
     @Test
+    fun `stdev weights dispersion by volume over several bars`() {
+        val s = SessionVwap(anchorHour = 0)
+        s.update(flat("2026-01-01T00:00:00Z", "10", "1"))
+        s.update(flat("2026-01-01T01:00:00Z", "20", "2"))
+        s.update(flat("2026-01-01T02:00:00Z", "40", "1"))
+        // vwap = (10 + 40 + 40) / 4 = 22.5; var = (156.25 + 2*6.25 + 306.25) / 4 = 118.75
+        assertThat(s.bands()!!.vwap).isEqualByComparingTo("22.5")
+        assertThat(s.bands()!!.stdev).isEqualByComparingTo("10.89724736")
+    }
+
+    @Test
+    fun `stdev is exactly zero on a session's first bar at a repeating typical price`() {
+        val s = SessionVwap(anchorHour = 0)
+        val ms = Instant.parse("2026-01-01T00:00:00Z").toEpochMilli()
+        // tp = 195000.04 / 3 = 65000.0133... repeats; E[tp^2] - E[tp]^2 at 16 digits read ~3e-6 here.
+        s.update(
+            Candle(
+                "X",
+                open = BigDecimal("65000.01"),
+                high = BigDecimal("65000.02"),
+                low = BigDecimal("65000.01"),
+                close = BigDecimal("65000.01"),
+                volume = BigDecimal("12.5"),
+                startTime = ms,
+                endTime = ms + 60_000,
+            ),
+        )
+        assertThat(s.bands()!!.stdev).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `stdev of a near-constant session at a billion-scale price is exact`() {
+        val s = SessionVwap(anchorHour = 0)
+        s.update(flat("2026-01-01T00:00:00Z", "1234567890.12", "3"))
+        s.update(flat("2026-01-01T01:00:00Z", "1234567890.14", "3"))
+        s.update(flat("2026-01-01T02:00:00Z", "1234567890.13", "6"))
+        // tp^2 needs 24 digits, so the one-pass variance at 16 digits is noise; the exact answer is
+        // vwap = 1234567890.13 and var = (3*1e-4 + 3*1e-4 + 0) / 12 = 5e-5 → stdev 0.00707107.
+        assertThat(s.bands()!!.vwap).isEqualByComparingTo("1234567890.13")
+        assertThat(s.bands()!!.stdev).isEqualByComparingTo("0.00707107")
+    }
+
+    @Test
+    fun `stdev restarts from zero at the anchor`() {
+        val s = SessionVwap(anchorHour = 0)
+        s.update(flat("2026-01-01T00:00:00Z", "10", "10"))
+        s.update(flat("2026-01-01T01:00:00Z", "20", "10"))
+        s.update(flat("2026-01-02T00:00:00Z", "65000.5", "10"))
+        assertThat(s.bands()!!.vwap).isEqualByComparingTo("65000.5")
+        assertThat(s.bands()!!.stdev).isEqualByComparingTo("0")
+    }
+
+    @Test
     fun `zero-volume candle carries no weight`() {
         val s = SessionVwap(anchorHour = 0)
         s.update(flat("2026-01-01T00:00:00Z", "999", "0"))

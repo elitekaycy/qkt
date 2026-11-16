@@ -17,6 +17,13 @@ const val CHAIN_BROKER: String = "CHAIN"
 /** The broker prefix of whole option root feeds (`OPTIONS:DERIBIT.BTC_USDC`). */
 const val OPTIONS_BROKER: String = "OPTIONS"
 
+/**
+ * The broker prefix of a symbol-set declaration (`fx = EXNESS:{EURUSD, XAUUSD} EVERY 1h`): its
+ * [StreamDecl.symbol] is the set's canonical spec ([com.qkt.dsl.sets.SymbolSetSpec]), and the set is replaced by
+ * one stream per member before the compiler sees it ([com.qkt.dsl.sets.SymbolSetExpansion]).
+ */
+const val SET_BROKER: String = "SET"
+
 /** Well-known broker/symbol identity used for synthetic DSL series streams. */
 object SeriesSymbols {
     const val BROKER: String = "SERIES"

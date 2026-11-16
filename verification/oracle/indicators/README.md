@@ -29,5 +29,6 @@ first volume); the DI lines share the ADX 2N warmup; MACD seeds each EMA on its 
 reports all three lines from the signal's first value; Bollinger uses the population standard deviation and
 `stddev()` the sample one; `failed_break_*` reads 0 from the bar that fills its range window.
 
-A fixture that exposes a bug is listed in `IndicatorVerificationKnownBugsTest` with a `@Disabled` reason and
-keeps asserting the correct behaviour, so re-enabling it is the proof once the fix lands.
+A fixture that exposes a bug is excluded from `IndicatorVerificationTest`'s factory and listed `@Disabled` with
+the reason in a sibling test class; it keeps asserting the correct behaviour, so re-enabling it is the proof once
+the fix lands. Every fixture passes at present, so no such class exists.

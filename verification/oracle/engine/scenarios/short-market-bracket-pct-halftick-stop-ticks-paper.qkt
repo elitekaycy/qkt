@@ -1,0 +1,7 @@
+STRATEGY short_market_bracket_pct_halftick_stop_ticks_paper VERSION 1
+-- PCT levels 101.505 and 97.485 land on the grid toward the entry (101.50 / 97.49); the stop fills
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 3 PCT }

@@ -74,6 +74,9 @@ class GatewayTradingAccount internal constructor(
             )
         }
 
+    /** The listing behind [instrumentSpec], read once for a burst of asks, not once a symbol. */
+    private val listing = GatewayListing(clock) { client.instruments() }
+
     // `category:` rules read each instrument's venue category through this account's own instrument spec.
     override val tradingHours: SymbolCalendars =
         GatewaySettings.calendars(config).withInstrumentCategories(config.name) { instrumentSpec(it)?.meta }
@@ -84,7 +87,7 @@ class GatewayTradingAccount internal constructor(
      */
     override fun instrumentSpec(qktSymbol: String) =
         GatewaySymbols(config.symbolPrefix).let { symbols ->
-            client.instruments().firstOrNull { symbols.qkt(it.code) == qktSymbol }?.instrumentSpec(qktSymbol)
+            listing.latest().firstOrNull { symbols.qkt(it.code) == qktSymbol }?.instrumentSpec(qktSymbol)
         }
 
     private val quotes =

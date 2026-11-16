@@ -45,7 +45,7 @@ class GatewayDirectVenue(
 
     override fun facts(qktSymbol: String): VenueFacts {
         val instrument = listing.getValue(venueSymbol(qktSymbol))
-        val quote = gatewayQuoteOnce(baseUrl, apiKey, instrument.code)
+        val quote = quoteOnce(instrument)
         val bid = quote.bid?.let(::BigDecimal) ?: error("gateway quote for $qktSymbol has no bid")
         val ask = quote.ask?.let(::BigDecimal) ?: error("gateway quote for $qktSymbol has no ask")
         val account = client.account()
@@ -137,7 +137,11 @@ class GatewayDirectVenue(
         toMs: Long,
     ) = reads.deals(fromMs, toMs)
 
-    override fun tick(qktSymbol: String) = reads.tick(gatewayQuoteOnce(baseUrl, apiKey, venueSymbol(qktSymbol)))
+    override fun tick(qktSymbol: String) = reads.tick(quoteOnce(listing.getValue(venueSymbol(qktSymbol))))
+
+    /** One quote of [instrument]; an event contract's empty side is its bound (no bid 0, no offer the payout). */
+    private fun quoteOnce(instrument: WireInstrument) =
+        gatewayQuoteOnce(baseUrl, apiKey, instrument.code, bounds = EVENT_BOUNDS.takeIf { instrument.kind == "event" })
 
     override fun bars(
         qktSymbol: String,
@@ -152,6 +156,9 @@ class GatewayDirectVenue(
         override fun allPositions(): Map<String, Position> = emptyMap()
     }
 }
+
+/** The lowest bid and the highest ask of an event contract, which pays 1: what its empty side is quoted at. */
+private val EVENT_BOUNDS = "0" to "1"
 
 /** How long a one-shot event read waits for every contract of an event to quote. */
 private const val EVENT_QUOTE_WAIT_MS = 3_000L

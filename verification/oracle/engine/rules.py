@@ -1,0 +1,197 @@
+"""The modelling rules, each written from one documented sentence. The docstrings cite the doc and line.
+
+Paths are relative to the qkt repo root at the commit this oracle was written against (origin/dev 0ef93788a).
+"""
+
+from __future__ import annotations
+
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from typing import Optional
+
+from model import Instrument, Level, Sizing, Tick
+
+LONG, SHORT = "BUY", "SELL"
+
+
+def opposite(side: str) -> str:
+    return SHORT if side == LONG else LONG
+
+
+# --- price grid -------------------------------------------------------------------------------------------
+
+
+def on_grid(level: Decimal, entry: Decimal, grid: Decimal) -> Decimal:
+    """bracket.md:40-47: each bracket level goes on the symbol's price grid "once the entry fills ... The rule is
+    the nearest tick, and an exact half tick goes toward the entry: a stop never risks more than written and a
+    target never promises more." Worked example there: EURUSD at 1.161055, BY 0.001 / 0.002 -> 1.16006 / 1.16305.
+    """
+    lo = (level / grid).to_integral_value(rounding=ROUND_FLOOR) * grid
+    hi = (level / grid).to_integral_value(rounding=ROUND_CEILING) * grid
+    if lo == hi:
+        return level
+    below, above = level - lo, hi - level
+    if below == above:
+        return lo if entry <= level else hi
+    return lo if below < above else hi
+
+
+# --- bracket geometry -------------------------------------------------------------------------------------
+
+
+def stop_level(side: str, entry: Decimal, leg: Level, inst: Instrument) -> Decimal:
+    """bracket.md:49-57 `BY <points>`: "stop at entry - points" for a long (mirror for a short);
+    bracket.md:64-72 `BY <pct> PCT`: "percent of entry price", `1 PCT` means 1 %;
+    bracket.md:84-92 `AT <price>`: the absolute price computed when the rule fires.
+    All three then go on the grid (on_grid)."""
+    raw = _level(side, entry, leg, is_stop=True)
+    return on_grid(raw, entry, inst.grid)
+
+
+def target_level(side: str, entry: Decimal, leg: Level, inst: Instrument) -> Decimal:
+    raw = _level(side, entry, leg, is_stop=False)
+    return on_grid(raw, entry, inst.grid)
+
+
+def _level(side: str, entry: Decimal, leg: Level, is_stop: bool) -> Decimal:
+    if leg.at is not None:
+        return leg.at
+    sign = -1 if (side == LONG) == is_stop else 1  # long stop below / long target above; mirrored for a short
+    if leg.by is not None:
+        return entry + sign * leg.by
+    assert leg.pct is not None
+    return entry * (1 + sign * leg.pct / 100)
+
+
+def stop_distance(side: str, price: Decimal, leg: Level, inst: Instrument) -> Decimal:
+    """sizing.md:82: risk sizing "resolves AT, expression-based BY, and PCT stop prices with the current entry
+    geometry before it computes the order quantity"; bracket.md:165: the distance is the worst-case stop distance.
+    The oracle takes the entry geometry to be the signal bar's close (sizing.md:92 `btc.close` is the entry price
+    estimate at placement time)."""
+    if leg.by is not None:
+        return leg.by
+    if leg.pct is not None:
+        return price * leg.pct / 100
+    assert leg.at is not None
+    return abs(price - leg.at)
+
+
+# --- sizing -----------------------------------------------------------------------------------------------
+
+
+def quantize_volume(qty: Decimal, inst: Instrument) -> Optional[Decimal]:
+    """backtest-model.md:80-81 (paper) and :104-105 (mt5-sim): "Volume rounds down to `volumeStep` and an order
+    below `volumeMin` is rejected"; sizing.md:220-224: rounded *down*, an order below the minimum "is rejected
+    (counted in the report's rejections), never sent at the minimum". None means rejected."""
+    stepped = (qty / inst.volume_step).to_integral_value(rounding=ROUND_FLOOR) * inst.volume_step
+    if stepped < inst.volume_min:
+        return None
+    return stepped
+
+
+def size(
+    sizing: Sizing, price: Decimal, equity: Decimal, balance: Decimal, stop_dist: Optional[Decimal], inst: Instrument
+) -> Optional[Decimal]:
+    """sizing.md "The forms available today" (lines 7-16) and each form's section:
+    - fixed (:19-24): the literal, in the venue's unit (lots);
+    - `USD` (:51-57): notional / price, "For BTC at $50k, that's 0.02 BTC"; the oracle divides by
+      price x contractSize so the notional is the fill notional (`fillNotional` in trades.csv); see README Q3;
+    - `PCT OF EQUITY` (:30-45): equity x pct / 100 of position value at the current price;
+    - `PCT OF BALANCE` (:40-45): the same on cash balance;
+    - `PCT RISK` (:75-82): "if the stop hits, the loss is exactly N% of equity", sugar for `RISK N/100`;
+    - `RISK $ N` (:15, :164): account-currency budget / (stop distance x contract size).
+    Every result is quantized by quantize_volume (sizing.md:219-224)."""
+    cs = inst.contract_size
+    if sizing.form == "fixed":
+        raw = sizing.value
+    elif sizing.form == "usd":
+        raw = sizing.value / (price * cs)
+    elif sizing.form == "pctEquity":
+        raw = equity * sizing.value / 100 / (price * cs)
+    elif sizing.form == "pctBalance":
+        raw = balance * sizing.value / 100 / (price * cs)
+    elif sizing.form == "pctRisk":
+        assert stop_dist is not None, "PCT RISK requires a bracket stop (sizing.md:84)"
+        raw = equity * sizing.value / 100 / (stop_dist * cs)
+    elif sizing.form == "riskUsd":
+        assert stop_dist is not None, "RISK $ requires a bracket stop (sizing.md:84)"
+        raw = sizing.value / (stop_dist * cs)
+    else:
+        raise ValueError(f"unknown sizing form {sizing.form}")
+    return quantize_volume(raw, inst)
+
+
+# --- triggers ---------------------------------------------------------------------------------------------
+
+
+def quote_for(side: str, tick: Tick) -> Decimal:
+    """backtest-model.md:77-78: a pending order "triggers on the first tick whose quote for its side reaches the
+    level (the ask for a buy, the bid for a sell, as at the venue)"."""
+    return tick.ask if side == LONG else tick.bid
+
+
+def limit_touched(side: str, level: Decimal, quote: Decimal) -> bool:
+    """A buy limit is reached when the ask falls to it; a sell limit when the bid rises to it."""
+    return quote <= level if side == LONG else quote >= level
+
+
+def stop_touched(side: str, level: Decimal, quote: Decimal) -> bool:
+    """A buy stop is reached when the ask rises to it; a sell stop when the bid falls to it."""
+    return quote >= level if side == LONG else quote <= level
+
+
+# --- fill prices ------------------------------------------------------------------------------------------
+
+
+def fill_quotes(tick: Tick, inst: Instrument) -> tuple[Decimal, Decimal]:
+    """backtest-model.md:158: `spreadPoints: N` "fills at the tick's mid +- N/2 points, whatever spread the tick
+    carries"; :162-163: "The fill price is the only thing they change: stops, limits ... still see the feed's
+    quotes." Returns (bid, ask) used for pricing a fill."""
+    if inst.spread_points is None:
+        return tick.bid, tick.ask
+    half = Decimal(inst.spread_points) * inst.point_size / 2
+    return tick.mid - half, tick.mid + half
+
+
+def paper_fill(tick: Tick) -> Decimal:
+    """backtest-model.md:76-79: `paper` "fills at mid ... fills at that tick's mid, so it can fill up to half a
+    spread better than its level, or beyond it on a gap. No spread, slippage or latency."""
+    return tick.mid
+
+
+def mt5_fill(side: str, tick: Tick, inst: Instrument, slipped: bool, limit: Optional[Decimal] = None) -> Decimal:
+    """backtest-model.md:104-106: "A BUY fills at the ask and a SELL at the bid ... plus slippage"; :144-147:
+    `mt5-sim` "slips market and stop fills against you by the instrument's `slippagePoints` (each point one
+    `pointSize` wide)"; "A limit, take-profit included, is never filled worse than its price, so it is not slipped."
+    When `spreadPoints` widens the fill quote past a limit the feed's quote already reached, that sentence caps the
+    fill at the limit price (README Q11). :105: "fill prices round to `digits`" (every price here is already on the
+    grid; see README Q5)."""
+    bid, ask = fill_quotes(tick, inst)
+    slip = Decimal(inst.slippage_points) * inst.point_size if slipped else Decimal(0)
+    price = ask + slip if side == LONG else bid - slip
+    if limit is not None:
+        price = min(price, limit) if side == LONG else max(price, limit)
+    return round_digits(price, inst.digits)
+
+
+def round_digits(price: Decimal, digits: int) -> Decimal:
+    q = Decimal(1).scaleb(-digits)
+    rounded = price.quantize(q)
+    assert rounded == price, f"fill price {price} is off the {digits}-digit grid; the rounding mode is undocumented"
+    return rounded
+
+
+# --- costs and P&L ----------------------------------------------------------------------------------------
+
+
+def commission(qty: Decimal, inst: Instrument) -> Decimal:
+    """backtest-data.md:577: `commissionPerLot` is "$ per lot per fill"; cli-commands.md:65: "per 1.0 lot per
+    side". Charged on every fill, entry and exit."""
+    return inst.commission_per_lot * qty
+
+
+def gross_pnl(side: str, entry: Decimal, exit_price: Decimal, qty: Decimal, inst: Instrument) -> Decimal:
+    """Price difference x lots x contractSize in the quote currency (USD account, USD-quoted symbol, so the
+    conversion rate is 1: backtest-model.md "Equity"; the release audit's `verify.py` relation
+    realised = (exit - entry) x qty x contractSize that qkt's own trades.csv reconciles to)."""
+    diff = exit_price - entry if side == LONG else entry - exit_price
+    return diff * qty * inst.contract_size

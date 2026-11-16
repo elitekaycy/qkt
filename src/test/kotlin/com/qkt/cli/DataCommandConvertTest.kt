@@ -110,4 +110,62 @@ class DataCommandConvertTest {
         assertEquals(ExitCodes.USER_ERROR, rc)
         assertTrue(Files.exists(symDir.resolve("2024-04-02.csv.gz")))
     }
+
+    @Test
+    fun `convert needs a symbol and a symbol folder that exists`(
+        @TempDir root: Path,
+    ) {
+        val noSymbol = captureCliRun { DataCommand(Args(arrayOf("data", "convert"))).run() }
+        assertEquals(ExitCodes.ARG_ERROR, noSymbol.code)
+        assertEquals(
+            "qkt: missing symbol. usage: qkt data convert <symbol> [--from] [--to] [--prune]\n",
+            noSymbol.err,
+        )
+
+        val unknown =
+            captureCliRun {
+                DataCommand(
+                    Args(arrayOf("data", "convert", "EURUSD", "--data-root", root.toString())),
+                ).run()
+            }
+        assertEquals(ExitCodes.USER_ERROR, unknown.code)
+        assertEquals(
+            "qkt: no cached tick data for 'EURUSD' at ${root.resolve("symbols").resolve("EURUSD")}\n",
+            unknown.err,
+        )
+    }
+
+    @Test
+    fun `from is inclusive and to is exclusive when bounding the days converted`(
+        @TempDir root: Path,
+    ) {
+        val symDir = root.resolve("symbols").resolve("XAUUSD")
+        for (day in listOf("2024-04-01", "2024-04-02", "2024-04-03", "2024-04-04")) {
+            writeCsvGz(symDir.resolve("$day.csv.gz"), listOf("1712016000000,XAUUSD,,,1711.5,1712.0,,"))
+        }
+        Files.writeString(symDir.resolve("notes.txt"), "not a day file")
+
+        val run =
+            captureCliRun {
+                DataCommand(
+                    Args(
+                        arrayOf("data", "convert", "XAUUSD", "--from", "2024-04-02", "--to", "2024-04-04") +
+                            arrayOf("--data-root", root.toString()),
+                    ),
+                ).run()
+            }
+
+        assertEquals(ExitCodes.SUCCESS, run.code)
+        assertEquals("qkt data convert: XAUUSD — converted=2 skipped=0 prune=false\n", run.out)
+        assertEquals(
+            listOf("2024-04-02.bin", "2024-04-03.bin"),
+            Files.list(symDir).use { files ->
+                files
+                    .map { it.fileName.toString() }
+                    .filter { it.endsWith(".bin") }
+                    .sorted()
+                    .toList()
+            },
+        )
+    }
 }

@@ -1,0 +1,157 @@
+{
+  "name": "long-market-close-rule-ticks-paper",
+  "proves": "CLOSE from a bar-close rule flattens at the first tick after that close",
+  "dimensions": {
+    "entry": "market",
+    "exit": "close-rule",
+    "side": "long",
+    "fills": "ticks",
+    "path": "close",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "100.99",
+      "101.01"
+    ],
+    [
+      135,
+      "101.99",
+      "102.01"
+    ],
+    [
+      150,
+      "102.49",
+      "102.51"
+    ],
+    [
+      165,
+      "102.99",
+      "103.01"
+    ],
+    [
+      180,
+      "102.99",
+      "103.01"
+    ],
+    [
+      195,
+      "103.19",
+      "103.21"
+    ],
+    [
+      210,
+      "102.89",
+      "102.91"
+    ],
+    [
+      225,
+      "103.09",
+      "103.11"
+    ],
+    [
+      240,
+      "99.99",
+      "100.01"
+    ],
+    [
+      255,
+      "99.99",
+      "100.01"
+    ],
+    [
+      270,
+      "99.99",
+      "100.01"
+    ],
+    [
+      285,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "103.00",
+        "position": "long"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": []
+}

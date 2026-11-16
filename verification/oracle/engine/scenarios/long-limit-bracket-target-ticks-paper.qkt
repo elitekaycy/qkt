@@ -1,0 +1,7 @@
+STRATEGY long_limit_bracket_target_ticks_paper VERSION 1
+-- a buy limit rests until the ask falls to it, fills at mid, and anchors its bracket on the fill
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 ORDER_TYPE = LIMIT AT 99.80 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }

@@ -21,6 +21,7 @@ import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
@@ -183,6 +184,7 @@ internal fun collectMetaRefs(
                 walkExpr(r.cond)
                 walkAction(r.action)
             }
+            is ForEachSet -> walkRule(r.template)
         }
     }
 
