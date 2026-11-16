@@ -1,5 +1,6 @@
 package com.qkt.cli.observe
 
+import com.qkt.cli.moveAtomically
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,10 +31,6 @@ object PortPrinter {
     ) {
         val tmp = target.resolveSibling("${target.fileName}.tmp")
         Files.writeString(tmp, content)
-        try {
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-        }
+        moveAtomically(tmp, target, StandardCopyOption.REPLACE_EXISTING)
     }
 }

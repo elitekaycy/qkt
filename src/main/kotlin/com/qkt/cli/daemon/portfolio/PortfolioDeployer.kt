@@ -143,21 +143,16 @@ class PortfolioDeployer(
                     val base =
                         bookRiskConfig ?: com.qkt.risk.book
                             .BookRiskConfig()
-                    val rebalanceBars =
-                        compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
-                            bookFeed?.window?.let { window ->
-                                java.math
-                                    .BigDecimal(durationMs)
-                                    .divide(java.math.BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
-                                    .toInt()
-                            } ?: 0
-                        } ?: 0
                     base.copy(
                         capital = base.capital ?: bookCapital,
                         allocation =
                             com.qkt.risk.book.Allocation(
                                 method = com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED,
-                                rebalanceEveryBars = rebalanceBars,
+                                rebalanceEveryBars =
+                                    com.qkt.cli.rebalanceBars(
+                                        compiled.ast.allocate.rebalanceEveryDurationMs,
+                                        bookFeed?.window,
+                                    ),
                             ),
                     )
                 } else {
@@ -461,11 +456,11 @@ class PortfolioDeployer(
         portfolioName: String,
         compiled: PortfolioCompiled,
         compiledChild: CompiledChild,
-        allocatedCapital: java.math.BigDecimal? = null,
-        bookController: com.qkt.risk.book.BookRiskController? = null,
-        onBookRealized: (String, java.math.BigDecimal) -> Unit = { _, _ -> },
-        bookBalance: PortfolioBookBalance? = null,
-        ignoreMismatches: Boolean = false,
+        allocatedCapital: java.math.BigDecimal?,
+        bookController: com.qkt.risk.book.BookRiskController?,
+        onBookRealized: (String, java.math.BigDecimal) -> Unit,
+        bookBalance: PortfolioBookBalance?,
+        ignoreMismatches: Boolean,
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)

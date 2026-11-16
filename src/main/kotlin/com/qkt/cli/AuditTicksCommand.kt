@@ -25,7 +25,22 @@ import java.nio.file.Path
  */
 class AuditTicksCommand(
     private val args: Args,
+    /** Test seam: the TradingView drift audit, which needs the live TradingView feed. */
+    private val tradingViewAudit: TradingViewAudit = ::runTradingViewDriftAudit,
 ) {
+    /** Signature of the TradingView drift audit: client, symbol, broker symbol, seconds, poll ms, json, out path. */
+    fun interface TradingViewAudit {
+        fun run(
+            client: MT5Client,
+            symbol: String,
+            brokerSymbol: String,
+            durationSeconds: Long,
+            pollMs: Long,
+            jsonOutput: Boolean,
+            outPath: String?,
+        ): Int
+    }
+
     /** Run the selected audit and return a process exit code. */
     fun run(): Int {
         val symbol = args.option("symbol") ?: return missing("symbol")
@@ -109,7 +124,7 @@ class AuditTicksCommand(
                 outPath = args.option("out"),
             )
         }
-        return runTradingViewDriftAudit(
+        return tradingViewAudit.run(
             client = mt5Client,
             symbol = symbol,
             brokerSymbol = brokerSymbol,

@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.common.coverage.ExcludeFromCoverage
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
@@ -69,9 +70,17 @@ data class ControlToken(
             } catch (_: FileAlreadyExistsException) {
                 return
             } catch (_: UnsupportedOperationException) {
-                Files.writeString(path, token, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+                writeWithoutPosixAttributes(path, token)
             }
             enforceOwnerOnly(path)
+        }
+
+        @ExcludeFromCoverage("fallback for a file system without POSIX permissions; this platform always has them")
+        private fun writeWithoutPosixAttributes(
+            path: java.nio.file.Path,
+            token: String,
+        ) {
+            Files.writeString(path, token, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
         }
 
         private fun enforceOwnerOnly(path: java.nio.file.Path) {
