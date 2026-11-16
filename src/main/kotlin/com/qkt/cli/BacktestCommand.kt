@@ -159,7 +159,7 @@ class BacktestCommand(
         val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
         return SymbolSetResolution.resolve(
             ast,
-            SymbolSetResolution.catalog(args, dataRoot),
+            SymbolSetResolution.FileCatalog(SymbolSetResolution.catalog(args, dataRoot)),
             BacktestContext.parseInstant(from).toEpochMilli(),
             args.flag(SymbolSetResolution.SURVIVORSHIP_FLAG),
         )

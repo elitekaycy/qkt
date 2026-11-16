@@ -90,6 +90,12 @@ class GatewayTradingAccount internal constructor(
             listing.latest().firstOrNull { symbols.qkt(it.code) == qktSymbol }?.instrumentSpec(qktSymbol)
         }
 
+    /** The listing as a live set's catalog ([gatewayCatalog]), a kind it describes read through the kind filter. */
+    override fun instrumentCatalog(kind: String?) =
+        gatewayCatalog(GatewaySymbols(config.symbolPrefix), kind, listing::latest) {
+            client.instrumentPages(listOf("kind" to it)).instruments
+        }
+
     private val quotes =
         GatewayMarketSource(
             config.symbolPrefix,
