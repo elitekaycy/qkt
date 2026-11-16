@@ -1,5 +1,6 @@
 package com.qkt.golden
 
+import com.qkt.backtest.EventSlotData
 import com.qkt.backtest.TickResolvedParityFixtures
 import com.qkt.cli.Args
 import com.qkt.cli.BacktestCommand
@@ -111,6 +112,7 @@ internal object GoldenRun {
                     amplitude = 300.0,
                     decimals = 1,
                 )
+            GoldenData.EVENT_FAMILY_HOURLY -> EventSlotData.seed(dataRoot)
         }
         val tf = case.barsTimeframe ?: return
         val symbol = if (case.data == GoldenData.EURUSD_REAL_DAY) "EURUSD" else "XAUUSD"

@@ -10,9 +10,9 @@ import org.junit.jupiter.api.fail
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Pins today's CFD backtest behaviour byte for byte (spec §8). Each case's normalized report and
- * trade tape must equal the committed golden files. `QKT_GOLDEN_UPDATE=1` rewrites the files and
- * fails, so a regeneration is always a deliberate, reviewed commit.
+ * Pins today's backtest behaviour byte for byte: the CFD cases (spec §8) and one event-contract case. Each case's
+ * normalized report and trade tape must equal the committed golden files. `QKT_GOLDEN_UPDATE=1` rewrites the files
+ * and fails, so a regeneration is always a deliberate, reviewed commit.
  */
 class GoldenBacktestTest {
     @TempDir
@@ -22,7 +22,7 @@ class GoldenBacktestTest {
     private val updating = System.getenv("QKT_GOLDEN_UPDATE") == "1"
 
     @TestFactory
-    fun `CFD backtests match their golden outputs`(): List<DynamicTest> =
+    fun `backtests match their golden outputs`(): List<DynamicTest> =
         GoldenCases.all.map { case ->
             DynamicTest.dynamicTest(case.name) {
                 val (report, trades) = GoldenRun.run(case, Files.createDirectories(tmp.resolve(case.name)))
