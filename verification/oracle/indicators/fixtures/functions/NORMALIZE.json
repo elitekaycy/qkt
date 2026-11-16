@@ -1,0 +1,72 @@
+{
+ "function": "NORMALIZE",
+ "oracle": "decimal (x0 - min)/(max - min) at 16 digits; 0 when all equal; TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3",
+ "tolerance": {
+  "abs": 0.0,
+  "rel": 1e-15
+ },
+ "cases": [
+  {
+   "args": [
+    "1",
+    "2",
+    "3"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "3",
+    "1",
+    "2"
+   ],
+   "expected": "1"
+  },
+  {
+   "args": [
+    "2",
+    "2",
+    "2"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "-1",
+    "-1.5",
+    "0"
+   ],
+   "expected": "0.3333333333333333"
+  },
+  {
+   "args": [
+    "1e12",
+    "-1e12",
+    "0"
+   ],
+   "expected": "1"
+  },
+  {
+   "args": [
+    "0.1",
+    "0.2"
+   ],
+   "expected": "0"
+  },
+  {
+   "args": [
+    "5",
+    "1",
+    "5"
+   ],
+   "expected": "1"
+  },
+  {
+   "args": [
+    "94273.12345678",
+    "94273.12345677"
+   ],
+   "expected": "1"
+  }
+ ]
+}

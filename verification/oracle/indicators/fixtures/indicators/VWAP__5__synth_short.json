@@ -1,0 +1,1 @@
+{"indicator":"VWAP","args":["5"],"series":"synth_short","input":"tick","oracle":"TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3","tolerance":{"abs":5e-09,"rel":1e-11},"note":"one tick per bar at the close with the bar's volume","values":[null,null,null,null,101.27219442366668]}

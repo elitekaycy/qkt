@@ -1,0 +1,1 @@
+{"indicator":"SESSION_MOMENTUM","args":["0","3","1"],"series":"synth_short","input":"candle","oracle":"TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3","tolerance":{"abs":5e-09,"rel":1e-11},"note":"sum of completed in-window day returns; a day whose start bar is missing is skipped","values":[null,null,null,null,null]}

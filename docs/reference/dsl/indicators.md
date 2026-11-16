@@ -1,6 +1,6 @@
 # Indicators
 
-The technical-analysis functions you can call in conditions and expressions. qkt ships 59 registered indicators (every name in `IndicatorRegistry`, from `ema` to `ib_defended_low`) plus the multi-series `resid` and `confirm_ratio`, all written from scratch with hand-computed tests for correctness. Names are case-insensitive: `ema`, `EMA` and `Ema` are the same call.
+The technical-analysis functions you can call in conditions and expressions. qkt ships 59 registered indicators (every name in `IndicatorRegistry`, from `ema` to `ib_defended_low`) plus the multi-series `resid` and `confirm_ratio`, all written from scratch. Every registered indicator and math helper is checked bar by bar against an independent oracle (TA-Lib, numpy, pandas, scipy) on real XAU and BTC data and on synthetic edge series; see [Verification](#verification). Names are case-insensitive: `ema`, `EMA` and `Ema` are the same call.
 
 ## Function call shape
 
@@ -51,6 +51,9 @@ rsi(btc.close, 2)             -- Connors-style mean-reversion RSI
 ```
 
 RSI uses Wilder's smoothing. Bounded [0, 100]. Below 30 = oversold, above 70 = overbought are the conventional thresholds.
+
+A window with no up-moves and no down-moves (a dead market) reads **50** (neutral), where TA-Lib returns 0; a
+window with up-moves and no down-moves reads 100.
 
 ### Volatility
 
@@ -106,6 +109,10 @@ THEN LOG "above upper Bollinger"
 
 `<stddev>` is the band width in standard deviations; the typical value is 2.0.
 
+The band width uses the **population** (divide by N) standard deviation, as Bollinger defined it and as
+TA-Lib and TradingView compute it. `stddev()` below is the **sample** (N−1) estimator, so composing bands by hand
+gives a slightly wider band: `bollinger_upper(x, N, k) = sma(x, N) + k * stddev(x, N) * sqrt((N-1)/N)`.
+
 ### More moving averages
 
 <!-- qkt-doc: grammar -->
@@ -136,7 +143,9 @@ keltner_lower(<stream>, <period>, <atrMult>)    -- EMA(close, period) − atrMul
 
 Like Bollinger Bands but scaled by true range instead of the dispersion of closes, so the bands
 widen with trading range. They read the whole candle, so pass the stream (or `<stream>.candle`),
-not `<stream>.close`. The three lines share one underlying instance.
+not `<stream>.close`. The three lines share one underlying instance. The middle line is the EMA of
+closes and the offset is the **Wilder** ATR of the same period (TradingView's default; some libraries
+use an SMA middle or a simple-average ATR).
 
 ```qkt
 WHEN btc.close > keltner_upper(btc, 20, 2.0) AND POSITION.btc = 0 THEN BUY btc SIZING 0.1
@@ -154,7 +163,9 @@ minus_di(<stream>, <period>)  -- -DI: smoothed down-move share of true range, 0-
 
 `adx` says how strongly the market trends; `plus_di` against `minus_di` says which way. The
 conventional reading is a trend above 25, up when `plus_di > minus_di`. All three take the
-stream and share one Wilder computation.
+stream and share one Wilder computation, so `plus_di` and `minus_di` become defined together with
+`adx` after 2N bars (TA-Lib reports the DI lines N bars earlier). While the smoothed true range is
+zero (a window with no range at all) all three are `null` rather than 0.
 
 ```qkt
 WHEN adx(gold, 14) > 25 AND plus_di(gold, 14) > minus_di(gold, 14) AND POSITION.gold = 0
@@ -172,9 +183,14 @@ stoch_d(<stream>, <kPeriod>, <dPeriod>)   -- %D = SMA(%K, dPeriod), 0-100
 ```
 
 Each reads high, low and close, so it takes the stream. `cci` measures distance from the average
-typical price `(high + low + close) / 3` in units of mean deviation (±100 is the classic band);
-`williams_r` is the inverse of fast `%K` (0 at the top of the range, −100 at the bottom, and
-−100 on a rangeless window); the `stoch_k` / `stoch_d` crossover is the classic trigger.
+typical price `(high + low + close) / 3` in units of mean deviation (±100 is the classic band, 0 when
+the mean deviation is zero); `williams_r` is the inverse of fast `%K` (0 at the top of the range, −100
+at the bottom, and −100 on a rangeless window); the `stoch_k` / `stoch_d` crossover is the classic trigger.
+
+`stoch_k` is the **fast** %K: `100 × (close − lowest low) / (highest high − lowest low)` over `kPeriod`
+bars with no slowing, and `stoch_d` is its `dPeriod` simple average. That is TA-Lib's `STOCHF` and
+TradingView's Stochastic with smoothing 1; a "slow" `STOCH(14, 3, 3)` smooths %K once more before %D.
+On a rangeless window (highest high equals lowest low) `stoch_k` reads **50**, where TA-Lib returns 0.
 
 ```qkt
 WHEN williams_r(btc, 14) < -80 AND cci(btc, 20) < -100 AND POSITION.btc = 0
@@ -212,8 +228,9 @@ THEN BUY btc SIZING 0.01 / vol20
 obv(<stream>)                 -- cumulative volume: +volume on an up close, −volume on a down close
 ```
 
-`obv` has no period: it starts at zero on the first candle and accumulates from there, so read it
-relative to its own past (`lag(obv(btc), 20)`) rather than as a level. It needs a feed that reports
+`obv` has no period: it starts at zero on the first candle and accumulates from there (TA-Lib starts
+at the first candle's volume, a constant offset), so read it relative to its own past
+(`lag(obv(btc), 20)`) rather than as a level. It needs a feed that reports
 traded volume, and a strategy binding it to any other feed is refused when it starts, live and in a
 backtest alike: live, a Bybit feed qualifies and an MT5 feed (whose `volume` is a tick count) does not;
 in a backtest, a tick store whose ticks carry volume qualifies, while fetched bars alone do not.
@@ -774,8 +791,8 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `tema(value, N)` | 3N − 2 bars |
 | `hma(value, N)` | N + round(√N) − 1 bars |
 | `rsi(value, N)` | N+1 bars |
-| `atr(stream, N)` | N bars |
-| `macd(value, F, S, sig)` | S + sig bars |
+| `atr(stream, N)` | N + 1 bars (the first true range needs a previous close) |
+| `macd(value, F, S, sig)` | S + sig − 1 bars (the signal EMA seeds on the first sig MACD values) |
 | `bollinger_*(value, N, k)` | N bars |
 | `keltner_*(stream, N, k)` | N + 1 bars (the ATR needs a previous close) |
 | `adx`/`plus_di`/`minus_di(stream, N)` | 2N bars (Wilder smoothing of DX on top of DI) |
@@ -818,6 +835,24 @@ SYMBOLS
 ```
 
 Useful when you want to ensure long-period indicators (200-bar SMA) are warm even on short backtest windows.
+
+## Verification
+
+Every registered indicator and every math helper is replayed bar by bar against an oracle that shares no
+code with qkt: TA-Lib where it has the indicator, otherwise numpy/pandas/scipy formulas written from the
+published definition (`verification/oracle/indicators/gen.py`). The oracle runs on three real series (XAU
+1h, BTC 1m and BTC 1h with traded volume) and seven synthetic edge series (flat, gaps and a ×10 jump, a zero
+price, 1e9 and 1e-6 magnitudes, a single bar, period longer than the data), and its output is checked in as
+JSON fixtures that `IndicatorVerificationTest` compares, `null` positions included, so the warmup table above
+is pinned too. Tolerances are stated per fixture: exact arithmetic (SMA, WMA, Donchian, CCI, Stochastic,
+OBV, pivots, ...) within 5e-9 absolute (half a unit at 8 decimals), recursive indicators (EMA family, RSI,
+ATR, ADX, MACD, Keltner) within 1e-9 relative, square-root based ones (stddev, z-score, Bollinger,
+correlation, skew) within 1e-7 absolute, and the `Double`-backed helpers (`sqrt`, `log`, `exp`, `pow`,
+`norm_cdf`, `softmax`) within 1e-12 relative. Where qkt's documented convention differs from TA-Lib (RSI and
+Stochastic at 50 on a dead market, Williams %R at −100, OBV from zero, the DI lines' 2N warmup) the fixture
+encodes qkt's convention and says so. `IndicatorVerificationCompletenessTest` fails the build when a registered
+indicator or function has no fixture, so a new indicator cannot ship unverified. Regenerate the fixtures with
+`scripts/verification-fixtures.sh` and review the diff like code.
 
 ## Composing indicators
 
