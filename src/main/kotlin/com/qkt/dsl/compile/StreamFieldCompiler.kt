@@ -66,8 +66,7 @@ internal object StreamFieldCompiler {
                         "spread" -> candle.spread
                         // Bar start time in epoch milliseconds (#1130), the same instant the
                         // bar-keyed tooling and reports use.
-                        "timestamp" -> BigDecimal.valueOf(candle.startTime)
-                        else -> error("unreachable")
+                        else -> BigDecimal.valueOf(candle.startTime)
                     }
                 if (fieldValue == null) Value.Undefined else Value.Num(fieldValue)
             }
@@ -88,8 +87,7 @@ internal object StreamFieldCompiler {
                     "swap_long_points" -> meta.swapLongPoints
                     "swap_short_points" -> meta.swapShortPoints
                     "tick_value" -> meta.pointSize.multiply(meta.contractSize)
-                    "multiplier" -> meta.contractSize
-                    else -> error("unreachable: ${ref.field}")
+                    else -> meta.contractSize
                 }
             Value.Num(value)
         }

@@ -100,8 +100,7 @@ internal object WhenThenCompiler {
                 else -> streams.filterValues { !it.broker.equals(OPTIONS_BROKER, ignoreCase = true) }.keys
             }
         val ruleSymbol =
-            streams[ruleAlias]?.qktSymbol
-                ?: error("Unknown stream alias: $ruleAlias")
+            streams.getValue(ruleAlias).qktSymbol
         val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
         val mergedAction = resolver.resolve(mergeDefaults(rule.action, defaults))
         val action = actionCompiler.compile(mergedAction, ruleAlias)

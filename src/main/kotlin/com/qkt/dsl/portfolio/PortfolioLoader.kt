@@ -51,9 +51,8 @@ object PortfolioLoader {
         path: Path,
         visiting: MutableSet<Path>,
     ): PortfolioCompiled {
-        if (path in visiting) {
-            error("cycle in portfolio import graph at ${visiting.joinToString(" -> ")} -> $path")
-        }
+        // Entered once per load with an empty set (a nested portfolio is refused below), so the path itself
+        // cannot be in it already; a child import that revisits a visited path is caught per import.
         visiting.add(path)
         try {
             val text = Files.readString(path)

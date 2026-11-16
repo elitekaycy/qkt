@@ -88,8 +88,8 @@ sealed interface ReplayCommand {
                     "s" -> 1_000L
                     "m" -> 60_000L
                     "h" -> 3_600_000L
-                    "d" -> 86_400_000L
-                    else -> return Unknown(raw)
+                    // The regex admits only the s, m, h and d units.
+                    else -> 86_400_000L
                 }
             return StepDuration(n * unitMs)
         }

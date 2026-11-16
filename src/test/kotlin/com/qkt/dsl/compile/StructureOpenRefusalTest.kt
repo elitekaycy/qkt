@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.app.StructureFixtures
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OpenStructure
@@ -9,6 +10,9 @@ import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
+import com.qkt.strategy.StructurePosition
+import com.qkt.strategy.StructureState
+import com.qkt.strategy.StructureView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -48,5 +52,37 @@ class StructureOpenRefusalTest {
         val signal = compiler.compile(open)(ctx).single() as Signal.Suppressed
 
         assertThat(signal.reason).isEqualTo("${open.root} is not a declared option root")
+    }
+
+    private fun ctxWith(view: StructureView = testStrategyContext().structures): EvalContext {
+        val one = BigDecimal.ONE
+        val candle = Candle("BACKTEST:BTCUSDT", one, one, one, one, BigDecimal.ZERO, 0L, 1L)
+        val strategyContext =
+            testStrategyContext(instruments = StructureFixtures.registry).copy(structures = view)
+        return EvalContext(candle, emptyMap(), emptyMap(), strategyContext)
+    }
+
+    @Test
+    fun `an OPEN with no stored chain for the root is suppressed`() {
+        val signal = compiler.compile(open)(ctxWith()).single() as Signal.Suppressed
+
+        assertThat(signal.reason).isEqualTo("no DERIBIT:BTC_USDC chain at or before now")
+    }
+
+    @Test
+    fun `a CLOSE of a structure still opening is suppressed with its state`() {
+        val pending =
+            object : StructureView {
+                override fun live(alias: String) =
+                    StructurePosition("ps-1", "ps", StructureState.PENDING, BigDecimal.ONE, emptyList(), working = true)
+
+                override fun all() = listOfNotNull(live("ps"))
+
+                override fun mark(symbol: String): BigDecimal? = null
+            }
+
+        val signal = compiler.compileClose("ps")(ctxWith(pending)).single() as Signal.Suppressed
+
+        assertThat(signal.reason).isEqualTo("ps is PENDING, not open")
     }
 }

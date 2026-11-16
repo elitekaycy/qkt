@@ -133,4 +133,12 @@ class StructureFieldCompilerTest {
     fun `exit hooks read the same structures as the rules`() {
         assertThat(compiler.forExitHooks().structures).isSameAs(compiler.structures)
     }
+
+    @Test
+    fun `max loss of a leg the catalog does not know is refused by name`() {
+        val unknown = listOf(leg("DERIBIT:BTC_USDC_9OCT26_1_P", "0.1", "646"))
+
+        assertThatThrownBy { num(StateSource.STRUCTURE_MAX_LOSS, unknown) }
+            .hasMessage("DERIBIT:BTC_USDC_9OCT26_1_P has no option terms")
+    }
 }

@@ -1,9 +1,11 @@
 package com.qkt.dsl.compile
 
+import com.qkt.marketdata.Candle
 import com.qkt.persistence.NoopStatePersistor
 import com.qkt.persistence.PersistedSequenceSnapshot
 import com.qkt.persistence.PersistedSequenceState
 import com.qkt.persistence.StatePersistor
+import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -48,5 +50,43 @@ class SequenceProgressRestoreTest {
         assertThat(runtime.stagePrice("sweep", "reclaimed")).isEqualByComparingTo("101")
         assertThat(runtime.stageTime("sweep", "swept")).isEqualTo(1_000L)
         assertThat(runtime.stage("gone")).isZero
+    }
+
+    @Test
+    fun `a sequence restored past its last stage only records the stage values it sees`() {
+        val saved = PersistedSequenceState("sweep", stage = 3, snapshots = emptyList())
+        val written = mutableListOf<Map<String, PersistedSequenceState>>()
+        val persistor =
+            object : StatePersistor by NoopStatePersistor() {
+                override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> =
+                    mapOf("sweep" to saved)
+
+                override fun saveSequences(
+                    strategyId: String,
+                    sequences: Map<String, PersistedSequenceState>,
+                ) {
+                    written += sequences
+                }
+            }
+        val runtime = runtime()
+        runtime.bindPersistor("s1", persistor)
+        val one = BigDecimal.ONE
+        val candle = Candle("BACKTEST:XAUUSD", one, one, one, one, BigDecimal.ZERO, 0L, 60_000L)
+        val ec =
+            EvalContext(
+                candle,
+                mapOf("gold" to HubKey("BACKTEST", "XAUUSD", "1m")),
+                emptyMap(),
+                testStrategyContext(),
+                currentAlias = "gold",
+                evaluationTimeMs = candle.endTime,
+                sequences = runtime,
+            )
+
+        runtime.onCandle(candle, ec)
+
+        assertThat(runtime.stage("sweep")).isEqualTo(3)
+        assertThat(runtime.complete("sweep")).isFalse
+        assertThat(written.single().getValue("sweep").lastValues).containsOnlyKeys("swept", "reclaimed", "go")
     }
 }

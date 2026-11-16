@@ -146,7 +146,7 @@ internal object ReplayFeeds {
         range: TimeRange,
         window: TimeWindow?,
         forceBars: Boolean,
-        positionSign: (String) -> Int = { 0 },
+        positionSign: (String) -> Int,
     ): TickFeed? {
         // A chain analytics stream has values only where the chain allows one; an empty stream is a
         // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).

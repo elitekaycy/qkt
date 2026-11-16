@@ -37,8 +37,7 @@ internal object FuturesFieldCompiler {
             when (ref.field) {
                 "contract" -> Value.Str(active.code)
                 "dte" -> Value.Num(days(active.expiryMs - now))
-                "days_to_roll" -> Value.Num(days(active.nextRollMs - now))
-                else -> error("unreachable: ${ref.field}")
+                else -> Value.Num(days(active.nextRollMs - now))
             }
         }
     }

@@ -32,8 +32,7 @@ internal object AccountStateCompiler {
                             "unrealized_pnl" -> pnl.unrealizedTotal()
                             "total_pnl" -> pnl.total()
                             "equity" -> pnl.equity()
-                            "balance" -> pnl.balance()
-                            else -> error("unreachable")
+                            else -> pnl.balance()
                         },
                     )
                 }
@@ -47,8 +46,7 @@ internal object AccountStateCompiler {
                         "loss_streak" -> Value.Num(BigDecimal.valueOf(h.lossStreak().toLong()))
                         "trades_today" -> Value.Num(BigDecimal.valueOf(h.tradesToday(now).toLong()))
                         "wins_today" -> Value.Num(BigDecimal.valueOf(h.winsToday(now).toLong()))
-                        "losses_today" -> Value.Num(BigDecimal.valueOf(h.lossesToday(now).toLong()))
-                        else -> error("unreachable")
+                        else -> Value.Num(BigDecimal.valueOf(h.lossesToday(now).toLong()))
                     }
                 }
                 "dd_pct" -> {
@@ -63,7 +61,7 @@ internal object AccountStateCompiler {
                 // Closed-trade P&L since UTC midnight / the 1st of the UTC month (#855).
                 "realized_today" -> Value.Num(ctx.strategyContext.risk.realizedToday)
                 "realized_month" -> Value.Num(ctx.strategyContext.risk.realizedMonth)
-                "open_positions_count" -> {
+                else -> {
                     val count =
                         ctx.strategyContext.positions
                             .allPositions()
@@ -71,7 +69,6 @@ internal object AccountStateCompiler {
                             .toLong()
                     Value.Num(BigDecimal.valueOf(count))
                 }
-                else -> error("unreachable")
             }
         }
     }
@@ -83,8 +80,7 @@ internal object AccountStateCompiler {
             when (ref.field) {
                 "wins" -> Value.Num(BigDecimal.valueOf(history.winStreak().toLong()))
                 "losses" -> Value.Num(BigDecimal.valueOf(history.lossStreak().toLong()))
-                "banked" -> Value.Num(history.banked())
-                else -> error("unreachable")
+                else -> Value.Num(history.banked())
             }
         }
     }

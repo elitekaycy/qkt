@@ -88,4 +88,22 @@ class BacktestDataProvisionerCoverageTest {
             .contains("qkt data import <file> --as XAUUSD")
             .contains("--allow-incomplete")
     }
+
+    @Test
+    fun `many short sessions are summarised by count and first day`(
+        @TempDir root: Path,
+    ) {
+        seed(root, "2024-02-18", 23 * 60 until 24 * 60)
+        listOf("2024-02-15", "2024-02-16", "2024-02-19", "2024-02-20", "2024-02-21").forEach {
+            seed(root, it, 0 until 18 * 60 + 30, 23 * 60 until 24 * 60)
+        }
+        val lines = mutableListOf<String>()
+
+        ensure(root, lines)
+
+        assertThat(lines).anyMatch {
+            it.startsWith("qkt: tick coverage XAUUSD 5/5 trading days (") &&
+                it.endsWith(" short sessions, holiday hours, from 2024-02-15)")
+        }
+    }
 }
