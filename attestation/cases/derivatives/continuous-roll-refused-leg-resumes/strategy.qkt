@@ -1,7 +1,7 @@
 STRATEGY atto_roll_refused VERSION 1
 
 SYMBOLS
-    fut = DERIBIT:BTC_USDC@front EVERY 1m WARMUP 3 BARS
+    fut = DERIBIT:ETH_USDC@front EVERY 1m WARMUP 3 BARS
 
 RULES
     -- TRADES.today counts entry fills. Refused while the stream is stopped, this re-enters once resume clears the stop.

@@ -134,6 +134,6 @@
     }
   ],
   "notes": [
-    "sizing.md:51-57 does not say whether USD notional divides by price alone or price x contractSize; the oracle uses price x contractSize (README Q3)."
+    "sizing.md:73-78: one lot's notional is price x contractSize x the quote-to-account rate (README Q3)."
   ]
 }

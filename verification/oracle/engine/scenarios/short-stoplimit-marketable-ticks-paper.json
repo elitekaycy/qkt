@@ -139,6 +139,6 @@
     }
   ],
   "notes": [
-    "Whether a stop-limit whose limit is already marketable fills on its trigger tick is not stated in the docs (README Q6)."
+    "actions.md:133-135: a stop-limit whose trigger price already satisfies its limit fills on that tick (README Q6)."
   ]
 }

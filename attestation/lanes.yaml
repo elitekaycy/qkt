@@ -44,8 +44,8 @@ lanes:
     places_orders: true
     budget_seconds: 420
   derivatives:
-    purpose: Futures, perpetuals and options on a VGP gateway account (Deribit testnet) - orders reach the venue on its tick grid, qkt's realized equals the venue's deals net with fees, and replaying the venue's own bars or the account's recorded chain reproduces the decisions. One netting account, so cases run one after another.
-    concurrency: exclusive
+    purpose: Futures, perpetuals and options on a VGP gateway account (Deribit testnet) - orders reach the venue on its tick grid, qkt's realized equals the venue's deals net with fees, and replaying the venue's own bars or the account's recorded chain reproduces the decisions. One netting account, so a group's cases run one after another, and groups that trade disjoint instruments (never the same class of one root's contracts) run side by side, each case that engages the kill switch on a gateway process of its own.
+    concurrency: grouped
     places_orders: true
     venue_gateway: true
     budget_seconds: 420
@@ -61,6 +61,12 @@ lanes:
     places_orders: true
     venue_gateway: true
     session: nyse[09:30-16:00]
+    budget_seconds: 420
+  kalshi:
+    purpose: Binary event contracts (Kalshi-style yes/no markets) on a VGP gateway account running the qkt-venue-gateway's Kalshi adapter (Kalshi demo), with no Kalshi code in qkt - an event slot follows the open contract of a series, an order lands on that contract, the venue settles it at its outcome and qkt books the settlement once at 1 or 0, so realized equals the venue's deals net with its probability fee and the account's cash. A contract settles only at its event's own time, so the lane's order case is scheduled. Its own account, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
     budget_seconds: 420
   cross:
     purpose: One daemon trading an MT5 demo account and one or more VGP gateway accounts at once, from one strategy - one config holding every venue, each venue checked, swept and judged on its own (its fills, flat, qkt's realized on its symbols against its own deals net), drills aimed at one venue while the others keep trading, and a replay of the session's captured ticks making the same fills on each venue. Its MT5 leg runs under its own magic beside the other lanes; its gateway legs are judged by the strategy's own order ids, so cases run one after another.

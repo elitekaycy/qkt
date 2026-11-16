@@ -35,7 +35,7 @@ def expectation(scenario: Scenario) -> dict:
         "proves": scenario.proves,
         "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md,"
         " docs/reference/dsl/{actions,bracket,sizing}.md)",
-        "timestampGranularity": "bar" if scenario.fill_mode == "bars-synthetic" else "tick",
+        "timestampGranularity": "tick",  # synthetic prints are timed too: backtest-model.md:97-101
         "trades": [f.to_json() for f in st.tape],
         "realized": str(realized),
         "commission": str(fees),

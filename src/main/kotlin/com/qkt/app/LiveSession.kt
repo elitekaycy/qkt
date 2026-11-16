@@ -109,21 +109,11 @@ class LiveSession(
     /** Opt-in event list — empty disables every subscription, even if a real notifier is present. */
     private val notifyEvents: Set<NotifyEventKind> = emptySet(),
     /**
-     * Phase 25D: per-strategy risk overrides for the strategy this session hosts.
-     * Null means "use only the session-level [rules] and [haltRules]." When set,
-     * the corresponding rule is constructed at start-time with this session's
-     * [com.qkt.positions.StrategyPositionTracker] and added to the risk engine.
+     * The `risk.per_strategy` limits of the strategy this session hosts, symbol-set caps bound to their members; null
+     * adds only the session-level [rules] and [haltRules]. The rules are the ones a backtest builds from the same
+     * limits ([com.qkt.risk.StrategyRiskRuleFactory]), over this session's position tracker.
      */
-    private val perStrategyMaxDailyLoss: java.math.BigDecimal? = null,
-    private val perStrategyMaxPositionSize: java.math.BigDecimal? = null,
-    private val perStrategyMaxOpenPositions: Int? = null,
-    private val perStrategyMaxDrawdownPct: java.math.BigDecimal? = null,
-    private val perStrategyMaxDailyDrawdownPct: java.math.BigDecimal? = null,
-    private val perStrategyMaxTradesPerDay: Int? = null,
-    private val perStrategyCooldownAfterLossMs: Long? = null,
-    private val perStrategyCooldownAfterLossAfterConsecutive: Int = 1,
-    private val perStrategyLossStreakHalt: Int? = null,
-    private val perStrategyLossStreakHaltScope: com.qkt.risk.HaltScope = com.qkt.risk.HaltScope.PERSISTENT,
+    private val perStrategyLimits: com.qkt.risk.StrategyRiskLimits? = null,
     /**
      * Account starting balance — the basis for static total drawdown and the daily-drawdown
      * reference. Prop-firm limits measure against this. Defaults to zero (drawdown halts inert).
@@ -313,20 +303,6 @@ class LiveSession(
         positions: PositionProvider,
     ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions, continuous)
 
-    private val perStrategyLimits =
-        PerStrategyRiskLimits(
-            perStrategyMaxDailyLoss,
-            perStrategyMaxPositionSize,
-            perStrategyMaxOpenPositions,
-            perStrategyMaxDrawdownPct,
-            perStrategyMaxDailyDrawdownPct,
-            perStrategyMaxTradesPerDay,
-            perStrategyCooldownAfterLossMs,
-            perStrategyCooldownAfterLossAfterConsecutive,
-            perStrategyLossStreakHalt,
-            perStrategyLossStreakHaltScope,
-        )
-
     private val sessionNotifier = SessionNotifier(notifier, notifyEvents, journal, strategies, clock)
 
     private val insights =
@@ -489,20 +465,18 @@ class LiveSession(
         }
         val pacerLedger = riskState.pacerLedger
 
-        // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
-        // The daemon creates one LiveSession per deployed strategy, so the first entry is
-        // the only one. If the caller didn't set per-strategy caps, these stay empty.
+        // The daemon creates one LiveSession per deployed strategy: the first is the one the limits bind.
         val riskOwnerStrategyId = strategies.firstOrNull()?.first
         val perStrategyRules =
-            PerStrategyRiskRules(
-                perStrategyLimits,
-                riskOwnerStrategyId,
+            com.qkt.risk.StrategyRiskRuleFactory.build(
+                listOfNotNull(riskOwnerStrategyId),
+                listOfNotNull(riskOwnerStrategyId).zip(listOfNotNull(perStrategyLimits)).toMap(),
                 strategyPositions,
-                startingBalances,
-                initialBalance,
-                totalDdBasis,
                 pacerLedger,
                 clock,
+                totalDdBasis,
+                initialBalance,
+                startingBalances,
             )
         // Mandatory pre-trade controls are always on — they ship with defaults so "no
         // limit configured" can never mean "no limit" (#393).
@@ -599,8 +573,8 @@ class LiveSession(
                 riskState = riskState,
                 positionMode = { symbol -> broker.positionAccountingMode(symbol) },
                 pacerLedger = pacerLedger,
-                pacerCooldownDurationMs = perStrategyCooldownAfterLossMs,
-                pacerCooldownAfterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
+                pacerCooldownDurationMs = perStrategyLimits?.cooldownAfterLossMs,
+                pacerCooldownAfterConsecutive = perStrategyLimits?.cooldownAfterLossAfterConsecutive ?: 1,
                 bookScaleFor = { id -> bookRiskController?.state()?.scaleFor(id) ?: java.math.BigDecimal.ONE },
                 bookBalance = bookBalance,
                 mode = Mode.LIVE,

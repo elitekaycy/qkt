@@ -2,7 +2,7 @@
   "name": "long-market-gap-stop-bars-synthetic-paper",
   "proves": "a stop the next bar opens beyond fills at that open",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
-  "timestampGranularity": "bar",
+  "timestampGranularity": "tick",
   "trades": [
     {
       "ts": 1704880860000,

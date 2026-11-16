@@ -12,6 +12,7 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.RuleDecisionEvent
+import com.qkt.events.SetMembershipChanged
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
@@ -66,4 +67,5 @@ internal fun stampEvent(
         is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
         is StructureOpened -> event.copy(timestamp = ts, sequenceId = seq)
         is StructureClosed -> event.copy(timestamp = ts, sequenceId = seq)
+        is SetMembershipChanged -> event.copy(timestamp = ts, sequenceId = seq)
     }

@@ -1,0 +1,7 @@
+STRATEGY short_market_gap_target_ticks_mt5 VERSION 1
+-- a tick whose ask gaps through a short's target fills at that ask, better than the level (--tp-fill print, the default)
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

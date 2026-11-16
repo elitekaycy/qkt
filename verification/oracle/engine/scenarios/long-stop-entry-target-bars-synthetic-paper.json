@@ -138,6 +138,6 @@
     }
   ],
   "notes": [
-    "backtest-model.md:84-85 states the at-level rule for exits; the oracle applies it to pending entries too (README Q8)."
+    "backtest-model.md:85-88: the at-level rule holds for every resting order, entries included (README Q8)."
   ]
 }

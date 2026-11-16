@@ -1,10 +1,14 @@
 name: check
 
 # Fast essentials — compile + ktlint + unit tests — on every PR into dev and
-# every push to dev or testing. This is the only CI a feature-branch PR runs. The heavier
-# black-box suite is integration.yml, which gates testing and main.
+# every push to dev or testing, in two parallel jobs: `build` (gradle: compile, ktlint, unit tests, coverage, data
+# e2e) and `scripts` (the bash and python script tests). This is the only CI a feature-branch PR runs. The heavier
+# black-box suite is integration.yml, which gates testing and main. A pull request
+# that changes only documentation no test reads skips the build steps and still
+# reports a green `build` and `scripts` (scripts/classify-ci-changes.sh); pushes and merge-queue
+# runs never skip.
 #
-# On a push to dev (i.e. a merged PR), a green build auto-promotes dev to
+# On a push to dev (i.e. a merged PR), green `build` and `scripts` jobs auto-promote dev to
 # testing via a merge commit that preserves prior testing promotion history. The push authenticates with PROMOTE_SSH_KEY
 # (a repo-scoped deploy key) rather than GITHUB_TOKEN, because a GITHUB_TOKEN
 # push does not trigger downstream workflows — integration.yml must fire on
@@ -19,6 +23,8 @@ on:
     branches: [dev, testing]
   pull_request:
     branches: [dev]
+  # The merge queue's combined result about to land on dev; it always runs the full build.
+  merge_group:
 
 # A dev push gets a group of its own SHA, so no dev run is ever cancelled. GitHub
 # queues runs in webhook arrival order, not commit order: two merges seconds
@@ -35,11 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
       - name: Check commit authors
         if: github.event_name == 'pull_request'
         env:
@@ -48,57 +49,53 @@ jobs:
         run: |
           git fetch --no-tags --filter=blob:none --unshallow origin
           bash scripts/check-commit-authors.sh "$BASE_SHA..$HEAD_SHA"
-      - name: Test commit author check
-        run: bash tests/scripts/check-commit-authors-test.sh
-      - name: Test promotion workflow
-        run: bash tests/scripts/prepare-main-promotion-test.sh
-      - name: Test dev-to-testing promotion workflow
-        run: bash tests/scripts/promote-dev-to-testing-test.sh
-      - name: Test paper-soak attestation verifier
-        run: bash tests/scripts/verify-paper-soak-attestation-test.sh
-      - name: Test release tag gate
-        run: bash tests/scripts/verify-version-tag-test.sh
-      - name: Test unattended attestation runner
-        run: bash tests/scripts/run-attestation-test.sh
-      - name: Test attestation preflight resolves the image digest
-        run: bash tests/scripts/run-attestation-preflight-test.sh
-      - name: Test live-vs-replay trace comparator
-        run: bash tests/scripts/compare-trace-vectors-test.sh
-      - name: Test unattended release driver
-        run: bash tests/scripts/release-unattended-test.sh
-      - name: Test attestation catalog concurrency and retry
-        run: bash tests/scripts/run-attestation-catalog-retry-test.sh
-      - name: Test attestation derivatives lane
-        run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh
-      - name: Test derivatives case leftover sweep
-        run: bash tests/scripts/run-derivatives-lane-sweep-test.sh
-      - name: Test derivatives case failure drills
-        run: bash tests/scripts/derivatives-lane-drills-test.sh
-      - name: Test attestation leftover sweep
-        run: bash tests/scripts/sweep-attestation-leftovers-test.sh
-      - name: Test fill-attached protection wait
-        run: bash tests/scripts/attached-protection-test.sh
-      - name: Test replay entry match rule
-        run: bash tests/scripts/replay-entry-match-test.sh
-      - name: Test shadow lane cleanup
-        run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
-      - name: Validate attestation case catalog
-        run: python3 attestation/lib/validate.py
-      - name: Test the derivatives lane runner offline
-        run: python3 -m unittest discover -s scripts/live-validation/tests
+      # A pull request whose every changed path is documentation no test reads skips the steps below, and `build`
+      # still reports success (docs/contributing/test-coverage.md, "Docs-only pull requests"). Pushes to dev and
+      # testing and merge-queue runs (merge_group) always run everything, so promotion and dev's coverage artifact never depend on this. The diff is
+      # the PR merge commit against its first parent: exactly what the merge would change. Inside this job, not a
+      # separate one, so a classifier failure fails `build` instead of skipping it.
+      - name: Classify changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          bash tests/scripts/classify-ci-changes-test.sh
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if ! git rev-parse -q --verify HEAD^2 >/dev/null; then
+            echo "::notice::HEAD is not a PR merge commit; running the full build"
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          kind="$(git diff --name-only HEAD^1 HEAD | bash scripts/classify-ci-changes.sh)"
+          if [ "$kind" = docs-only ]; then
+            echo "::notice title=docs-only::Every changed path is documentation no test reads; build, tests, coverage and data e2e skipped. Pushes to dev and testing still run the full build."
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-java@v4
+        if: steps.changes.outputs.full == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.changes.outputs.full == 'true'
+      # Python 3.12 and diff-cover for the diff-coverage gate and the data e2e suite below.
       - uses: actions/setup-python@v5
+        if: steps.changes.outputs.full == 'true'
         with:
           python-version: '3.12'
-      - name: Test diff-coverage gate
-        run: |
-          pip install --quiet -r config/coverage-requirements.txt
-          bash tests/scripts/check-diff-coverage-test.sh
+      - name: Install diff-coverage tools
+        if: steps.changes.outputs.full == 'true'
+        run: pip install --quiet -r config/coverage-requirements.txt
       - name: Build + test + ktlint + coverage floor
+        if: steps.changes.outputs.full == 'true'
         run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
       # Every line a pull request adds or edits under src/main must run under test
       # (docs/contributing/test-coverage.md). Kover's XML report is read locally; nothing is uploaded.
       - name: Diff coverage (100% of changed lines)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.changes.outputs.full == 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -106,7 +103,7 @@ jobs:
             bash scripts/check-diff-coverage.sh "$BASE_SHA" || { cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"; exit 1; }
           cat build/reports/diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage reports
-        if: always()
+        if: always() && steps.changes.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -118,9 +115,11 @@ jobs:
       # (docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md). The corpus is private third-party data,
       # pinned by commit in tests/data-e2e/corpus.lock and read with a read-only deploy key.
       - name: Read the pinned data corpus commit
+        if: steps.changes.outputs.full == 'true'
         id: corpus
         run: echo "sha=$(cut -d' ' -f1 tests/data-e2e/corpus.lock)" >> "$GITHUB_OUTPUT"
       - name: Check out the data corpus
+        if: steps.changes.outputs.full == 'true'
         uses: actions/checkout@v4
         with:
           repository: elitekaycy/qkt-data-corpus
@@ -128,6 +127,7 @@ jobs:
           ssh-key: ${{ secrets.QKT_DATA_CORPUS_KEY }}
           path: qkt-data-corpus
       - name: Real-data end-to-end suite (pull-request tier)
+        if: steps.changes.outputs.full == 'true'
         run: |
           ./gradlew installDist --no-daemon
           python3 -I qkt-data-corpus/tools/provenance.py --check
@@ -143,8 +143,105 @@ jobs:
             build/data-e2e.json
           retention-days: 7
 
+  # Script tests (bash and python) that need neither the JDK nor the gradle build, in parallel with `build` so its
+  # wall clock is the gradle step alone. Same triggers and the same docs-only rule as `build`, decided inside the job
+  # so a classifier failure fails `scripts` instead of skipping it (a skipped required check counts as passing).
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both parents of the PR merge commit, for the classifier's HEAD^1..HEAD diff.
+          fetch-depth: 2
+      - name: Classify changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if ! git rev-parse -q --verify HEAD^2 >/dev/null; then
+            echo "::notice::HEAD is not a PR merge commit; running the full build"
+            echo "full=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          kind="$(git diff --name-only HEAD^1 HEAD | bash scripts/classify-ci-changes.sh)"
+          if [ "$kind" = docs-only ]; then
+            echo "::notice title=docs-only::Every changed path is documentation no test reads; script tests skipped. Pushes to dev and testing still run the full build."
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Test commit author check
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/check-commit-authors-test.sh
+      - name: Test promotion workflow
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/prepare-main-promotion-test.sh
+      - name: Test dev-to-testing promotion workflow
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/promote-dev-to-testing-test.sh
+      - name: Test paper-soak attestation verifier
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/verify-paper-soak-attestation-test.sh
+      - name: Test release tag gate
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/verify-version-tag-test.sh
+      - name: Test unattended attestation runner
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-attestation-test.sh
+      - name: Test attestation preflight resolves the image digest
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-attestation-preflight-test.sh
+      - name: Test live-vs-replay trace comparator
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/compare-trace-vectors-test.sh
+      - name: Test unattended release driver
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/release-unattended-test.sh
+      - name: Test attestation catalog concurrency and retry
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-attestation-catalog-retry-test.sh
+      - name: Test attestation derivatives lane
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh
+      - name: Test derivatives case leftover sweep
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-derivatives-lane-sweep-test.sh
+      - name: Test derivatives case failure drills
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/derivatives-lane-drills-test.sh
+      - name: Test attestation leftover sweep
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/sweep-attestation-leftovers-test.sh
+      - name: Test fill-attached protection wait
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/attached-protection-test.sh
+      - name: Test replay entry match rule
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/replay-entry-match-test.sh
+      - name: Test shadow lane cleanup
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
+      - name: Validate attestation case catalog
+        if: steps.changes.outputs.full == 'true'
+        run: python3 attestation/lib/validate.py
+      - name: Test the derivatives lane runner offline
+        if: steps.changes.outputs.full == 'true'
+        run: python3 -m unittest discover -s scripts/live-validation/tests
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.full == 'true'
+        with:
+          python-version: '3.12'
+      - name: Test diff-coverage gate
+        if: steps.changes.outputs.full == 'true'
+        run: |
+          pip install --quiet -r config/coverage-requirements.txt
+          bash tests/scripts/check-diff-coverage-test.sh
+
   promote-to-testing:
-    needs: build
+    # Promote only when every check job passed: the gradle build and the script tests.
+    needs: [build, scripts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:

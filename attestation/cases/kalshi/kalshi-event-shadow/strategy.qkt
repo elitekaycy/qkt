@@ -1,0 +1,13 @@
+STRATEGY attest_kalshi_event_shadow VERSION 1
+
+SYMBOLS
+    k = KALSHI:KXDEMOFUTHOURLY@front.atm EVERY 1m
+
+RULES
+    -- Rules fire on a false-to-true edge; the whole minutes left to the close alternate even and odd on every
+    -- bar, so one of the two rules logs a vector at each bar close whatever the price does. Places no order.
+    WHEN k.close > 0 AND mod(floor(k.minutes_left), 2) = 0
+    THEN LOG "attest vector turn=even case=kalshi-event-shadow minutes_left={v0} bid={v1} close={v2} taker_fee={v3} norm_cdf={v4} fair_yes={v5}" v0=k.minutes_left v1=k.bid v2=k.close v3=k.taker_fee v4=norm_cdf(k.close) v5=norm_cdf((k.close - 0.5) / 0.25)
+
+    WHEN k.close > 0 AND mod(floor(k.minutes_left), 2) = 1
+    THEN LOG "attest vector turn=odd case=kalshi-event-shadow minutes_left={v0} bid={v1} close={v2} taker_fee={v3} norm_cdf={v4} fair_yes={v5}" v0=k.minutes_left v1=k.bid v2=k.close v3=k.taker_fee v4=norm_cdf(k.close) v5=norm_cdf((k.close - 0.5) / 0.25)

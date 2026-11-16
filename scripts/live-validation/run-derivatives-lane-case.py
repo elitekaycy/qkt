@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One derivatives attestation case on a VGP gateway account (futures, perpetuals, options).
+"""One derivatives attestation case on a VGP gateway account (futures, perpetuals, options, shares, event contracts).
 
     run-derivatives-lane-case.py --case DIR --out DIR --gateway-url URL --expected-login LOGIN
         --arm I_UNDERSTAND_DEMO_ORDER_0.01 [--cli PATH] [--budget-seconds N]
@@ -101,9 +101,12 @@ def main():
     budget = args.budget_seconds or int(case.get("budget_seconds", lanes[case["lane"]]["budget_seconds"]))
     run = Run(args, case)
     run.lane_config = lanes.get(lane, {})
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
+    signal.signal(signal.SIGTERM, stop)  # a stopped runner still releases, sweeps and writes its verdict
+    stopped = False
     try:
         problems = run.execute(budget)
+    except Stopped as error:
+        stopped, problems = True, [str(error)]
     except SessionClosed as error:  # a venue wait took the case past its window: nothing was touched
         run.venue_waits, run.session_closed = error.wait, {"reason": str(error), "at": venue_health.utc(time.time() * 1000)}
         problems = [str(error)]
@@ -127,7 +130,16 @@ def main():
         except Exception as error:
             problems = problems + [f"sweep: the account may not be flat: {error}"]
         run.end_watch(problems)
-    return run.verdict(problems)
+    code = run.verdict(problems)
+    return 143 if stopped else code
+
+
+class Stopped(Exception):
+    """The runner was sent SIGTERM while the case ran."""
+
+
+def stop(*_):
+    raise Stopped("stopped: the runner was terminated before the case ended")
 
 
 def shared_account(case):
@@ -606,6 +618,11 @@ class Run:
         if not contracts:
             raise RuntimeError(f"venue-untradeable: {spec['root']} lists no two contracts with 1m bars in six hours "
                                f"expiring after {rolling.hhmm(at_ms)}'s day")
+        if os.environ.get("QKT_ATTEST_DERIV_PARALLEL") and not rolling.is_front_pair(contracts, at_ms):
+            # Groups beside this one hold dated contracts 7+ days out: a roll reaching one could share an instrument.
+            raise RuntimeError(f"venue-untradeable: {spec['root']}'s roll pair {contracts[0]['symbol']} -> "
+                               f"{contracts[1]['symbol']} reaches {rolling.FRONT_MAX_DAYS}+ days out, where a dated case "
+                               "running beside this one trades; rerun when the venue prices its dailies")
         catalog = rolling.catalog_of_roll(listing, contracts, lambda symbol: close_of(symbol) is not None)
         rolling.write(catalog_path, catalog)
         path = f"{self.out}/data/instruments.yaml"  # the roll leaves the pair's first contract at the case's minute

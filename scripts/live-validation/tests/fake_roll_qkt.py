@@ -34,7 +34,7 @@ def main():
         expiry = (at // DAY + 1) * DAY + 8 * 3_600_000
         if "--catalog" in sys.argv:
             json.dump({"root": "DERIBIT:BTC_USDC", "contracts": [{"symbol": "BTC_USDC_3NOV26", "expiryMs": expiry},
-                                                                  {"symbol": "BTC_USDC_4NOV26", "expiryMs": expiry + DAY}]},
+                                                                  {"symbol": "BTC_USDC_4NOV26", "expiryMs": expiry + int(os.environ.get("FAKE_PAIR_GAP_DAYS", "1")) * DAY}]},
                       open(f"{directory}/BTC_USDC.json", "w"))
         else:  # qkt fetch --rolls records only rolls that have happened (#1615): the case's is still ahead
             json.dump({"root": "DERIBIT:BTC_USDC", "policy": "x", "rolls": []}, open(f"{directory}/BTC_USDC.rolls.json", "w"))

@@ -4,8 +4,9 @@ why: 'A restored roll never heard the stream again, so each limit IOC leg stayed
   the new contract measured 3% under the market, a long''s opening buy can never fill and the strategy stops. The gateway
   is cut across the roll so the closing leg is out when the daemon restarts; that roll must carry on the new contract.'
 status: ready
+group: eth-front
 symbols:
-- DERIBIT:BTC_USDC@front
+- DERIBIT:ETH_USDC@front
 timeframes:
 - 1m
 warmup_bars:
@@ -17,8 +18,8 @@ proves:
 fills: 2
 replay: none
 continuous_roll:
-  root: DERIBIT:BTC_USDC
-  stream: DERIBIT:BTC_USDC@front
+  root: DERIBIT:ETH_USDC
+  stream: DERIBIT:ETH_USDC@front
   outcome: carried
   far_reference: 0.97
   quantity: 0.001

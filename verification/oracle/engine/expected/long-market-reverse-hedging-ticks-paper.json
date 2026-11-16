@@ -1,0 +1,51 @@
+{
+  "name": "long-market-reverse-hedging-ticks-paper",
+  "proves": "SELL 0.2 over a 0.1 long on a hedging account closes the leg by ticket and opens the 0.1 excess as a short",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "102.00",
+      "realized": "0.150",
+      "reason": "close",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "102.00",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704881040000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.00",
+      "realized": "0.200",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.350",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "actions.md:105-108: hedging closes the opposite legs, then opens the excess, two deals at one price (README Q10)."
+  ]
+}

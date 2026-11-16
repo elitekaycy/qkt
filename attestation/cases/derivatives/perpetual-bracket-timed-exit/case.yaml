@@ -4,6 +4,7 @@ why: 'A bracket level off the contract tick grid is refused by the venue, a fill
   event used to block every later entry, and a perpetual backtested without its root charged a fixed
   per-lot fee; any of these makes live and replay disagree on fills, fees or realized PnL.'
 status: ready
+group: btc-perp
 symbols:
 - DERIBIT:BTC_USDC_PERPETUAL
 timeframes:

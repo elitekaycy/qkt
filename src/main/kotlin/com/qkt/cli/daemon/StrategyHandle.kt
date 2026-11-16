@@ -207,7 +207,7 @@ class StrategyHandle(
                     symbols = symbols,
                     candleWindow = candleWindow,
                     calendar = calendar,
-                    perStrategyOverride = perStrategyOverride,
+                    perStrategyLimits = com.qkt.cli.liveRiskLimits(ast.name, perStrategyOverride, ast.streams),
                     metadata = mapOf(ast.name to metadata),
                     ignoreMismatches = ignoreMismatches,
                     onTrade = { trade, realized, _ ->
