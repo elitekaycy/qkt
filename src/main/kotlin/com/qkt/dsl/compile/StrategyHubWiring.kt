@@ -17,10 +17,15 @@ internal class StrategyHubWiring(
     private val updater: CloseStateUpdater,
     private val evaluator: AliasCloseEvaluator,
 ) {
+    /**
+     * Wires this strategy onto [hub]; every listener and sync group is registered under [owner], the id
+     * [CandleHub.unregister] later drops them by (the strategy id, or one symbol-set member's own id).
+     */
     fun wire(
         hub: CandleHub,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
+        owner: String,
     ) {
         // Aliases that belong to ANY sync group are evaluated via the sync callback
         // instead of the per-stream close. Without this split, both gold and silver
@@ -68,7 +73,7 @@ internal class StrategyHubWiring(
 
         for ((alias, key) in streams) {
             if (alias in basketAliases || alias in syncedAliases) continue
-            hub.onClosed(key, ctx.strategyId) { closed ->
+            hub.onClosed(key, owner) { closed ->
                 evaluator.evaluate(alias, closed, hub, ctx, emit)
             }
         }
@@ -76,8 +81,8 @@ internal class StrategyHubWiring(
         for (group in syncGroups) {
             val members = group.aliases.associateWith { streams.getValue(it) }
             val groupKey = SyncGroupKey(members = members, timeoutMs = group.timeoutMs)
-            hub.registerSyncGroup(groupKey, ctx.strategyId)
-            hub.onSyncClosed(groupKey, ctx.strategyId) { bars ->
+            hub.registerSyncGroup(groupKey, owner)
+            hub.onSyncClosed(groupKey, owner) { bars ->
                 // Two-pass: every alias's indicators/snapshots/aggregates update FIRST,
                 // then rules fire. This ensures a gold-anchored rule that reads
                 // `sma(silver.close, N)` sees silver's same-window value, not the
@@ -115,7 +120,7 @@ internal class StrategyHubWiring(
             }
         }
 
-        bindBaskets(compositors, hub, ctx, emit)
+        bindBaskets(compositors, hub, ctx, emit, owner)
     }
 
     /**
@@ -131,13 +136,14 @@ internal class StrategyHubWiring(
         hub: CandleHub,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
+        owner: String,
     ) {
         for ((basket, compositor) in compositors) {
             val basketKey = streams.getValue(basket.alias)
             val members = basket.constituents.associateWith { streams.getValue(it) }
             val groupKey = SyncGroupKey(members = members, timeoutMs = null)
-            hub.registerSyncGroup(groupKey, ctx.strategyId)
-            hub.onSyncClosed(groupKey, ctx.strategyId) { bars ->
+            hub.registerSyncGroup(groupKey, owner)
+            hub.onSyncClosed(groupKey, owner) { bars ->
                 val composite = compositor.onAligned(bars) ?: return@onSyncClosed
                 hub.publish(basketKey, composite)
                 updater.updatePerAlias(basket.alias, composite, hub, ctx)
