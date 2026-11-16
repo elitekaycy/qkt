@@ -77,8 +77,8 @@ Two simulated brokers, chosen with `--broker`:
   price for the symbol. A stop, limit or bracket exit triggers on the first tick whose quote for its
   side reaches the level (the ask for a buy, the bid for a sell, as at the venue) and fills at that
   tick's mid, so it can fill up to half a spread better than its level, or beyond it on a gap. No
-  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` is
-  rejected (`volumeMax` is not checked). `--execution-latency`, `--reject-every` and `--partial-fill`
+  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` or
+  above `volumeMax` is rejected, as the live venues reject it. `--execution-latency`, `--reject-every` and `--partial-fill`
   apply to `mt5-sim` only. A symbol replayed from
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
