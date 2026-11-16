@@ -1,6 +1,7 @@
 package com.qkt.lsp
 
 import com.qkt.dsl.DslVocabulary
+import com.qkt.dsl.sets.SetFunction
 import com.qkt.dsl.stdlib.Constants
 import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
@@ -24,7 +25,7 @@ object QktVocabulary {
     val functions: List<String> =
         (
             FuncRegistry.names() + DslVocabulary.clockPredicates + DslVocabulary.rollingShorthands +
-                DslVocabulary.setFunctions
+                SetFunction.names
         ).map { it.lowercase() }
             .distinct()
             .sorted()

@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.dsl.DslVocabulary
+import com.qkt.dsl.sets.SetFunction
 import com.qkt.dsl.stdlib.Constants
 import com.qkt.dsl.stdlib.FuncArity
 import com.qkt.dsl.stdlib.FuncRegistry
@@ -80,7 +81,7 @@ object VocabularyJson {
         val registered = FuncRegistry.names().map { function(it, FuncRegistry.arity(it) ?: error("unreachable: $it")) }
         val predicates = CLOCK_PREDICATE_ARITY.map { (name, arity) -> function(name, arity) }
         val sets =
-            DslVocabulary.setFunctions
+            SetFunction.names
                 .filter { FuncRegistry.arity(it) == null }
                 .map { function(it, SET_FUNCTION_ARITY) }
         return array(registered + predicates + sets)

@@ -5,7 +5,6 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.TokenKind
-import com.qkt.dsl.sets.SetFunction
 import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
 
@@ -198,10 +197,4 @@ object DslVocabulary {
 
     /** Clock-reading boolean predicates the parser recognizes by name (upper case). */
     val clockPredicates: List<String> = listOf(CALENDAR_WINDOW, SESSION_WINDOW, LAST_TRADING_DAY_OF_MONTH)
-
-    /**
-     * Cross-member functions over a symbol set, `SUM_OF(expr, set)` and its kin (upper case). The parser resolves them
-     * by name, so only `RANK_OF`, which is also a registry function over explicit peers, is in the function registry.
-     */
-    val setFunctions: List<String> = SetFunction.entries.map { it.name }
 }
