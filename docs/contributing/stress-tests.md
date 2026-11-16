@@ -124,3 +124,5 @@ Candidates currently on the backlog:
   used here (follow-up to #138)
 - Multi-symbol stress (current test uses a single symbol; symbol-routing has its
   own unit tests but not a stress harness)
+
+<!-- docs-only CI probe -->
