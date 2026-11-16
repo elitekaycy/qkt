@@ -15,7 +15,7 @@ class BacktestDatasetEvidenceTest {
     lateinit var tmp: Path
 
     private val dataRoot get() = tmp.resolve("data")
-    private val day = dataRoot.resolve("symbols/XAUUSD/2024-01-01.csv")
+    private val day get() = dataRoot.resolve("symbols/XAUUSD/2024-01-01.csv")
     private val from = Instant.parse("2024-01-01T00:00:00Z")
     private val to = Instant.parse("2024-01-02T00:00:00Z")
 

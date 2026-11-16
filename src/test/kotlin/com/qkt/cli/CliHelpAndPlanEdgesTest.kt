@@ -11,7 +11,7 @@ class CliHelpAndPlanEdgesTest {
         val help = CliHelp.forCommand("backtest", filter = "zzz-no-such-flag")
 
         assertThat(help.lines()).contains("  No flag matching 'zzz-no-such-flag'.")
-        assertThat(help).doesNotContain("--from")
+        assertThat(help.lines().filter { it.startsWith("  --") }).isEmpty()
     }
 
     @Test

@@ -172,4 +172,41 @@ class DataVerifyBarsTest {
         assertThat(lines).contains("  2026-10-13  bars=1440  maxGap=1m  ok")
         assertThat(verify(root.resolve("elsewhere")).first).isEqualTo(ExitCodes.USER_ERROR)
     }
+
+    @Test
+    fun `a built bar file cut short is reported as unreadable and flagged`(
+        @TempDir root: Path,
+    ) {
+        val bars =
+            (0 until 60).map { m ->
+                val one = java.math.BigDecimal.ONE
+                com.qkt.marketdata.Candle(
+                    "MYBROKER:EURUSD",
+                    one,
+                    one,
+                    one,
+                    one,
+                    one,
+                    ms("2026-10-13", m),
+                    ms(
+                        "2026-10-13",
+                        m + 1,
+                    ),
+                )
+            }
+        com.qkt.marketdata.store.BinaryBarStore(root).writeDay(
+            "MYBROKER",
+            "EURUSD",
+            com.qkt.candles.TimeWindow.ONE_MINUTE,
+            LocalDate.parse("2026-10-13"),
+            bars,
+        )
+        val file = Files.walk(root).use { paths -> paths.filter { it.toString().endsWith(".bin") }.toList().single() }
+        Files.write(file, Files.readAllBytes(file).copyOf(Files.size(file).toInt() / 2))
+
+        val (code, lines) = verify(root)
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(lines).anyMatch { it.startsWith("  2026-10-13  unreadable:") }
+    }
 }
