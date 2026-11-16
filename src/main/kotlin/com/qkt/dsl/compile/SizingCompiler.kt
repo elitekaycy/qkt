@@ -84,7 +84,8 @@ class SizingCompiler(
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, entry, runtimeStopDistance ->
                     val amount = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
-                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    val resolvedStopDistance =
+                        resolveStopDistance(staticStopDistance, runtimeStopDistance) ?: return@CompiledSize null
                     amount.divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
             }
@@ -129,7 +130,8 @@ class SizingCompiler(
                 CompiledSize { ec, entry, runtimeStopDistance ->
                     val frac = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val equity = ec.strategyContext.pnl.equity()
-                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    val resolvedStopDistance =
+                        resolveStopDistance(staticStopDistance, runtimeStopDistance) ?: return@CompiledSize null
                     equity
                         .multiply(frac, Money.CONTEXT)
                         .divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
@@ -150,7 +152,8 @@ class SizingCompiler(
                                 "SIZING RISK OF BOOK requires a portfolio deploy with CAPITAL; " +
                                     "no book is bound for this strategy",
                             )
-                    val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
+                    val resolvedStopDistance =
+                        resolveStopDistance(staticStopDistance, runtimeStopDistance) ?: return@CompiledSize null
                     book
                         .balance()
                         .multiply(frac, Money.CONTEXT)
@@ -159,16 +162,11 @@ class SizingCompiler(
             }
         }
 
+    /** The stop distance risk sizing divides by; null (skip the order) when absent or not positive, never a throw. */
     private fun resolveStopDistance(
         staticStopDistance: BigDecimal?,
         runtimeStopDistance: BigDecimal?,
-    ): BigDecimal {
-        val resolved = runtimeStopDistance ?: staticStopDistance
-        require(resolved != null && resolved.signum() > 0) {
-            "risk sizing requires a positive runtime stop distance"
-        }
-        return resolved
-    }
+    ): BigDecimal? = (runtimeStopDistance ?: staticStopDistance)?.takeIf { it.signum() > 0 }
 
     /**
      * Converts a stream's native quote-currency value per unit into account-currency

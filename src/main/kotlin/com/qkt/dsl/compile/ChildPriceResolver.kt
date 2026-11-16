@@ -145,6 +145,8 @@ class ChildPriceResolver(
                     val sd =
                         stopDistance
                             ?: error("RR take-profit requires a resolvable stop distance from BRACKET STOP LOSS")
+                    // No stop distance means no risk to multiply: the target would sit on the entry. Skip the order.
+                    if (sd.signum() <= 0) return@CompiledChildPrice null
                     val v = multExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
                     applyDistance(side, entry, v.multiply(sd, Money.CONTEXT), ChildKind.TAKE_PROFIT)
                 }

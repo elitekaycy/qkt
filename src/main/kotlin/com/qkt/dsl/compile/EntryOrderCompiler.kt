@@ -117,8 +117,13 @@ internal class EntryOrderCompiler(
                     }
             val resolvedBracket: ResolvedBracket? =
                 if (opts.bracket != null) {
-                    resolveBracket(compiledSL, compiledTP, ctx, side, entry, skipLog, stream)
-                        ?: return@buySell emptyList()
+                    when (val resolution = resolveBracket(compiledSL, compiledTP, ctx, side, entry, skipLog, stream)) {
+                        is BracketResolution.Resolved -> resolution.bracket
+                        BracketResolution.Undefined -> return@buySell emptyList()
+                        is BracketResolution.Refused -> return@buySell listOf(
+                            Signal.Suppressed(symbol, resolution.reason),
+                        )
+                    }
                 } else {
                     null
                 }

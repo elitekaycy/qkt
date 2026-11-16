@@ -235,8 +235,8 @@ class SizingCompilerTest {
                 runtimeStopDistance = BigDecimal("5"),
             ),
         ).isEqualByComparingTo("0.2")
-        assertThatThrownBy { sizing.evaluate(ecWithContractSize100, BigDecimal("100")) }
-            .hasMessageContaining("positive runtime stop distance")
+        assertThat(sizing.evaluate(ecWithContractSize100, BigDecimal("100"))).isNull()
+        assertThat(sizing.evaluate(ecWithContractSize100, BigDecimal("100"), BigDecimal.ZERO)).isNull()
     }
 
     @Test
