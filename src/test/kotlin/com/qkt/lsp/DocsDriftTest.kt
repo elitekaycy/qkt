@@ -36,7 +36,7 @@ class DocsDriftTest {
 
     @Test
     fun `every function has hover docs and appears in completion`() {
-        for (name in FuncRegistry.names() + DslVocabulary.clockPredicates) {
+        for (name in FuncRegistry.names() + DslVocabulary.clockPredicates + DslVocabulary.setFunctions) {
             assertThat(QktDocs.function(name)).withFailMessage("missing hover doc for function %s", name).isNotBlank()
             assertThat(QktVocabulary.functions)
                 .withFailMessage("function %s missing from completion", name)
@@ -67,7 +67,8 @@ class DocsDriftTest {
     fun `every documented indicator and function is a name the compiler knows`() {
         assertThat(QktDocs.indicatorNames())
             .isSubsetOf(IndicatorRegistry.names() + DslVocabulary.externalIndicators)
-        assertThat(QktDocs.functionNames()).isSubsetOf(FuncRegistry.names() + DslVocabulary.clockPredicates)
+        assertThat(QktDocs.functionNames())
+            .isSubsetOf(FuncRegistry.names() + DslVocabulary.clockPredicates + DslVocabulary.setFunctions)
     }
 
     @Test

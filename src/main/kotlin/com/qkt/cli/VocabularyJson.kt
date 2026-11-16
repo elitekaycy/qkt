@@ -25,6 +25,9 @@ object VocabularyJson {
     /** Arity of the two indicators bound outside the registry: at least a series, a peer and a period. */
     private val EXTERNAL_INDICATOR_ARITY = FuncArity(3, variadic = true)
 
+    /** `SUM_OF(expr, set)` and its kin take the expression and the set; `RANK_OF` is in the registry, variadic. */
+    private val SET_FUNCTION_ARITY = FuncArity(2, variadic = false)
+
     private val CLOCK_PREDICATE_ARITY: Map<String, FuncArity> =
         mapOf(
             DslVocabulary.CALENDAR_WINDOW to FuncArity(4, variadic = false),
@@ -76,7 +79,11 @@ object VocabularyJson {
     private fun functions(): JsonArray {
         val registered = FuncRegistry.names().map { function(it, FuncRegistry.arity(it) ?: error("unreachable: $it")) }
         val predicates = CLOCK_PREDICATE_ARITY.map { (name, arity) -> function(name, arity) }
-        return array(registered + predicates)
+        val sets =
+            DslVocabulary.setFunctions
+                .filter { FuncRegistry.arity(it) == null }
+                .map { function(it, SET_FUNCTION_ARITY) }
+        return array(registered + predicates + sets)
     }
 
     private fun constants(): JsonArray =

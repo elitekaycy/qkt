@@ -33,8 +33,11 @@ object GrammarVocabulary {
     /** Registered indicators plus the two compiled outside the registry, uppercase, sorted. */
     val indicators: List<String> = (IndicatorRegistry.names() + registryExternalIndicators).sorted()
 
+    /** Cross-member functions over a symbol set, which the parser resolves by name: `SUM_OF`, `COUNT_OF`, ... */
+    val setFunctions: List<String> = DslVocabulary.setFunctions
+
     /** Registered scalar functions plus the parser's own call names, uppercase, sorted. */
-    val functions: List<String> = (FuncRegistry.names() + parserBuiltins).sorted()
+    val functions: List<String> = (FuncRegistry.names() + parserBuiltins + setFunctions).distinct().sorted()
 
     /** Named numeric constants, sorted. */
     val constants: List<String> = Constants.names().sorted()

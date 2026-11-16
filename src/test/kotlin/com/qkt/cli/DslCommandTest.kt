@@ -63,6 +63,16 @@ class DslCommandTest {
                     "min"
             }
         assertThat(min.getValue("variadic").jsonPrimitive.content).isEqualTo("true")
+        val functions = json.getValue("functions").jsonArray.map { it.jsonObject }
+        val sumOf = functions.single { it.getValue("name").jsonPrimitive.content == "sum_of" }
+        assertThat(sumOf.getValue("arity").jsonPrimitive.content).isEqualTo("2")
+        assertThat(sumOf.getValue("variadic").jsonPrimitive.content).isEqualTo("false")
+        // rank_of is a registry function over explicit peers and the set form: listed once, variadic
+        val ranks = functions.filter { it.getValue("name").jsonPrimitive.content == "rank_of" }
+        assertThat(ranks).hasSize(1)
+        assertThat(ranks.single().getValue("variadic").jsonPrimitive.content).isEqualTo("true")
+        assertThat(functions.map { it.getValue("name").jsonPrimitive.content })
+            .contains("avg_of", "max_of", "min_of", "count_of")
         assertThat(
             json
                 .getValue("members")
