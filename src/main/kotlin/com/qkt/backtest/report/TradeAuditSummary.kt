@@ -91,8 +91,9 @@ internal object TradeAuditSummaries {
             return when (legAction) {
                 com.qkt.positions.StrategyPositionTracker.LegAction.OPENED ->
                     if (longSide) "OPEN_LONG" else "OPEN_SHORT"
-                // NETTED is excluded by the guard above, so the remaining action is CLOSED.
-                else -> if (longSide) "CLOSE_SHORT" else "CLOSE_LONG"
+                com.qkt.positions.StrategyPositionTracker.LegAction.CLOSED ->
+                    if (longSide) "CLOSE_SHORT" else "CLOSE_LONG"
+                com.qkt.positions.StrategyPositionTracker.LegAction.NETTED -> error("unreachable")
             }
         }
         val beforePosition = r.strategyPositionBefore

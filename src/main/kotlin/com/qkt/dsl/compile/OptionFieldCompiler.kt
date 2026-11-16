@@ -66,6 +66,7 @@ internal object OptionFieldCompiler {
             "delta" -> greeks.delta
             "gamma" -> greeks.gamma
             "vega" -> greeks.vega
-            else -> greeks.theta
+            "theta" -> greeks.theta
+            else -> error("unreachable: $field")
         }
 }

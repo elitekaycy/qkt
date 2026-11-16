@@ -26,8 +26,9 @@ internal object ExitHookAttachment {
             val childOpts =
                 when (child) {
                     is Buy -> child.opts
+                    is Sell -> child.opts
                     is Log -> return@forEach
-                    else -> (child as Sell).opts
+                    else -> error("validated above")
                 }
             require(childOpts.exitHooks.isEmpty() && childOpts.onFill.isEmpty()) {
                 "Exit-hook children cannot declare ON_FILL or nested ON_* hooks in v1."

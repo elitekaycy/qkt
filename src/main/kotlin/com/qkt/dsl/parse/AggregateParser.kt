@@ -23,8 +23,13 @@ internal class AggregateParser(
     fun parseAggregate(): ExprAst {
         val fnTok = cursor.advance()
         val fn =
-            // Only MEAN and SUM reach here; MAX and MIN go through parseAggregateOrFunction.
-            if (fnTok.kind == TokenKind.MEAN) AggFn.MEAN else AggFn.SUM
+            when (fnTok.kind) {
+                TokenKind.MAX -> AggFn.MAX
+                TokenKind.MIN -> AggFn.MIN
+                TokenKind.MEAN -> AggFn.MEAN
+                TokenKind.SUM -> AggFn.SUM
+                else -> cursor.error("unreachable")
+            }
         cursor.expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
         val series = expressionParser.parseExpr()
         // `sum(x, N)` / `mean(x, N)` is shorthand for `sum(x) SINCE T-N` (#1130).

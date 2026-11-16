@@ -120,14 +120,14 @@ internal class PortfolioParser(
                 com.qkt.dsl.ast
                     .WhenRun(cond, alias, weight, parseOptionalOverrides())
             }
-            // The rules loop only enters on WHEN or RUN.
-            else -> {
+            TokenKind.RUN -> {
                 cursor.advance()
                 val alias = cursor.expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
                 val weight = parseOptionalWeight()
                 com.qkt.dsl.ast
                     .AlwaysRun(alias, weight, parseOptionalOverrides())
             }
+            else -> cursor.error("expected WHEN or RUN, got '${cursor.peek().lexeme}'")
         }
 
     private fun parseOptionalWeight(): java.math.BigDecimal? =

@@ -84,11 +84,11 @@ internal class StateRefParser(
                 cursor.expect(TokenKind.DOT, "expected '.' after POSITION_AVG_PRICE")
                 StateAccessor(StateSource.POSITION_AVG_PRICE, cursor.expectFieldName().lexeme)
             }
-            // The caller dispatches only the state-ref keywords, so the last one is the default.
-            else -> {
+            TokenKind.OPEN_ORDERS -> {
                 cursor.advance()
                 cursor.expect(TokenKind.DOT, "expected '.' after OPEN_ORDERS")
                 StateAccessor(StateSource.OPEN_ORDERS, cursor.expectFieldName().lexeme)
             }
+            else -> cursor.error("expected expression, got '${t.lexeme}'")
         }
 }

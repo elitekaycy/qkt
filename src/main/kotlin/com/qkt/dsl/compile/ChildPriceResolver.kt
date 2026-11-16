@@ -179,7 +179,8 @@ class ChildPriceResolver(
                 kind == ChildKind.STOP_LOSS && side == Side.BUY -> -BigDecimal.ONE
                 kind == ChildKind.STOP_LOSS && side == Side.SELL -> BigDecimal.ONE
                 kind == ChildKind.TAKE_PROFIT && side == Side.BUY -> BigDecimal.ONE
-                else -> -BigDecimal.ONE
+                kind == ChildKind.TAKE_PROFIT && side == Side.SELL -> -BigDecimal.ONE
+                else -> error("unreachable")
             }
         return entry.add(sign.multiply(dist, Money.CONTEXT), Money.CONTEXT)
     }

@@ -56,8 +56,8 @@ internal class LiteralParser(
                 's' -> n * 1_000L
                 'm' -> n * 60_000L
                 'h' -> n * 3_600_000L
-                // The lexer only emits the s, m, h and d suffixes.
-                else -> n * 86_400_000L
+                'd' -> n * 86_400_000L
+                else -> cursor.error("unknown duration unit '$unit' in '$lex'")
             }
         return DurationAst(millis)
     }
