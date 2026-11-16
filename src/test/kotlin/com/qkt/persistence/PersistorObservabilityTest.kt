@@ -43,13 +43,17 @@ class PersistorObservabilityTest {
     }
 
     @Test
-    fun `slowWrites stays zero on a normal write`(
+    fun `a write within the slow threshold is not counted as slow`(
         @TempDir tmp: Path,
     ) {
-        val persistor = FileStatePersistor(tmp)
-        persistor.saveLegBook("hedge", "XAUUSDm", makeBook())
-        // 100ms threshold; a temp-dir write is microseconds. Should never trip.
-        assertThat(persistor.slowWrites).isZero
+        assertThat(FileStatePersistor(tmp).slowWrites).isZero
+        // A threshold no write can exceed keeps this true on a loaded machine; the real 100ms threshold measured
+        // wall time and failed CI when a temp-dir write took 166ms.
+        val writer = StateFileWriter(tmp, slowWriteThresholdMs = Long.MAX_VALUE)
+        writer.write("hedge", "a.json", "{}")
+
+        assertThat(writer.slowWrites.get()).isZero
+        assertThat(writer.totalWrites.get()).isEqualTo(1L)
     }
 
     @Test
