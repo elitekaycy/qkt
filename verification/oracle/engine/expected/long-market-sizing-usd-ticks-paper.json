@@ -1,0 +1,35 @@
+{
+  "name": "long-market-sizing-usd-ticks-paper",
+  "proves": "SIZING 1000 USD at 100.50 with contractSize 10 is 0.995 lots, quantized to 0.99",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.99",
+      "price": "100.50",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.50",
+      "takeProfit": "102.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.99",
+      "price": "102.51",
+      "realized": "19.8990",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "19.8990",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "sizing.md:51-57 does not say whether USD notional divides by price alone or price x contractSize; the oracle uses price x contractSize (README Q3)."
+  ]
+}

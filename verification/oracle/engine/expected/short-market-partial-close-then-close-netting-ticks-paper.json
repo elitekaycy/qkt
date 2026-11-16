@@ -1,0 +1,40 @@
+{
+  "name": "short-market-partial-close-then-close-netting-ticks-paper",
+  "proves": "BUY 0.5 * ABS(POSITION) realises half the short at market; CLOSE realises the rest",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "99.00",
+      "realized": "0.0750",
+      "reason": "close",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704881100000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "98.00",
+      "realized": "0.1250",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.2000",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

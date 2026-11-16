@@ -1,0 +1,11 @@
+STRATEGY short_market_partial_close_then_close_netting_ticks_paper VERSION 1
+-- BUY 0.5 * ABS(POSITION) realises half the short at market; CLOSE realises the rest
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 0.1
+    WHEN syn.close = 99.00 AND POSITION.syn < 0
+    THEN BUY syn SIZING 0.5 * ABS(POSITION.syn)
+    WHEN syn.close = 98.00 AND POSITION.syn < 0
+    THEN CLOSE syn

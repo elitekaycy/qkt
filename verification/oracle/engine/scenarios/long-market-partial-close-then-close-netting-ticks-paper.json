@@ -1,0 +1,208 @@
+{
+  "name": "long-market-partial-close-then-close-netting-ticks-paper",
+  "proves": "SELL 0.5 * POSITION realises half the long at market; CLOSE realises the rest at the entry price basis",
+  "dimensions": {
+    "entry": "market",
+    "exit": "partial-close",
+    "side": "long",
+    "fills": "ticks",
+    "path": "close",
+    "sizing": "fixed",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "netting"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "netting",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "100.99",
+      "101.01"
+    ],
+    [
+      135,
+      "101.49",
+      "101.51"
+    ],
+    [
+      150,
+      "101.79",
+      "101.81"
+    ],
+    [
+      165,
+      "101.99",
+      "102.01"
+    ],
+    [
+      180,
+      "101.99",
+      "102.01"
+    ],
+    [
+      195,
+      "102.19",
+      "102.21"
+    ],
+    [
+      210,
+      "102.59",
+      "102.61"
+    ],
+    [
+      225,
+      "102.79",
+      "102.81"
+    ],
+    [
+      240,
+      "102.89",
+      "102.91"
+    ],
+    [
+      255,
+      "103.19",
+      "103.21"
+    ],
+    [
+      270,
+      "102.79",
+      "102.81"
+    ],
+    [
+      285,
+      "102.99",
+      "103.01"
+    ],
+    [
+      300,
+      "102.99",
+      "103.01"
+    ],
+    [
+      315,
+      "103.09",
+      "103.11"
+    ],
+    [
+      330,
+      "102.89",
+      "102.91"
+    ],
+    [
+      345,
+      "103.04",
+      "103.06"
+    ],
+    [
+      360,
+      "99.99",
+      "100.01"
+    ],
+    [
+      375,
+      "99.99",
+      "100.01"
+    ],
+    [
+      390,
+      "99.99",
+      "100.01"
+    ],
+    [
+      405,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        }
+      }
+    },
+    {
+      "when": {
+        "barClose": "102.00",
+        "position": "long"
+      },
+      "do": {
+        "kind": "reduce",
+        "side": "SELL",
+        "fraction": "0.5"
+      }
+    },
+    {
+      "when": {
+        "barClose": "103.00",
+        "position": "long"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,33 @@
+{
+  "name": "long-market-sizing-pct-risk-ticks-paper",
+  "proves": "SIZING 1 PCT RISK with a 2.00 stop and contractSize 10 is exactly 5 lots; the stop loses just under 1%",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "5",
+      "price": "100.50",
+      "realized": "0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "98.50",
+      "takeProfit": "104.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "5",
+      "price": "98.51",
+      "realized": "-99.50",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-99.50",
+  "commission": "0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "short-market-sizing-risk-usd-below-min-rejected-ticks-paper",
+  "proves": "SIZING RISK $ 0.1 over a 2.00 stop and contractSize 10 is 0.005 lots, below volumeMin: rejected, no trade",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [],
+  "realized": "0",
+  "commission": "0",
+  "rejections": 1,
+  "openAtEnd": false,
+  "notes": []
+}

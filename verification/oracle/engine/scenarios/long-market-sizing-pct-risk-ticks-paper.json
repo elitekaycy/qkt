@@ -1,0 +1,137 @@
+{
+  "name": "long-market-sizing-pct-risk-ticks-paper",
+  "proves": "SIZING 1 PCT RISK with a 2.00 stop and contractSize 10 is exactly 5 lots; the stop loses just under 1%",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "stop",
+    "sizing": "pct-risk",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "10",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "99.49",
+      "99.51"
+    ],
+    [
+      135,
+      "98.99",
+      "99.01"
+    ],
+    [
+      150,
+      "98.50",
+      "98.52"
+    ],
+    [
+      165,
+      "98.79",
+      "98.81"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "pctRisk",
+          "value": "1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "2.00"
+          },
+          "target": {
+            "by": "4.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": []
+}

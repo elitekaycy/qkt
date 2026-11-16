@@ -1,0 +1,33 @@
+{
+  "name": "long-market-sizing-pct-risk-step-rounding-ticks-paper",
+  "proves": "SIZING 0.5 PCT RISK with a 1.50 stop and contractSize 10 is 3.333 lots, quantized down to 3.33",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "3.33",
+      "price": "100.50",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.00",
+      "takeProfit": "103.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "3.33",
+      "price": "103.51",
+      "realized": "100.2330",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "100.2330",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

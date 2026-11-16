@@ -1,0 +1,7 @@
+STRATEGY short_market_sizing_pct_equity_ticks_paper VERSION 1
+-- SIZING 5 PCT OF EQUITY on 10000 at 100.50 is 4.975 lots, quantized to 4.97
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 5 PCT OF EQUITY BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

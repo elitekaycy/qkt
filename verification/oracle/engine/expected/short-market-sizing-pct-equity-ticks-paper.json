@@ -1,0 +1,33 @@
+{
+  "name": "short-market-sizing-pct-equity-ticks-paper",
+  "proves": "SIZING 5 PCT OF EQUITY on 10000 at 100.50 is 4.975 lots, quantized to 4.97",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "4.97",
+      "price": "100.50",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.50",
+      "takeProfit": "98.50"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "4.97",
+      "price": "101.49",
+      "realized": "-4.9203",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-4.9203",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}
