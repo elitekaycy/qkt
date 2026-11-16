@@ -53,6 +53,17 @@ grep -oE '^    com\.qkt\.[A-Za-z.]+Test$' "$precheck" | while read -r fqcn; do
 done
 test "$(grep -cE '^    com\.qkt\.[A-Za-z.]+Test$' "$precheck")" -ge 4
 
+# Changed test classes: existing *Test.kt under src/test/kotlin, package from the file, deleted and helper files skipped.
+got="$(printf '%s\n' \
+    src/test/kotlin/com/qkt/parity/WallClockSourcePolicyTest.kt \
+    src/test/kotlin/com/qkt/parity/WallClockSourcePolicyTest.kt \
+    src/test/kotlin/com/qkt/deleted/GoneTest.kt \
+    src/test/kotlin/com/qkt/parity/NotATestHelper.kt \
+    src/main/kotlin/com/qkt/FakeTest.kt \
+    docs/x.md | bash "$precheck" --changed-tests - 2>/dev/null)"
+test "$got" = com.qkt.parity.WallClockSourcePolicyTest || { echo "changed tests: got [$got]" >&2; exit 1; }
+test -z "$(printf 'docs/x.md\n' | bash "$precheck" --changed-tests - 2>/dev/null)"
+
 # Scope from a real diff, run from a linked worktree, with PRECHECK_BASE as the base.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -76,6 +87,12 @@ echo 'fun main() {}' > "$work/wt/src/main/kotlin/Main.kt"
 g "$work/wt" add -A
 g "$work/wt" commit -qm src
 test "$(scope_in_wt)" = gradle
+
+mkdir -p "$work/wt/src/test/kotlin/demo"
+printf 'package com.example.demo\n\nclass NewThingTest\n' > "$work/wt/src/test/kotlin/demo/NewThingTest.kt"
+g "$work/wt" add -A
+g "$work/wt" commit -qm test
+test "$(cd "$work/wt" && PRECHECK_BASE=dev bash scripts/precheck.sh --changed-tests 2>/dev/null)" = com.example.demo.NewThingTest
 
 # Called by absolute path from elsewhere, it still resolves the worktree that holds it.
 test "$(cd / && PRECHECK_BASE=dev bash "$work/wt/scripts/precheck.sh" --scope 2>/dev/null)" = gradle

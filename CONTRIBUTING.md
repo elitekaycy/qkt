@@ -49,7 +49,7 @@ on every push. Skip it with `git push --no-verify` only for docs emergencies.
 
 The default fast mode diffs against `origin/dev` (`PRECHECK_BASE` overrides) and, when sources, build
 logic or Gradle files changed, runs `ktlintCheck checkFileSize compileKotlin compileTestKotlin` and the
-source-policy tests in one Gradle call (a few minutes warm, under the shared JVM lock when present).
+source-policy tests plus every test class the branch adds or changes in one Gradle call (a few minutes warm, under the shared JVM lock when present).
 Docs-only changes skip Gradle. On failure it prints the fix (for example `./gradlew ktlintFormat`).
 `scripts/precheck.sh --full` runs the full `./gradlew build` and `test`; CI always runs the full suite.
 

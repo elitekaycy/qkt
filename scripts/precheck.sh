@@ -4,11 +4,13 @@
 # Usage: scripts/precheck.sh [--full | --scope [-]]
 #
 #   (default)  FAST: catches the failures that cost a CI round trip for nothing — ktlint, the file-size
-#              ratchet, main/test compile errors and the source-policy tests — in one Gradle invocation.
+#              ratchet, main/test compile errors, the source-policy tests and every test class the branch adds
+#              or changes — in one Gradle invocation.
 #              Target: under ~3 minutes with a warm build dir. CI still runs the full suite.
 #   --full     the old pipeline: full `./gradlew build` and `./gradlew test`.
 #   --scope    print the scope (docs-only | gradle | other) of this branch's diff and exit.
 #   --scope -  print the scope of the paths given one per line on stdin and exit (used by the tests).
+#   --changed-tests -  print the test classes the stdin paths add or change and exit (used by the tests).
 #
 # Scope comes from `git diff --name-only $PRECHECK_BASE...HEAD` (default base origin/dev):
 #   docs-only  every path is documentation no test reads (scripts/classify-ci-changes.sh, the CI rule): no Gradle
@@ -37,6 +39,21 @@ POLICY_TESTS=(
     com.qkt.observe.insights.InsightsContractTypesTest
     com.qkt.cli.CliDocsSyncTest
 )
+
+# Above this many changed test classes the fast mode still runs them all but says the run will be slower.
+CHANGED_TESTS_NOTE_AT=15
+
+# Reads changed paths on stdin, prints the fully qualified class of each *Test.kt under src/test/kotlin that still
+# exists (deleted tests have nothing to run). The package comes from the file's `package` line.
+changed_tests() {
+    local path pkg
+    while IFS= read -r path; do
+        case "$path" in src/test/kotlin/*Test.kt) ;; *) continue ;; esac
+        [ -f "$REPO_ROOT/$path" ] || continue
+        pkg="$(sed -nE 's/^package[[:space:]]+([A-Za-z0-9_.]+).*/\1/p' "$REPO_ROOT/$path" | head -n 1)"
+        printf '%s%s\n' "${pkg:+$pkg.}" "$(basename "$path" .kt)"
+    done | sort -u
+}
 
 # Paths whose change means Gradle must compile or lint something.
 is_gradle_path() {
@@ -87,7 +104,11 @@ case "${1:-}" in
         if [ "${2:-}" = - ]; then scope_of; else changed_paths | scope_of; fi
         exit 0
         ;;
-    *) fail "unknown argument: $1 (usage: scripts/precheck.sh [--full | --scope [-]])" ;;
+    --changed-tests)
+        if [ "${2:-}" = - ]; then changed_tests; else changed_paths | changed_tests; fi
+        exit 0
+        ;;
+    *) fail "unknown argument: $1 (usage: scripts/precheck.sh [--full | --scope [-] | --changed-tests [-]])" ;;
 esac
 
 # Runs ./gradlew with the given arguments, under the shared JVM lock when there is one. Output goes to the
@@ -123,7 +144,7 @@ explain_gradle_failure() {
         hinted=true
     fi
     if grep -qE "task ':test'" "$gradle_log"; then
-        echo "  policy tests:  read the failure above, then ./gradlew test --tests <TestClass>"
+        echo "  tests:         read the failure above, then ./gradlew test --tests <TestClass>"
         hinted=true
     fi
     if grep -qE "exit code 124|Terminated" "$gradle_log"; then
@@ -150,9 +171,15 @@ if [ "$mode" = full ]; then
     run_gradle test || { explain_gradle_failure; fail "tests failed"; }
     ok "build and tests passed"
 elif [ "$scope" = gradle ]; then
-    step "Fast Gradle checks: ktlint, file size, compile, source-policy tests"
+    step "Fast Gradle checks: ktlint, file size, compile, source-policy tests, changed tests"
+    mapfile -t branch_tests < <(printf '%s\n' "$changed" | changed_tests)
+    if [ "${#branch_tests[@]}" -gt "$CHANGED_TESTS_NOTE_AT" ]; then
+        echo "precheck: note: ${#branch_tests[@]} changed test classes (over $CHANGED_TESTS_NOTE_AT); running them all, this takes longer"
+    elif [ "${#branch_tests[@]}" -gt 0 ]; then
+        echo "precheck: changed test classes: ${branch_tests[*]}"
+    fi
     test_args=()
-    for t in "${POLICY_TESTS[@]}"; do test_args+=(--tests "$t"); done
+    for t in "${POLICY_TESTS[@]}" "${branch_tests[@]}"; do test_args+=(--tests "$t"); done
     if run_gradle ktlintCheck checkFileSize compileKotlin compileTestKotlin test "${test_args[@]}"; then
         ok "fast Gradle checks passed"
     else
