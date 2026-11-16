@@ -22,7 +22,12 @@ class StackEntryRiskReportTest {
         val result = Backtest(strategies = listOf("stack-risk" to onceStrategy("btcusdt", plan)), ticks = ticks).run()
 
         val entries = result.trades.filter { it.trade.side == Side.BUY }.sortedBy { it.trade.price }
-        val prices = entries.map { it.trade.price.stripTrailingZeros().toPlainString() }
+        val prices =
+            entries.map {
+                it.trade.price
+                    .stripTrailingZeros()
+                    .toPlainString()
+            }
         assertThat(prices).containsExactly("50000", "50100", "50200")
         entries.forEach { e ->
             assertThat(e.stopLossPrice).isEqualByComparingTo(e.trade.price - BigDecimal("50"))
