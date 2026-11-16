@@ -176,7 +176,8 @@ class StrategyHandle(
             ) {
                 "starting_balance must be > 0 when max_drawdown_pct or max_daily_drawdown_pct is configured"
             }
-            val ast = liveStrategyAst(file, symbolSets)
+            val startMs = System.currentTimeMillis()
+            val ast = liveStrategyAst(file, symbolSets, startMs, persistor)
             val strategy = AstCompiler().compile(ast)
             val symbols = ast.streams.map { it.qktSymbol }.distinct()
             val candleWindow: TimeWindow? =
@@ -188,7 +189,6 @@ class StrategyHandle(
 
             val ring = EventRing(capacity = ringSize)
             val fillCount = AtomicLong(0)
-            val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
 
             val perStrategyOverride = perStrategyRisk[ast.name]

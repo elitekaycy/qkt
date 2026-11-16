@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon
 
+import com.qkt.common.Side
 import com.qkt.dsl.sets.SetCatalog
 import com.qkt.dsl.sets.SymbolSetSpec
 import com.qkt.instrument.InstrumentMeta
@@ -7,6 +8,10 @@ import com.qkt.instrument.universe.VenueCatalog
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.persistence.FileStatePersistor
+import com.qkt.positions.LegBook
+import com.qkt.positions.LegRole
+import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -108,5 +113,58 @@ class StrategyHandleSymbolSetTest {
             )
         assertThatThrownBy { factory.create("metals", strategy(), false) }
             .hasMessageContaining("symbol set 'm' is a filtered universe")
+    }
+
+    private fun book(
+        symbol: String,
+        open: Boolean,
+    ) = LegBook(symbol).also { book ->
+        if (open) {
+            book.add(
+                PositionLeg(
+                    legId = "l-$symbol",
+                    parentLegId = null,
+                    role = LegRole.PRIMARY,
+                    side = Side.BUY,
+                    symbol = symbol,
+                    quantity = BigDecimal.ONE,
+                    entryPrice = BigDecimal("100"),
+                    openedAt = 0L,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `a start whose set dropped a held symbol is refused, naming it, before anything trades`() {
+        val persistor = FileStatePersistor(tmp.resolve("persist"))
+        persistor.saveLegBook("metals", "GW:XPTUSD", book("GW:XPTUSD", open = true))
+        var sourced = false
+        val factory =
+            StrategyHandle.RealFactory(
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                marketSourceProvider = {
+                    sourced = true
+                    Silent
+                },
+                persistor = persistor,
+                symbolSets = listing,
+            )
+        assertThatThrownBy { factory.create("metals", strategy(), false) }
+            .hasMessageContaining("strategy 'metals' holds GW:XPTUSD")
+            .hasMessageContaining("no rule would manage that position")
+        assertThat(sourced).isFalse()
+    }
+
+    @Test
+    fun `a held member that stays, a closed book and another venue's position do not refuse the start`() {
+        val persistor = FileStatePersistor(tmp.resolve("persist"))
+        persistor.saveLegBook("metals", "GW:XAUUSD", book("GW:XAUUSD", open = true))
+        persistor.saveLegBook("metals", "GW:XPTUSD", book("GW:XPTUSD", open = false))
+        persistor.saveLegBook("metals", "OTHER:XPTUSD", book("OTHER:XPTUSD", open = true))
+
+        val ast = liveStrategyAst(strategy(), listing, 0L, persistor)
+
+        assertThat(ast.streams.map { it.qktSymbol }).containsExactly("GW:XAGUSD", "GW:XAUUSD")
     }
 }
