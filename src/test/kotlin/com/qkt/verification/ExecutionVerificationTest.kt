@@ -41,27 +41,40 @@ class ExecutionVerificationTest {
             scenario: ExecutionScenario,
             dir: Path,
         ) {
-            val expected = ExecutionScenarios.expectation(scenario.name)
+            val expectation = ExecutionScenarios.expectation(scenario.name)
             val run = ExecutionScenarioRun.run(scenario, dir)
             val about = "${scenario.name} (${scenario.proves})"
             val got = run.fills.joinToString("\n") { it.toTapeLine() }
-            assertThat(run.fills).describedAs("$about: fills, got\n$got").hasSize(expected.trades.size)
+            assertThat(run.fills).describedAs("$about: fills, got\n$got").hasSize(expectation.trades.size)
+            val tick = expectation.timestampGranularity == "tick"
+            val expected = if (tick) expectation.trades.sortedWith(EXPECTED_ORDER) else expectation.trades
+            val actual = if (tick) run.fills.sortedWith(ACTUAL_ORDER) else run.fills
             val mismatches =
-                expected.trades.indices.mapNotNull { i ->
-                    compare(i, expected.trades[i], run.fills[i], expected.timestampGranularity, scenario)
+                expected.indices.mapNotNull { i ->
+                    compare(i, expected[i], actual[i], expectation.timestampGranularity, scenario)
                 }
             assertThat(mismatches).describedAs("$about: ${mismatches.size} fills differ").isEmpty()
             assertThat(run.finalRealized.cents())
                 .describedAs("$about: finalRealized")
-                .isEqualByComparingTo(BigDecimal(expected.realized).cents())
+                .isEqualByComparingTo(BigDecimal(expectation.realized).cents())
             assertThat(run.commissionPaid.cents())
                 .describedAs("$about: commissionPaid")
-                .isEqualByComparingTo(BigDecimal(expected.commission).cents())
-            assertThat(run.rejections).describedAs("$about: rejections").isEqualTo(expected.rejections)
+                .isEqualByComparingTo(BigDecimal(expectation.commission).cents())
+            assertThat(run.rejections).describedAs("$about: rejections").isEqualTo(expectation.rejections)
             assertThat(run.fills.sumOf { it.realized })
                 .describedAs("$about: sum of realized")
-                .isEqualByComparingTo(BigDecimal(expected.realized))
+                .isEqualByComparingTo(BigDecimal(expectation.realized))
         }
+
+        /**
+         * Fills on one tick are compared as a set: the docs fix which orders fill on a tick, not the order the
+         * trade log lists two of them in (two legs stopped by one gap, a STACK_AT leg opening as its primary's
+         * target fills). Both tapes are put in the same order, by time, then side, reason, quantity and price.
+         */
+        private val EXPECTED_ORDER: Comparator<ExpectedFill> =
+            compareBy({ it.ts }, { it.side }, { it.reason }, { BigDecimal(it.qty) }, { BigDecimal(it.price) })
+        private val ACTUAL_ORDER: Comparator<ActualFill> =
+            compareBy({ it.ts }, { it.side }, { it.reason }, { it.qty }, { it.price })
 
         private fun compare(
             i: Int,

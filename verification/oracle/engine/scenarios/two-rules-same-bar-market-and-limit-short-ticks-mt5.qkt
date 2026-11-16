@@ -1,0 +1,9 @@
+STRATEGY two_rules_same_bar_market_and_limit_short_ticks_mt5 VERSION 1
+-- mt5-sim: one rule sells at market, the other rests a sell limit at 100.80; both legs take their own targets
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50
+    THEN SELL syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }
+    WHEN syn.close = 100.50
+    THEN SELL syn SIZING 0.1 ORDER_TYPE = LIMIT AT 100.80 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }

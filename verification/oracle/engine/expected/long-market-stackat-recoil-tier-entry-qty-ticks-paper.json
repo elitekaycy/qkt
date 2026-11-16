@@ -1,0 +1,53 @@
+{
+  "name": "long-market-stackat-recoil-tier-entry-qty-ticks-paper",
+  "proves": "MAE 0.50 arms the recoil tier, the anchor floats to 99.70, a 0.30 recovery fires ENTRY_QTY * 0.5",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.2",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.00",
+      "takeProfit": "102.50"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.10",
+      "price": "100.00",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.50",
+      "takeProfit": "100.40"
+    },
+    {
+      "ts": 1704880965000,
+      "side": "SELL",
+      "qty": "0.10",
+      "price": "100.41",
+      "realized": "0.0410",
+      "reason": "target",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704881010000,
+      "side": "SELL",
+      "qty": "0.2",
+      "price": "102.51",
+      "realized": "0.402",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.4430",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

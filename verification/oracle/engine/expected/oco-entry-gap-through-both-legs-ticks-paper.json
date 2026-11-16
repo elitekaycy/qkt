@@ -1,0 +1,35 @@
+{
+  "name": "oco-entry-gap-through-both-legs-ticks-paper",
+  "proves": "a gap tick reaches both legs: the leg whose trigger is closer to the bar's open fills, the other is cancelled",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880920000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.80",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "97.80",
+      "takeProfit": "99.80"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.81",
+      "realized": "0.101",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.101",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "actions.md:172 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."
+  ]
+}

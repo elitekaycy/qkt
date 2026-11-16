@@ -1,0 +1,128 @@
+{
+  "name": "long-market-stackat-tier-on-target-tick-ticks-paper",
+  "proves": "one gap tick fills the primary's target and lifts MFE past the tier: the tier fires on it and its leg runs on",
+  "dimensions": {
+    "feature": "stack-at",
+    "shape": "stack-at-mfe",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "stack-at-tier-on-target-tick"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "101.59",
+      "101.61"
+    ],
+    [
+      105,
+      "101.69",
+      "101.71"
+    ],
+    [
+      120,
+      "101.89",
+      "101.91"
+    ],
+    [
+      135,
+      "102.10",
+      "102.12"
+    ],
+    [
+      150,
+      "101.99",
+      "102.01"
+    ],
+    [
+      165,
+      "101.94",
+      "101.96"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.00"
+          }
+        },
+        "stackAt": [
+          {
+            "kind": "mfe",
+            "threshold": "0.90",
+            "withinSec": 300,
+            "size": "0.05",
+            "stop": "0.50",
+            "target": "0.50"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": [
+    "The tick updates the primary's MFE and fills its target; stack-at.md:75-85 evaluate tiers on every tick the primary was open for, and :53 closes the primary leg only. README QB5."
+  ]
+}

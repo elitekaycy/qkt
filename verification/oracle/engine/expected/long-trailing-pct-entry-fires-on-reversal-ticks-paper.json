@@ -1,0 +1,33 @@
+{
+  "name": "long-trailing-pct-entry-fires-on-reversal-ticks-paper",
+  "proves": "BUY TRAILING PCT 0.5 ratchets its low-water mark to 99.40 and buys at market when the mark rises 0.5 %",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.95",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "TRAILING"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.30",
+      "realized": "0.035",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.035",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "0.5 % of the low-water mark (0.497) and of the placement price (0.5025) both first trip on the 99.95 tick (README QB6)."
+  ]
+}

@@ -9,6 +9,13 @@ Two paths, as backtest-model.md "Fills" describes them:
   the bar trades through fills at its level, and one the next bar opens beyond (a gap) fills at that open" (:84-85),
   and "the same holds for every resting order, entries included" (:85-88). Each print carries the time :97-101 gives
   it: the open at the bar's start, the extremes a quarter and half of the bar later, the close 1 ms before its end.
+
+Positions are tracked as legs: each filled entry is its own leg with its own exits (a hedging account; the leg-routed
+positions of backtest-model.md:45-46: "each bracket, `TIMES` or `STACK` entry is its own leg"). On a netting
+account fills on one side merge into one leg and an opposite fill reduces it (backtest-model.md:46-47).
+
+On one print the oracle works, in order: resting entries (composite.work_pending), STACK_AT tiers of primaries
+already open (composite.work_tiers), then every open leg's exits (work_exits). See README "Tranche B" for why.
 """
 
 from __future__ import annotations
@@ -17,8 +24,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
 
+import composite
 import rules
-from model import Action, Fill, Instrument, Scenario, Tick
+from model import Action, Exit, Fill, Instrument, Scenario, Tick
 from rules import LONG, SHORT
 
 
@@ -38,24 +46,28 @@ class Bar:
 
 
 @dataclass
-class Pending:
-    """A resting entry (LIMIT, STOP or STOP_LIMIT before/after its stop traded)."""
+class Leg:
+    """One open position leg with its own protective levels and timers."""
 
-    action: Action
-    qty: Decimal
-    kind: str  # LIMIT | STOP
-    level: Decimal
-    limit_after_stop: Optional[Decimal]
-    label: str  # the entry's order type for the tape
-
-
-@dataclass
-class Position:
     side: str
     qty: Decimal
     entry: Decimal
     stop: Optional[Decimal]
     target: Optional[Decimal]
+    fill_ts: int
+    trail: Optional[Decimal] = None  # armed trailing stop distance (bracket.md:152-167)
+    arm_mfe: Optional[Decimal] = None
+    armed: bool = False
+    best: Optional[Decimal] = None  # running favourable extreme of the mark since fill
+    worst: Optional[Decimal] = None  # running adverse extreme of the mark since fill
+    deadline: Optional[int] = None  # EXIT AFTER (exit-after.md:9-11)
+    tiers: list = field(default_factory=list)  # composite.TierState, primary legs only
+    stack: Optional[object] = None  # composite.StackRun this leg belongs to
+    tier_action: Optional[Action] = None  # the action whose STACK_AT tiers this primary carries
+    cost: Decimal = Decimal(0)  # sum of fill price x qty, so a whole netted close is exact
+    best_excursion: Decimal = Decimal(0)  # MFE of the mark against the fill (stack-at.md:27,89-90)
+    worst_excursion: Decimal = Decimal(0)  # MAE likewise (stack-at.md:28)
+    open_: bool = True
 
 
 @dataclass
@@ -69,6 +81,7 @@ class Print:
     synthetic: bool = False
     gap_open: bool = False
     bar_start: Optional[int] = None
+    bar_open: Optional[Decimal] = None
 
 
 @dataclass
@@ -78,13 +91,23 @@ class State:
     balance: Decimal
     tape: list = field(default_factory=list)
     pending: list = field(default_factory=list)
-    position: Optional[Position] = None
+    legs: list = field(default_factory=list)
+    stacks: list = field(default_factory=list)
     fired: set = field(default_factory=set)
     rejections: int = 0
+    next_group: int = 0
 
     @property
     def mt5(self) -> bool:
         return self.scenario.broker == "mt5-sim"
+
+    @property
+    def netting(self) -> bool:
+        return self.scenario.position_mode == "netting"
+
+    @property
+    def open_legs(self) -> list:
+        return [leg for leg in self.legs if leg.open_]
 
     # --- booking -------------------------------------------------------------------------------------------
 
@@ -107,133 +130,146 @@ class State:
 
     # --- entries -------------------------------------------------------------------------------------------
 
-    def open_position(self, p: Print, action: Action, qty: Decimal, price: Decimal, label: str) -> None:
-        side = action.side
-        assert side in (LONG, SHORT)
-        if self.position is not None and self.position.side != side:
-            self._opposite_entry(p, action, qty, price, label)
-            return
+    def open_leg(self, p: Print, side: str, qty: Decimal, price: Decimal, label: str, ex: Optional[Exit]) -> Optional[Leg]:
+        """Books an entry fill and opens its leg; returns None when the fill only reduced a netted position."""
+        others = [leg for leg in self.open_legs if leg.side != side]
+        if others and (ex is None or self.netting):
+            return self._opposite_entry(p, side, qty, price, label, others)
+        if others and len({leg.side for leg in self.open_legs}) > 1:
+            raise AssertionError("oracle: more than one hedged side open is out of scope")
+        same = [leg for leg in self.open_legs if leg.side == side]
+        if same and self.netting:
+            assert ex is None and len(same) == 1, "oracle: a netted add carries no exits of its own"
+            leg = same[0]
+            self.book(p, side, qty, price, Decimal(0), "entry", label)
+            leg.cost += price * qty  # a netted position's entry is its volume-weighted average
+            leg.qty += qty
+            leg.entry = leg.cost / leg.qty
+            return None
         stop = target = None
-        if action.exit is not None:
-            stop = rules.stop_level(side, price, action.exit.stop, self.inst)
-            target = rules.target_level(side, price, action.exit.target, self.inst)
+        leg = Leg(side, qty, price, None, None, p.ts)
+        if ex is not None:
+            stop = rules.stop_level(side, price, ex.stop, self.inst)
+            target = rules.target_level(side, price, ex.target, self.inst)
+            leg.stop, leg.target = stop, target
+            if ex.stop.trail is not None:
+                leg.trail, leg.arm_mfe = ex.stop.trail, ex.stop.after_mfe
         fill = self.book(p, side, qty, price, Decimal(0), "entry", label)
         fill.stop, fill.target = stop, target
-        self.position = Position(side, qty, price, stop, target)
+        leg.best = leg.worst = p.tick.mid
+        leg.cost = price * qty
+        self.legs.append(leg)
+        return leg
 
-    def _opposite_entry(self, p: Print, action: Action, qty: Decimal, price: Decimal, label: str) -> None:
+    def _opposite_entry(self, p: Print, side: str, qty: Decimal, price: Decimal, label: str, others: list) -> None:
         """actions.md:100-108: an opposite-side order smaller than the position reduces it (hedging: part of the
         oldest leg, closed by ticket); a larger one ends with the excess open on the other side. Hedging books
-        that as a close of every opposite leg then a fresh entry for the excess, two deals at the same price;
-        netting reverses the position in one fill that realises the closed part. The oracle holds one leg, and an
-        opposite entry carrying a BRACKET opens a coexisting leg on hedging (actions.md:109-110): out of scope."""
-        pos = self.position
-        assert pos is not None
-        assert action.exit is None, "oracle: an opposite entry with exits opens a hedged leg (out of scope)"
-        closed = min(qty, pos.qty)
-        excess = qty - closed
-        if excess == 0 or self.scenario.position_mode == "hedging":
-            self._close(p, closed, "close", label)
-            if excess > 0:
-                self.book(p, action.side, excess, price, Decimal(0), "entry", label)
-                self.position = Position(action.side, excess, price, None, None)
-            return
-        gross = rules.gross_pnl(pos.side, pos.entry, price, closed, self.inst)
-        self.book(p, action.side, qty, price, gross, "reverse", label)
-        self.position = Position(action.side, excess, price, None, None)
+        that as a close of every opposite leg, oldest first, then a fresh entry for the excess, two deals at the same
+        price; netting reverses the position in one fill that realises the closed part. An opposite entry carrying a
+        BRACKET opens its own leg beside the old one on hedging (actions.md:109-110; handled by the caller)."""
+        left = qty
+        if self.netting:
+            (leg,) = others
+            closed = min(qty, leg.qty)
+            if closed == qty:
+                self.close_leg(p, leg, closed, "close", label, kind="MARKET")
+                return None
+            gross = rules.gross_pnl_on_cost(leg.side, leg.cost, price, closed, self.inst)
+            self.book(p, side, qty, price, gross, "reverse", label)
+            leg.qty, leg.open_, leg.tiers = Decimal(0), False, []
+            new = Leg(side, qty - closed, price, None, None, p.ts, cost=price * (qty - closed))
+            new.best = new.worst = p.tick.mid
+            self.legs.append(new)
+            return None
+        for leg in others:
+            if left == 0:
+                break
+            closed = min(left, leg.qty)
+            self.close_leg(p, leg, closed, "close", label, kind="MARKET")
+            left -= closed
+        if left > 0:
+            self.book(p, side, left, price, Decimal(0), "entry", label)
+            new = Leg(side, left, price, None, None, p.ts, cost=price * left)
+            new.best = new.worst = p.tick.mid
+            self.legs.append(new)
+        return None
 
     def fire(self, bar: Bar, p: Print) -> None:
-        """strategy-block.md:205,230: rules are evaluated on every candle close and are edge-triggered;
+        """strategy-block.md:205: "Multiple rules are evaluated in order on every candle close"; :230 edge-triggered;
         conditions.md:231: "A market entry from a bar-close signal fills on the first executable price after
-        that close: on the boundary in a bar backtest, a moment later on ticks"."""
-        for i, action in enumerate(self.scenario.actions):
-            if i in self.fired or action.bar_close != bar.close or not self._position_matches(action):
-                continue
+        that close: on the boundary in a bar backtest, a moment later on ticks". Every rule reads the state the
+        bar closed on (the conditions are evaluated before any of their orders can fill), then acts in order."""
+        due = [
+            (i, a)
+            for i, a in enumerate(self.scenario.actions)
+            if i not in self.fired and a.bar_close == bar.close and self._position_matches(a)
+        ]
+        for i, action in due:
             self.fired.add(i)
             if action.kind == "entry":
-                self._enter(action, bar, p)
+                composite.enter(self, action, bar, p)
+            elif action.kind == "ocoEntry":
+                composite.enter_oco(self, action, bar, p)
             elif action.kind == "close":
-                self._close(p, self.position.qty, "close", "CLOSE")
+                for leg in self.open_legs:
+                    self.close_leg(p, leg, leg.qty, "close", "CLOSE", kind="MARKET")
             elif action.kind == "reduce":
-                qty = rules.quantize_volume(self.position.qty * action.fraction, self.inst)
+                (leg,) = self.open_legs
+                qty = rules.quantize_volume(leg.qty * action.fraction, self.inst)
                 assert qty is not None
-                self._close(p, qty, "close", "MARKET")
+                self.close_leg(p, leg, qty, "close", "MARKET", kind="MARKET")
             else:
                 raise ValueError(action.kind)
 
     def _position_matches(self, action: Action) -> bool:
         if action.requires is None:
             return True
+        legs = self.open_legs
         if action.requires == "flat":
-            return self.position is None
-        return self.position is not None and self.position.side == (LONG if action.requires == "long" else SHORT)
-
-    def _enter(self, action: Action, bar: Bar, p: Print) -> None:
-        price = rules.sizing_price(action.order_type, bar.close)
-        stop_dist = None
-        if action.exit is not None:
-            stop_dist = rules.stop_distance(action.side, price, action.exit.stop, self.inst)
-        qty = rules.size(action.sizing, price, self.balance, self.balance, stop_dist, self.inst)
-        if qty is None:
-            self.rejections += 1  # below volumeMin (sizing.md:241-243): "counted in the report's rejections"
-            return
-        ot = action.order_type
-        if ot.kind == "MARKET":
-            self.open_position(p, action, qty, self.fill_price(action.side, p, "MARKET", None), "MARKET")
-        elif ot.kind == "LIMIT":
-            self.pending.append(Pending(action, qty, "LIMIT", ot.price, None, "LIMIT"))
-        elif ot.kind == "STOP":
-            self.pending.append(Pending(action, qty, "STOP", ot.price, None, "STOP"))
-        elif ot.kind == "STOP_LIMIT":
-            self.pending.append(Pending(action, qty, "STOP", ot.price, ot.limit, "STOP_LIMIT"))
-        else:
-            raise ValueError(ot.kind)
-
-    def work_pending(self, p: Print) -> None:
-        """actions.md:112-135: a limit rests at its price, a stop "triggers when price hits" its level, a
-        stop-limit rests a limit at the limit price once the stop trades, filling on that tick when its quote already
-        satisfies the limit (actions.md:133-135). Triggers read the side's quote
-        (rules.quote_for); fills price per venue (rules.paper_fill / rules.mt5_fill)."""
-        still = []
-        for o in self.pending:
-            side = o.action.side
-            quote = rules.quote_for(side, p.tick)
-            if o.kind == "STOP" and rules.stop_touched(side, o.level, quote):
-                if o.limit_after_stop is None:
-                    self.open_position(p, o.action, o.qty, self.fill_price(side, p, "STOP", o.level), o.label)
-                    continue
-                o = Pending(o.action, o.qty, "LIMIT", o.limit_after_stop, None, o.label)
-            if o.kind == "LIMIT" and rules.limit_touched(side, o.level, quote):
-                self.open_position(p, o.action, o.qty, self.fill_price(side, p, "LIMIT", o.level), o.label)
-                continue
-            still.append(o)
-        self.pending = still
+            return not legs
+        want = LONG if action.requires == "long" else SHORT
+        return bool(legs) and all(leg.side == want for leg in legs)
 
     # --- exits ---------------------------------------------------------------------------------------------
 
     def work_exits(self, p: Print) -> None:
         """bracket.md:3: "when either side fills, the other auto-cancels"; backtest-model.md:77-79: the exit
         triggers on the first tick whose quote for its side reaches the level. The stop is a stop order (slipped on
-        mt5-sim, backtest-model.md:164-167), the target a limit (never slipped)."""
-        pos = self.position
-        if pos is None:
-            return
-        exit_side = rules.opposite(pos.side)
-        quote = rules.quote_for(exit_side, p.tick)
-        if pos.stop is not None and rules.stop_touched(exit_side, pos.stop, quote):
-            self._close(p, pos.qty, "stop", "STOP", pos.stop)
-        elif pos.target is not None and rules.limit_touched(exit_side, pos.target, quote):
-            self._close(p, pos.qty, "target", "LIMIT", pos.target)
+        mt5-sim, backtest-model.md:164-167), the target a limit (never slipped). Every leg exits on its own
+        (stack.md:119-122,139; stack-at.md:3,53). An armed trailing stop re-levels first (composite.trail_stop);
+        an EXIT AFTER deadline closes what is still open at market (exit-after.md:9-11,27-34)."""
+        for leg in list(self.open_legs):
+            exit_side = rules.opposite(leg.side)
+            quote = rules.quote_for(exit_side, p.tick)
+            composite.trail_stop(leg, p.tick.mid)
+            if leg.stop is not None and rules.stop_touched(exit_side, leg.stop, quote):
+                self.close_leg(p, leg, leg.qty, "stop", "STOP", leg.stop)
+            elif leg.target is not None and rules.limit_touched(exit_side, leg.target, quote):
+                self.close_leg(p, leg, leg.qty, "target", "LIMIT", leg.target)
+            elif leg.deadline is not None and p.ts >= leg.deadline:
+                self.close_leg(p, leg, leg.qty, "close", "MARKET", kind="MARKET")
 
-    def _close(self, p: Print, qty: Decimal, reason: str, kind: str, level: Optional[Decimal] = None) -> None:
-        pos = self.position
-        assert pos is not None
-        exit_side = rules.opposite(pos.side)
-        price = self.fill_price(exit_side, p, "MARKET" if kind in ("CLOSE", "MARKET") else kind, level)
-        gross = rules.gross_pnl(pos.side, pos.entry, price, qty, self.inst)
-        self.book(p, exit_side, qty, price, gross, reason, kind)
-        remaining = pos.qty - qty
-        self.position = None if remaining == 0 else Position(pos.side, remaining, pos.entry, pos.stop, pos.target)
+    def close_leg(
+        self, p: Print, leg: Leg, qty: Decimal, reason: str, label: str, level: Optional[Decimal] = None, kind: str = ""
+    ) -> None:
+        exit_side = rules.opposite(leg.side)
+        price = self.fill_price(exit_side, p, kind or label, level)
+        if qty == leg.qty:
+            gross = rules.gross_pnl_on_cost(leg.side, leg.cost, price, qty, self.inst)
+        else:
+            gross = rules.gross_pnl(leg.side, leg.entry, price, qty, self.inst)
+            leg.cost -= leg.entry * qty
+        self.book(p, exit_side, qty, price, gross, reason, label)
+        leg.qty -= qty
+        if leg.qty == 0:
+            leg.open_ = False
+            leg.tiers = []  # stack-at.md:71,83: a tier lives for its primary's lifecycle only
+
+    def work(self, p: Print) -> None:
+        composite.work_pending(self, p)
+        composite.work_tiers(self, p)
+        self.work_exits(p)
+        composite.retire_stacks(self, p)
 
 
 # --- replay loops -----------------------------------------------------------------------------------------
@@ -255,40 +291,37 @@ def replay_ticks(scenario: Scenario) -> State:
     st = State(scenario, scenario.instrument, scenario.starting_balance)
     bar: Optional[Bar] = None
     for t in scenario.ticks:
-        p = Print(t.ts, t)
         if bar is not None and t.ts >= bar.end:
-            st.fire(bar, p)
+            st.fire(bar, Print(t.ts, t))
             bar = None
         if bar is None:
             start = t.ts - (t.ts - scenario.t0_ms) % scenario.timeframe_ms
             bar = Bar(start, start + scenario.timeframe_ms, t.mid, t.mid, t.mid, t.mid)
         else:
             bar.update(t.mid)
-        st.work_pending(p)
-        st.work_exits(p)
+        st.work(Print(t.ts, t, bar_open=bar.open))
     return st
 
 
 def replay_synthetic(scenario: Scenario) -> State:
-    """Each bar replays open, adverse extreme, other extreme, close (backtest-model.md:105-107); with no open
+    """Each bar replays open, adverse extreme, other extreme, close (backtest-model.md:90-91); with no open
     position the order is open, low, high, close (backtest-data.md:25-27). The bar before it closes the rules."""
     assert scenario.broker == "paper", "backtest-model.md:116-117: mt5-sim refuses the synthetic path"
     st = State(scenario, scenario.instrument, scenario.starting_balance)
     prev: Optional[Bar] = None
     for bar in bars_of(scenario):
-        open_print = Print(bar.start, Tick(bar.start, bar.open, bar.open), synthetic=True, gap_open=True, bar_start=bar.start)
+        tick = Tick(bar.start, bar.open, bar.open)
+        open_print = Print(bar.start, tick, synthetic=True, gap_open=True, bar_start=bar.start, bar_open=bar.open)
         if prev is not None:
             st.fire(prev, open_print)
-        st.work_pending(open_print)
-        st.work_exits(open_print)
-        adverse_first_low = st.position is None or st.position.side == LONG
+        st.work(open_print)
+        legs = st.open_legs
+        adverse_first_low = not legs or legs[0].side == LONG
         extremes = [bar.low, bar.high] if adverse_first_low else [bar.high, bar.low]
         quarter = (bar.end - bar.start) // 4
         times = [bar.start + quarter, bar.start + 2 * quarter, bar.end - 1]  # backtest-model.md:97-101
         for ts, price in zip(times, extremes + [bar.close]):
-            p = Print(ts, Tick(ts, price, price), synthetic=True, bar_start=bar.start)
-            st.work_pending(p)
-            st.work_exits(p)
+            st.work(Print(ts, Tick(ts, price, price), synthetic=True, bar_start=bar.start, bar_open=bar.open))
         prev = bar
     return st
 

@@ -1,0 +1,55 @@
+{
+  "name": "long-market-stack-layer-fills-on-seed-stop-tick-ticks-paper",
+  "proves": "one gap tick reaches the average-down layer and the seed's stop: the layer fills, the seed stops, the layer runs on",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.70",
+      "takeProfit": "101.50"
+    },
+    {
+      "ts": 1704880890000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.60",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "98.80",
+      "takeProfit": "100.60"
+    },
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.60",
+      "realized": "-0.090",
+      "reason": "stop",
+      "orderType": "STOP"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.61",
+      "realized": "0.101",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.011",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "Both orders rest when the tick opens and its quotes reach both levels, so both trigger on it (backtest-model.md:77-79); layers cancel only once the trade has exited (stack.md:3). README QB4."
+  ]
+}

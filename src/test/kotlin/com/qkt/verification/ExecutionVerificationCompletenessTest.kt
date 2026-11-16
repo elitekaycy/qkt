@@ -4,9 +4,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * The tranche-A matrix is the gate: every dimension value below must have at least one scenario, every scenario
- * must have its `.qkt` and its oracle expectation, and every expectation must belong to a scenario, or the build
- * fails naming what is missing. Adding a dimension here without a scenario fails on purpose.
+ * The tranche-A and tranche-B matrices are the gate: every dimension value below must have at least one scenario,
+ * every scenario must have its `.qkt` and its oracle expectation, and every expectation must belong to a scenario,
+ * or the build fails naming what is missing. Adding a dimension here without a scenario fails on purpose.
  */
 class ExecutionVerificationCompletenessTest {
     private val scenarios = ExecutionScenarios.scenarios()
@@ -23,11 +23,39 @@ class ExecutionVerificationCompletenessTest {
     }
 
     @Test
+    fun `every tranche-B dimension value has at least one scenario`() {
+        val missing =
+            TRANCHE_B.flatMap { (dimension, values) ->
+                val covered = scenarios.mapNotNull { it.dimensions[dimension] }.toSet()
+                (values - covered).map { "$dimension=$it" }
+            }
+        assertThat(missing).describedAs("tranche-B dimension values without a scenario").isEmpty()
+        val trancheB = scenarios.filter { "feature" in it.dimensions }
+        assertThat(trancheB.size).describedAs("tranche B aims at about forty scenarios").isGreaterThanOrEqualTo(40)
+    }
+
+    @Test
+    fun `every tranche-B feature is verified long and short and the order-routed ones on mt5-sim`() {
+        val byFeature = scenarios.filter { "feature" in it.dimensions }.groupBy { it.dimensions.getValue("feature") }
+        val oneSided = setOf("trailing-exit")
+        val missing =
+            TRANCHE_B.getValue("feature").flatMap { feature ->
+                val cases = byFeature[feature].orEmpty()
+                val sides = cases.mapNotNull { it.dimensions["side"] }.toSet()
+                val wantSides = if (feature in oneSided) setOf("long") else setOf("long", "short")
+                val gaps = (wantSides - sides).map { "$feature side=$it" }
+                val onMt5 = cases.any { it.dimensions["broker"] == "mt5-sim" }
+                if (feature in ROUTED_ON_MT5 && !onMt5) gaps + "$feature mt5-sim" else gaps
+            }
+        assertThat(missing).describedAs("tranche-B feature x side / broker pairs without a scenario").isEmpty()
+    }
+
+    @Test
     fun `every scenario dimension value is a known one`() {
         val unknown =
             scenarios.flatMap { s ->
                 s.dimensions.mapNotNull { (dimension, value) ->
-                    val known = TRANCHE_A[dimension]
+                    val known = (TRANCHE_A[dimension].orEmpty() + TRANCHE_B[dimension].orEmpty()).ifEmpty { null }
                     when {
                         known == null -> "${s.name}: unknown dimension $dimension"
                         value !in known -> "${s.name}: unknown $dimension=$value"
@@ -35,7 +63,7 @@ class ExecutionVerificationCompletenessTest {
                     }
                 }
             }
-        assertThat(unknown).describedAs("dimension values not listed in TRANCHE_A").isEmpty()
+        assertThat(unknown).describedAs("dimension values not listed in TRANCHE_A or TRANCHE_B").isEmpty()
     }
 
     @Test
@@ -110,6 +138,44 @@ class ExecutionVerificationCompletenessTest {
                     ),
                 "broker" to setOf("paper", "mt5-sim"),
                 "mode" to setOf("hedging", "netting"),
+            )
+
+        private val ROUTED_ON_MT5 = setOf("oto", "stack", "stack-at", "exit-after", "armed-trailing", "multi-rule")
+
+        /** Slice 4: OTO, STACK, STACK_AT, EXIT AFTER, trailing, OCO_ENTRY, collisions on one tick, rules on one bar. */
+        val TRANCHE_B: Map<String, Set<String>> =
+            mapOf(
+                "feature" to
+                    setOf(
+                        "oto",
+                        "stack",
+                        "stack-at",
+                        "exit-after",
+                        "trailing-entry",
+                        "trailing-exit",
+                        "armed-trailing",
+                        "oco-entry",
+                        "multi-rule",
+                    ),
+                "shape" to
+                    setOf(
+                        "oto-market-child", "oto-limit-child", "oto-entry-signal-estimate", "oto-entry-stop-price",
+                        "oto-parent-unfilled", "oto-child-unfilled", "stack-above", "stack-above-short", "stack-below",
+                        "stack-list", "stack-within", "stack-exit-cancels", "stack-at-mfe", "stack-at-two-tiers",
+                        "stack-at-expired", "stack-at-recoil", "exit-after-plain", "exit-after-off-tick",
+                        "exit-after-bracket-timer", "exit-after-bracket-first", "exit-after-pending",
+                        "exit-after-stack-at", "trailing-by", "trailing-pct", "armed-trailing-hwm",
+                        "armed-trailing-pre-arm", "armed-trailing-inception", "oco-entry-gap", "oco-entry-dual-breach",
+                        "two-market", "market-and-limit",
+                    ),
+                "collision" to
+                    setOf(
+                        "none",
+                        "stack-layer-on-stop-tick",
+                        "stack-at-tier-on-target-tick",
+                        "oco-entry-both-legs-gapped",
+                        "two-rules-same-bar",
+                    ),
             )
     }
 }

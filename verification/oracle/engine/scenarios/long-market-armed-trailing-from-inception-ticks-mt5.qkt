@@ -1,0 +1,7 @@
+STRATEGY long_market_armed_trailing_from_inception_ticks_mt5 VERSION 1
+-- AFTER MFE >= 0 trails from the fill: the stop follows the 100.80 high to 100.40 and fills at bid minus slip
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 BRACKET { STOP LOSS TRAILING 0.40 AFTER MFE >= 0, TAKE PROFIT BY 3.00 }

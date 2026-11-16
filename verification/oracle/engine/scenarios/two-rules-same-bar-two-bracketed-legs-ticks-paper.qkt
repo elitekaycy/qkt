@@ -1,0 +1,9 @@
+STRATEGY two_rules_same_bar_two_bracketed_legs_ticks_paper VERSION 1
+-- two rules firing on one bar close open two legs on the same tick; each exits on its own bracket
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }
+    WHEN syn.close = 100.50
+    THEN BUY syn SIZING 0.2 BRACKET { STOP_LOSS BY 0.50, TAKE_PROFIT BY 3.00 }

@@ -1,0 +1,9 @@
+STRATEGY long_market_oto_limit_child_at_entry_netting_ticks_paper VERSION 1
+-- a LIMIT AT entry - 0.50 child rests until the parent fills, then fills when the ask reaches 100.00
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 ON_FILL { BUY syn SIZING 0.05 ORDER_TYPE = LIMIT AT entry - 0.50 }
+    WHEN syn.close = 100.90 AND POSITION.syn > 0
+    THEN CLOSE syn

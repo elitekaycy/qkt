@@ -1,0 +1,42 @@
+{
+  "name": "long-stop-oto-limit-child-at-stop-price-netting-ticks-paper",
+  "proves": "for a STOP parent `entry` is its price 101.00: the child limit rests at 100.50 and fills on the dip",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880890000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.00",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "100.49",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "SELL",
+      "qty": "0.15",
+      "price": "101.40",
+      "realized": "0.0855",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.0855",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "The stop trips on a tick whose mid is the stop price, so `entry` as the order price (oto.md:34) and as the paper fill are one number (README QB2)."
+  ]
+}

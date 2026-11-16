@@ -1,0 +1,37 @@
+{
+  "name": "oco-entry-straddle-dual-breach-bars-synthetic-paper",
+  "proves": "a bar through both straddle stops fills the closer SELL leg at its level, cancels the BUY, then stops the short",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880935000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.80",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP",
+      "barStart": 1704880920000,
+      "stopLoss": "100.80",
+      "takeProfit": "98.80"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.80",
+      "realized": "-0.100",
+      "reason": "stop",
+      "orderType": "STOP",
+      "barStart": 1704880920000
+    }
+  ],
+  "realized": "-0.100",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "The SELL trigger is closer to the 100.30 open (actions.md:172) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."
+  ]
+}

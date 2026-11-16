@@ -1,0 +1,129 @@
+{
+  "name": "short-market-exit-after-off-tick-deadline-ticks-mt5",
+  "proves": "EXIT AFTER 100s lands between ticks: the close is the first tick at or after fill + 100 s, at ask plus slip",
+  "dimensions": {
+    "feature": "exit-after",
+    "shape": "exit-after-off-tick",
+    "side": "short",
+    "broker": "mt5-sim",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "spread+slippage",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "slippagePoints": 2
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.29",
+      "100.31"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "100.09",
+      "100.11"
+    ],
+    [
+      120,
+      "99.99",
+      "100.01"
+    ],
+    [
+      135,
+      "99.89",
+      "99.91"
+    ],
+    [
+      150,
+      "99.79",
+      "99.81"
+    ],
+    [
+      165,
+      "99.69",
+      "99.71"
+    ],
+    [
+      180,
+      "99.59",
+      "99.61"
+    ],
+    [
+      195,
+      "99.59",
+      "99.61"
+    ],
+    [
+      210,
+      "99.59",
+      "99.61"
+    ],
+    [
+      225,
+      "99.59",
+      "99.61"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exitAfterSec": 100
+      }
+    }
+  ],
+  "notes": []
+}

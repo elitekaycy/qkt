@@ -1,0 +1,149 @@
+{
+  "name": "long-market-oto-entry-is-signal-estimate-netting-ticks-mt5",
+  "proves": "for a MARKET parent `entry` is the signal-time estimate 100.50, not the 100.52 fill: the child limit is 100.00",
+  "dimensions": {
+    "feature": "oto",
+    "shape": "oto-entry-signal-estimate",
+    "side": "long",
+    "broker": "mt5-sim",
+    "fills": "ticks",
+    "mode": "netting",
+    "costs": "spread+slippage",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "slippagePoints": 1
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "netting",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "99.99",
+      "100.01"
+    ],
+    [
+      90,
+      "100.29",
+      "100.31"
+    ],
+    [
+      105,
+      "100.39",
+      "100.41"
+    ],
+    [
+      120,
+      "100.19",
+      "100.21"
+    ],
+    [
+      135,
+      "99.98",
+      "100.00"
+    ],
+    [
+      150,
+      "100.39",
+      "100.41"
+    ],
+    [
+      165,
+      "100.79",
+      "100.81"
+    ],
+    [
+      180,
+      "100.99",
+      "101.01"
+    ],
+    [
+      195,
+      "100.99",
+      "101.01"
+    ],
+    [
+      210,
+      "100.99",
+      "101.01"
+    ],
+    [
+      225,
+      "101.09",
+      "101.11"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "onFill": [
+          {
+            "side": "BUY",
+            "size": "0.1",
+            "orderType": {
+              "type": "LIMIT",
+              "entryOffset": "-0.50"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "when": {
+        "barClose": "100.80",
+        "position": "long"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": [
+    "oto.md:34: `entry` is the signal-time estimate for a MARKET parent; the ask touches 100.01 first (the fill-based level) and 100.00 later."
+  ]
+}

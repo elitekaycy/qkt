@@ -1,0 +1,9 @@
+STRATEGY two_rules_same_bar_bars_synthetic_paper VERSION 1
+-- on the synthetic path both rules fill at the next open; the tighter stop goes first on the low, the other a bar later
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }
+    WHEN syn.close = 100.50
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 0.50, TAKE_PROFIT BY 2.00 }

@@ -1,0 +1,31 @@
+{
+  "name": "short-market-exit-after-off-tick-deadline-ticks-mt5",
+  "proves": "EXIT AFTER 100s lands between ticks: the close is the first tick at or after fill + 100 s, at ask plus slip",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.47",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880965000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.73",
+      "realized": "0.074",
+      "reason": "close",
+      "orderType": "MARKET"
+    }
+  ],
+  "realized": "0.074",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

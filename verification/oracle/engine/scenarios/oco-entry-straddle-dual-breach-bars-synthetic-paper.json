@@ -1,0 +1,168 @@
+{
+  "name": "oco-entry-straddle-dual-breach-bars-synthetic-paper",
+  "proves": "a bar through both straddle stops fills the closer SELL leg at its level, cancels the BUY, then stops the short",
+  "dimensions": {
+    "feature": "oco-entry",
+    "shape": "oco-entry-dual-breach",
+    "side": "short",
+    "broker": "paper",
+    "fills": "bars-synthetic",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "bars-synthetic",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.59",
+      "100.61"
+    ],
+    [
+      90,
+      "100.39",
+      "100.41"
+    ],
+    [
+      105,
+      "100.29",
+      "100.31"
+    ],
+    [
+      120,
+      "100.29",
+      "100.31"
+    ],
+    [
+      135,
+      "99.59",
+      "99.61"
+    ],
+    [
+      150,
+      "101.19",
+      "101.21"
+    ],
+    [
+      165,
+      "100.89",
+      "100.91"
+    ],
+    [
+      180,
+      "100.79",
+      "100.81"
+    ],
+    [
+      195,
+      "100.79",
+      "100.81"
+    ],
+    [
+      210,
+      "100.79",
+      "100.81"
+    ],
+    [
+      225,
+      "100.79",
+      "100.81"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": null
+      },
+      "do": {
+        "kind": "ocoEntry",
+        "legs": [
+          {
+            "kind": "entry",
+            "side": "BUY",
+            "sizing": {
+              "form": "fixed",
+              "value": "0.1"
+            },
+            "orderType": {
+              "type": "STOP",
+              "price": "101.00"
+            },
+            "exit": {
+              "kind": "bracket",
+              "stop": {
+                "by": "1.00"
+              },
+              "target": {
+                "by": "1.00"
+              }
+            }
+          },
+          {
+            "kind": "entry",
+            "side": "SELL",
+            "sizing": {
+              "form": "fixed",
+              "value": "0.1"
+            },
+            "orderType": {
+              "type": "STOP",
+              "price": "99.80"
+            },
+            "exit": {
+              "kind": "bracket",
+              "stop": {
+                "by": "1.00"
+              },
+              "target": {
+                "by": "1.00"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "notes": [
+    "The SELL trigger is closer to the 100.30 open (actions.md:172) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."
+  ]
+}

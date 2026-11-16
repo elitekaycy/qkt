@@ -1,0 +1,167 @@
+{
+  "name": "long-market-stack-list-custom-sizes-ticks-paper",
+  "proves": "STACK [0.10, 0.20 AT entry + 0.50, 0.30 AT entry + 1.00]: each layer's own size and target",
+  "dimensions": {
+    "feature": "stack",
+    "shape": "stack-list",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.99",
+      "101.01"
+    ],
+    [
+      105,
+      "101.19",
+      "101.21"
+    ],
+    [
+      120,
+      "101.29",
+      "101.31"
+    ],
+    [
+      135,
+      "101.49",
+      "101.51"
+    ],
+    [
+      150,
+      "101.79",
+      "101.81"
+    ],
+    [
+      165,
+      "102.00",
+      "102.02"
+    ],
+    [
+      180,
+      "102.19",
+      "102.21"
+    ],
+    [
+      195,
+      "102.50",
+      "102.52"
+    ],
+    [
+      210,
+      "102.79",
+      "102.81"
+    ],
+    [
+      225,
+      "103.00",
+      "103.02"
+    ],
+    [
+      240,
+      "103.09",
+      "103.11"
+    ],
+    [
+      255,
+      "103.09",
+      "103.11"
+    ],
+    [
+      270,
+      "103.09",
+      "103.11"
+    ],
+    [
+      285,
+      "103.14",
+      "103.16"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.50"
+          }
+        },
+        "stack": {
+          "layers": [
+            {
+              "size": "0.1"
+            },
+            {
+              "size": "0.2",
+              "offset": "0.50"
+            },
+            {
+              "size": "0.3",
+              "offset": "1.00"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "notes": []
+}

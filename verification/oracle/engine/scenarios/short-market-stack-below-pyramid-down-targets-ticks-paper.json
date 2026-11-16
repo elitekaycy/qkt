@@ -1,0 +1,161 @@
+{
+  "name": "short-market-stack-below-pyramid-down-targets-ticks-paper",
+  "proves": "a SELL STACK BELOW adds as price falls (sell stops at 100.00, 99.50); each layer takes its own target",
+  "dimensions": {
+    "feature": "stack",
+    "shape": "stack-below",
+    "side": "short",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.19",
+      "100.21"
+    ],
+    [
+      90,
+      "99.99",
+      "100.01"
+    ],
+    [
+      105,
+      "99.79",
+      "99.81"
+    ],
+    [
+      120,
+      "99.69",
+      "99.71"
+    ],
+    [
+      135,
+      "99.49",
+      "99.51"
+    ],
+    [
+      150,
+      "99.19",
+      "99.21"
+    ],
+    [
+      165,
+      "98.98",
+      "99.00"
+    ],
+    [
+      180,
+      "98.79",
+      "98.81"
+    ],
+    [
+      195,
+      "98.48",
+      "98.50"
+    ],
+    [
+      210,
+      "98.19",
+      "98.21"
+    ],
+    [
+      225,
+      "97.98",
+      "98.00"
+    ],
+    [
+      240,
+      "98.09",
+      "98.11"
+    ],
+    [
+      255,
+      "98.19",
+      "98.21"
+    ],
+    [
+      270,
+      "98.29",
+      "98.31"
+    ],
+    [
+      285,
+      "98.39",
+      "98.41"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.50"
+          }
+        },
+        "stack": {
+          "n": 3,
+          "spacing": "0.50",
+          "dir": "BELOW"
+        }
+      }
+    }
+  ],
+  "notes": []
+}

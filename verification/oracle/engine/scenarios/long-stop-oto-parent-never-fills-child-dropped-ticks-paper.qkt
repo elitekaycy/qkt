@@ -1,0 +1,7 @@
+STRATEGY long_stop_oto_parent_never_fills_child_dropped_ticks_paper VERSION 1
+-- a STOP parent that never triggers places none of its ON_FILL children
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 ORDER_TYPE = STOP AT 102.00 ON_FILL { BUY syn SIZING 0.05 }
