@@ -1,10 +1,12 @@
 package com.qkt.cli
 
 import com.qkt.accounting.FxMissingPolicy
+import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.TakeProfitFill
 import java.math.BigDecimal
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -40,8 +42,15 @@ class BacktestFlagHelpTest {
     fun `position-mode help names the parser values and its default`() {
         val line = help("position-mode")
         assertThat(line).contains("netting", "hedging", "(default hedging)")
-        val modes = PositionAccountingMode.entries.map { it.name.lowercase() }
-        assertThat(modes).containsExactlyInAnyOrder("netting", "hedging")
+        val defaults = Config.load(Path.of("build/no-such-qkt.config.yaml"))
+
+        fun mode(vararg argv: String) =
+            BacktestSimulationOptions
+                .executionConfig(Args(arrayOf("backtest", "s.qkt", *argv)), defaults, BrokerKind.PAPER)
+                .positionMode
+        assertThat(mode("--position-mode", "netting")).isEqualTo(PositionAccountingMode.NETTING)
+        assertThat(mode("--position-mode", "hedging")).isEqualTo(PositionAccountingMode.HEDGING)
+        assertThat(mode()).isEqualTo(PositionAccountingMode.HEDGING)
     }
 
     @Test
