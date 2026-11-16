@@ -78,7 +78,7 @@ scenario; the oracle's rule now cites the answer. None of qkt's behaviour here w
 | Q3 | Whether notional divides by price x `contractSize`. | Yes, and by the quote-to-account rate. [sizing.md](../../../docs/reference/dsl/sizing.md#the-price-and-the-notional-sizing-uses) | `dsl/compile/SizingCompiler.kt:72-78,104-113,175-197` | `long-market-sizing-usd-ticks-paper` |
 | Q4 | The time a synthetic print carries. | Open at the bar's start, extremes at a quarter and a half of the bar, close 1 ms before its end. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `marketdata/source/BarTickFeed.kt:77-92` | every `*-bars-synthetic-paper` scenario (now compared to the millisecond) |
 | Q5 | The `digits` rounding mode. | Half to even, after slippage and the limit cap (`mt5-sim`). [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/MT5BrokerSimulator.kt:394` | `long-market-digits-half-even-stop-ticks-mt5` |
-| Q6 | A stop-limit already marketable on its trigger tick. | It fills on that tick. [actions.md](../../../docs/reference/dsl/actions.md#order-type-modifiers) | `broker/PaperBroker.kt:280-296,337-353`; `broker/MT5BrokerSimulator.kt:278-293` | `short-stoplimit-marketable-ticks-mt5`; the paper price is #1716 |
+| Q6 | A stop-limit already marketable on its trigger tick. | It fills on that tick; on `paper` at that tick's mid, never worse than its limit (#1716). [actions.md](../../../docs/reference/dsl/actions.md#order-type-modifiers), [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/PaperBroker.kt:280-296,337-353`; `broker/MT5BrokerSimulator.kt:278-293` | `short-stoplimit-marketable-ticks-mt5`, `short-stoplimit-marketable-ticks-paper` |
 | Q7 | The `--tp-fill` default. | `print` (`touch` is the same); `paper` always fills a gapped target at the crossing price. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/TakeProfitFill.kt:7-24`; `backtest/ExecutionSimulation.kt:57`; `broker/MT5BrokerSimulator.kt:349-357` | `short-market-gap-target-ticks-mt5`, `short-market-gap-target-bars-synthetic-paper` |
 | Q8 | Pending entries on the synthetic path. | The at-level / at-open rule holds for every resting order, entries included. [backtest-model.md](../../../docs/concepts/backtest-model.md#fills) | `broker/PaperBroker.kt:216-218,317-325` | `long-stop-entry-target-bars-synthetic-paper`, `short-limit-entry-gap-bars-synthetic-paper` |
 | Q9 | A partial close on a hedging account. | It closes that part of the oldest leg by ticket; the rest stays open at its entry. [actions.md](../../../docs/reference/dsl/actions.md#buy-stream-and-sell-stream) | `app/HedgedEntryRouter.kt:38-69` | `long-market-partial-close-then-close-hedging-ticks-paper` |
@@ -92,14 +92,14 @@ The doc contradiction the first version found (`backtest-model.md` listing FX co
 
 ## Results (2026-11-16)
 
-55 of 58 scenarios agree with qkt to the digit. Three disagree and are held `@Disabled` in
+56 of 58 scenarios agree with qkt to the digit. Two disagree and are held `@Disabled` in
 `ExecutionVerificationKnownBugsTest`, asserting the documented behaviour:
 
 - `long-market-oco-stop-ticks-paper`, `short-market-oco-target-ticks-paper`: `BUY syn SIZING 0.1 OCO { STOP AT
   99.50, LIMIT AT 102.50 }` submits no entry at all. qkt places a `StandaloneOCO` of the two *exit* prices as
   opening orders (`legIntent: Open`), so the first leg to trigger opens an opposite-side position instead of closing
   a long (`actions.md:143-152`: OCO "states the same two exits as raw order prices" on a `BUY`/`SELL` entry). #1715.
-- `short-stoplimit-marketable-ticks-paper`: a paper `STOP AT 100.00 LIMIT AT 99.90` whose trigger tick (bid 99.94,
-  mid 99.95) already satisfies the limit fills at the bid 99.94, not the tick's mid, and anchors its bracket on
-  99.94; `backtest-model.md:76-79` has every paper stop and limit fill at the mid. The same-tick fill itself is now
-  documented (`actions.md:133-135`) and agrees on `mt5-sim` (`short-stoplimit-marketable-ticks-mt5`). #1716.
+
+`short-stoplimit-marketable-ticks-paper` disagreed until #1716: a paper `STOP AT 100.00 LIMIT AT 99.90` whose
+trigger tick (bid 99.94, mid 99.95) already satisfied the limit filled at the bid 99.94, not the tick's mid. It now
+fills at the mid, as `backtest-model.md` states, and runs in the main set.

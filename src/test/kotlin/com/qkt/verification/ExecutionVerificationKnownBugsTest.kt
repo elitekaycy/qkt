@@ -29,14 +29,6 @@ class ExecutionVerificationKnownBugsTest {
     )
     fun `a short entry with an OCO exit pair is protected by the pair, not replaced by it`() = run(OCO_SHORT)
 
-    @Test
-    @Disabled(
-        "bug: a paper stop-limit whose trigger tick already satisfies its limit fills at the bid (99.94), not " +
-            "the tick's mid (99.95) that every paper stop and limit fills at (backtest-model.md:76-79); the " +
-            "same-tick case itself is undocumented (oracle README Q6)",
-    )
-    fun `a marketable stop-limit fills at the trigger tick's mid on paper`() = run(STOP_LIMIT_MARKETABLE)
-
     private fun run(name: String) {
         val scenario = ExecutionScenarios.scenarios().single { it.name == name }
         ExecutionVerificationTest.verify(scenario, Files.createDirectories(tmp.resolve(name)))
@@ -45,9 +37,8 @@ class ExecutionVerificationKnownBugsTest {
     companion object {
         private const val OCO_LONG = "long-market-oco-stop-ticks-paper"
         private const val OCO_SHORT = "short-market-oco-target-ticks-paper"
-        private const val STOP_LIMIT_MARKETABLE = "short-stoplimit-marketable-ticks-paper"
 
         /** Scenario names excluded from [ExecutionVerificationTest]; each has a `@Disabled` test here. */
-        val KNOWN_BUGS: Set<String> = setOf(OCO_LONG, OCO_SHORT, STOP_LIMIT_MARKETABLE)
+        val KNOWN_BUGS: Set<String> = setOf(OCO_LONG, OCO_SHORT)
     }
 }

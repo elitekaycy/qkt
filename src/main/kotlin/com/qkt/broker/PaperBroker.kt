@@ -15,8 +15,6 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.buyExecPrice
-import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -334,20 +332,20 @@ class PaperBroker(
         publishFill(req.id, req.symbol, side, fillPrice, qty, req.strategyId)
     }
 
+    /** A triggered stop-limit or if-touched limit: marketable on that tick it fills at its mid, else it rests. */
     private fun activateLimit(
         limit: OrderRequest.Limit,
         tick: Tick,
         from: BigDecimal?,
     ) {
         if (checkTrigger(limit, tick)) {
-            val execution = if (limit.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
             val fillPrice =
                 if (from != null && tradedThrough(from, tick.price, limit.limitPrice)) {
                     limit.limitPrice
                 } else if (limit.side == Side.BUY) {
-                    execution.min(limit.limitPrice)
+                    tick.price.min(limit.limitPrice)
                 } else {
-                    execution.max(limit.limitPrice)
+                    tick.price.max(limit.limitPrice)
                 }
             publishFill(
                 limit.id,

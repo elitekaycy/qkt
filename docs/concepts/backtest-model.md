@@ -76,9 +76,12 @@ Two simulated brokers, chosen with `--broker`:
 - **`paper`** (default): fills at mid. A market order fills at the `MarketPriceTracker`'s last-known
   price for the symbol. A stop, limit or bracket exit triggers on the first tick whose quote for its
   side reaches the level (the ask for a buy, the bid for a sell, as at the venue) and fills at that
-  tick's mid, so it can fill up to half a spread better than its level, or beyond it on a gap. No
-  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` or
-  above `volumeMax` is rejected, as the live venues reject it. `--execution-latency`, `--reject-every` and `--partial-fill`
+  tick's mid, so it can fill up to half a spread better than its level, or beyond it on a gap. A
+  stop-limit (`STOP AT ... LIMIT AT ...`) becomes a limit on the tick that trips its stop; if that
+  same tick's quote already satisfies the limit it fills right there, at that tick's mid like any
+  other paper fill and never worse than its limit price, otherwise the limit rests for the first tick
+  that reaches it. No spread, slippage or latency. Volume rounds down to `volumeStep` and an order
+  below `volumeMin` or above `volumeMax` is rejected, as the live venues reject it. `--execution-latency`, `--reject-every` and `--partial-fill`
   apply to `mt5-sim` only. A symbol replayed from
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
