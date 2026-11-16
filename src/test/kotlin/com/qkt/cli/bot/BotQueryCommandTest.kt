@@ -51,7 +51,7 @@ class BotQueryCommandTest {
     }
 
     @Test
-    fun `positions on a symbol keep only that symbol and print each field`() {
+    fun `positions on a symbol keep only that symbol and print each field, named by its qkt symbol`() {
         val other = BotMt5Stub.position(2).replace("XAUUSDm", "EURUSDm")
         mt5.responses["/get_positions"] = 200 to "[${BotMt5Stub.position(1, "bot-x", sl = "2600")},$other]"
 
@@ -60,8 +60,9 @@ class BotQueryCommandTest {
         val all = bot("positions", "--json")
 
         assertThat(json.out).contains("\"ticket\":1", "\"side\":\"BUY\"", "\"sl\":2600", "\"comment\":\"bot-x\"")
+        assertThat(json.out).contains("\"symbol\":\"EXNESS:XAUUSD\"", "\"venueSymbol\":\"XAUUSDm\"")
         assertThat(json.out).doesNotContain("EURUSDm")
-        assertThat(text.out.trim()).isEqualTo("1 XAUUSDm BUY 0.5 @ 2650 sl=2600 tp=0 pnl=12.5")
+        assertThat(text.out.trim()).isEqualTo("1 EXNESS:XAUUSD BUY 0.5 @ 2650 sl=2600 tp=0 pnl=12.5")
         assertThat(all.out).contains("\"ticket\":1", "\"ticket\":2")
     }
 
@@ -84,7 +85,8 @@ class BotQueryCommandTest {
         val text = bot("orders")
 
         assertThat(json.out).contains("\"ticket\":9", "\"type\":\"BUY_LIMIT\"", "\"lots\":0.2", "\"price\":2600")
-        assertThat(text.out.trim()).isEqualTo("9 XAUUSDm BUY_LIMIT 0.2 @ 2600 sl=2590 tp=2700")
+        assertThat(json.out).contains("\"symbol\":\"EXNESS:XAUUSD\"", "\"venueSymbol\":\"XAUUSDm\"")
+        assertThat(text.out.trim()).isEqualTo("9 EXNESS:XAUUSD BUY_LIMIT 0.2 @ 2600 sl=2590 tp=2700")
     }
 
     @Test
@@ -139,8 +141,10 @@ class BotQueryCommandTest {
                 "\"side\":\"SELL\"",
                 "\"entry\":\"OUT\"",
                 "\"profit\":12.5",
+                "\"symbol\":\"EXNESS:XAUUSD\"",
+                "\"venueSymbol\":\"XAUUSDm\"",
             )
-        assertThat(text.out.trim()).isEqualTo("2023-11-14T22:13:20Z XAUUSDm SELL 0.5 @ 2675 pnl=12.5")
+        assertThat(text.out.trim()).isEqualTo("2023-11-14T22:13:20Z EXNESS:XAUUSD SELL 0.5 @ 2675 pnl=12.5")
     }
 
     @Test
