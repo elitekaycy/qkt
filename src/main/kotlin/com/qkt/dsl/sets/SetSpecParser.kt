@@ -13,8 +13,9 @@ import java.math.BigDecimal
 
 /**
  * Parses the symbol-set forms of a `SYMBOLS` declaration (design §2): a picked list `VENUE:{A, B}`, a filtered
- * universe `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC]` and a union `a + b`. `WHERE`, `TOP`, `GLOB`,
- * `ASC` and `DESC` are contextual words here, not keywords, so no strategy's identifiers become reserved.
+ * universe `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]` and a union `a + b`. `WHERE`, `TOP`,
+ * `GLOB`, `ASC`, `DESC` and `DYNAMIC` are contextual words here, not keywords, so no strategy's identifiers become
+ * reserved.
  */
 internal class SetSpecParser(
     private val cursor: TokenCursor,
@@ -98,7 +99,8 @@ internal class SetSpecParser(
                 isWord("ASC") -> false.also { cursor.advance() }
                 else -> true
             }
-        return SymbolSetSpec.Filtered(venue, filter, n, by, descending)
+        val dynamic = isWord("DYNAMIC").also { if (it) cursor.advance() }
+        return SymbolSetSpec.Filtered(venue, filter, n, by, descending, dynamic)
     }
 
     private fun parseOr(): UniverseFilter {

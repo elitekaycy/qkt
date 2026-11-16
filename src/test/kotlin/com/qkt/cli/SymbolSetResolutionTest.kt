@@ -89,6 +89,8 @@ class SymbolSetResolutionTest {
             ).hasMessageContaining("--survivorship-accepted")
         refuse("BACKTEST:* WHERE category = Crypto TOP 5 BY symbol")
             .hasMessage("symbol set 'm': no BACKTEST instrument passes category = \"Crypto\"")
+        refuse("BACKTEST:* WHERE kind = spot TOP 5 BY symbol DYNAMIC")
+            .hasMessageStartingWith("symbol set 'm' is DYNAMIC: members that join and leave during a run")
         assertThat(
             SymbolSetResolution.members(
                 "m",
