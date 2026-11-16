@@ -34,7 +34,7 @@ cd qkt
 
 ## Pre-push checklist
 
-The repo ships [`scripts/precheck.sh`](https://github.com/elitekaycy/qkt/blob/main/scripts/precheck.sh) — runs `./gradlew build`, ktlint, and a clean-tree check. Required green before every push.
+Install the pre-push hook once with `scripts/install-hooks.sh`; it runs [`scripts/precheck.sh`](https://github.com/elitekaycy/qkt/blob/dev/scripts/precheck.sh) (ktlint, file size, compile and source-policy tests against `origin/dev`; `--full` for the whole build). Skip it with `git push --no-verify` only for docs emergencies.
 
 ```bash
 ./scripts/precheck.sh

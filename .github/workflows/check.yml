@@ -223,6 +223,9 @@ jobs:
       - name: Test shadow lane cleanup
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
+      - name: Test pre-push check scope
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/precheck-scope-test.sh
       - name: Validate attestation case catalog
         if: steps.changes.outputs.full == 'true'
         run: python3 attestation/lib/validate.py
