@@ -54,6 +54,18 @@ class FollowLogTest {
     }
 
     @Test
+    fun `a line written after the start size is streamed even when it landed before the first look`() {
+        val file = log("abc\n")
+        val startSize = Files.size(file)
+        Files.writeString(file, "new\n", StandardOpenOption.APPEND)
+        val out = FailingAfter(allowed = 1)
+
+        followLog(file, out, startSize) {}
+
+        assertThat(out.written.toString()).isEqualTo("new\n")
+    }
+
+    @Test
     fun `a follower that cannot take new bytes ends the stream`() {
         val file = log("abc\n")
         val out = FailingAfter(allowed = 0)
