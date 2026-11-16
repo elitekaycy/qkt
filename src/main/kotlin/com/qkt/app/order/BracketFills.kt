@@ -141,15 +141,13 @@ internal class BracketFills(
         child: OrderRequest,
         e: BrokerEvent.OrderFilled,
     ): OrderRequest =
-        when (child) {
-            is OrderRequest.ArmedTrailingStop ->
-                child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
-            is OrderRequest.SteppedStop ->
-                child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity), timestamp = clock.now())
-            is OrderRequest.TimeTighteningStop ->
-                child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity), timestamp = clock.now())
-            else -> child
-        }
+        (child as? OrderRequest.ArmedTrailingStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity))
+        } ?: (child as? OrderRequest.SteppedStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity), timestamp = clock.now())
+        } ?: (child as? OrderRequest.TimeTighteningStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity), timestamp = clock.now())
+        } ?: child
 
     // A fill-anchored target never shipped with the entry: if the venue refuses the modify that
     // attaches it, the engine must hold it or the position would have no target at all. A market-
