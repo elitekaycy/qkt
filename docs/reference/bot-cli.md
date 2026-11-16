@@ -134,6 +134,20 @@ qkt bot eval "rsi(14)" SYMBOL --tf 15m --json
 Queries read venue truth (positions opened by deployed strategies included). A failed venue read is an
 error, never an empty result. `bot eval` takes one single-series indicator with numeric arguments.
 
+### Universe
+
+```bash
+qkt bot universe "EXNESS:* WHERE category GLOB \"Stocks*\" TOP 20 BY contract_size" --json
+qkt bot universe "EXNESS:{EURUSD, XAUUSD}" --instruments data/instruments.yaml --as-of 2026-01-02
+```
+
+Lists the members a [symbol set](dsl/streams.md#symbol-sets-exnesseurusd-xauusd-alpaca-where-) resolves to, with the
+same parser and resolver a strategy's `SYMBOLS` uses, so an agent's scan and the strategy's members agree. The
+catalog is the instruments file a backtest reads (`--instruments`, else `instruments.yaml` under the data root);
+`--as-of` dates `dte` (default: now). A picked list is checked name by name; a union is refused (resolve each set).
+JSON: `{ok,spec,asOf,count,members:[{qktSymbol,symbol,kind,category,currency,contract_size,tick_size,trade_mode,family,underlying,expiry_at,dte}]}`,
+a field the instrument lacks being `null`.
+
 ## JSON output (one-shot)
 
 `buy`/`sell`:

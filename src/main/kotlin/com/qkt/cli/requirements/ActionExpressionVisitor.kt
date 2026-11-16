@@ -11,6 +11,7 @@ import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchEntry
@@ -40,6 +41,7 @@ internal class ActionExpressionVisitor(
                 walk(rule.cond)
                 walkAction(rule.action)
             }
+            is ForEachSet -> walkRule(rule.template)
         }
     }
 

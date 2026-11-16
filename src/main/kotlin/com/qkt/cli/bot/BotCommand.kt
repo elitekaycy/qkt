@@ -69,6 +69,7 @@ class BotCommand(
                 BotQueryCommand(sub, verb).run()
             "eval" -> BotEvalCommand(sub).run()
             "markets", "chain" -> BotEventCommand(sub, verb).run()
+            "universe" -> BotUniverseCommand(sub).run()
             "help", "--help" -> help()
             else -> {
                 System.err.println("qkt bot: unknown verb '$verb' (see qkt bot help)")
@@ -102,8 +103,13 @@ class BotCommand(
                 bot bars      BROKER:SYMBOL --tf 1h [--count 100]
                 bot history   [--since <iso|Nd>] closed deals
                 bot eval "ema(21)" BROKER:SYMBOL --tf 1h [--count 500]
+<<<<<<< Updated upstream
                 bot markets   VENUE [--category C] [--family F] [--open]   event contracts listed
                 bot chain     VENUE:FAMILY@front|next          one event's contracts with quotes
+||||||| Stash base
+=======
+                bot universe "EXNESS:* WHERE category GLOB \"Stocks*\" TOP 20 BY contract_size" [--instruments <yaml>]
+>>>>>>> Stashed changes
 
             SESSION (the engine: backtest over your data, or live as qkt deploy builds it)
                 bot session start --backtest --symbols A[,B] --tf 5m[,1h] --from <date> --to <date>

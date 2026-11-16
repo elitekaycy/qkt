@@ -4,6 +4,8 @@ import com.qkt.common.Clock
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.rules.CooldownAfterLoss
 import com.qkt.risk.rules.LossStreakHalt
+import com.qkt.risk.rules.MaxSetOpenPositions
+import com.qkt.risk.rules.MaxSetPositionSize
 import com.qkt.risk.rules.MaxStrategyDailyDrawdown
 import com.qkt.risk.rules.MaxStrategyDailyLoss
 import com.qkt.risk.rules.MaxStrategyDrawdown
@@ -40,6 +42,14 @@ internal object StrategyRiskRuleFactory {
             }
             limits.maxOpenPositions?.let {
                 riskRules.add(MaxStrategyOpenPositions(strategyId, it, strategyPositions))
+            }
+            for ((set, caps) in limits.sets) {
+                caps.maxPositionSize?.let {
+                    riskRules.add(MaxSetPositionSize(strategyId, set, caps.members, it, strategyPositions))
+                }
+                caps.maxOpenPositions?.let {
+                    riskRules.add(MaxSetOpenPositions(strategyId, set, caps.members, it, strategyPositions))
+                }
             }
             val strategyStartingBalance = startingBalances[strategyId] ?: startingBalance
             limits.maxDrawdownPct?.let {
