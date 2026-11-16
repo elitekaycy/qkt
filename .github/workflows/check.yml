@@ -20,7 +20,7 @@ on:
   push:
     branches: [dev, testing]
   pull_request:
-    branches: [dev]
+    branches: [dev, ci/throwaway-probe-base]
 
 # A dev push gets a group of its own SHA, so no dev run is ever cancelled. GitHub
 # queues runs in webhook arrival order, not commit order: two merges seconds
