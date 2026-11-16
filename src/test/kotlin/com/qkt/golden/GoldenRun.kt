@@ -136,7 +136,7 @@ internal object GoldenRun {
     }
 
     /** Three days of one tick per minute: `base + amplitude × sin(minute / 7)`, rounded to [decimals]. */
-    private fun seedSine(
+    internal fun seedSine(
         dataRoot: Path,
         symbol: String,
         base: Double,

@@ -56,7 +56,7 @@ class BacktestCommand(
             try {
                 when (parsedFile) {
                     is com.qkt.dsl.parse.ParsedFile.StrategyFile ->
-                        BacktestContext.build(effective, parsedFile.ast, fetcherOverride)
+                        BacktestContext.build(effective, resolveSets(parsedFile.ast, effective), fetcherOverride)
                     is com.qkt.dsl.parse.ParsedFile.PortfolioFile ->
                         BacktestContext.buildPortfolio(
                             effective,
@@ -143,5 +143,25 @@ class BacktestCommand(
         } finally {
             restoreLogs()
         }
+    }
+
+    /** Filtered symbol sets become their members from the instruments file as of `--from` ([SymbolSetResolution]). */
+    private fun resolveSets(
+        ast: com.qkt.dsl.ast.StrategyAst,
+        args: Args,
+    ): com.qkt.dsl.ast.StrategyAst {
+        if (ast.streams.none { it.broker == com.qkt.dsl.ast.SET_BROKER }) return ast
+        val from =
+            args.option("from")
+                ?: throw BacktestContext.Companion.SetupError(
+                    "a filtered symbol set is resolved as of --from, which is missing",
+                )
+        val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
+        return SymbolSetResolution.resolve(
+            ast,
+            SymbolSetResolution.catalog(args, dataRoot),
+            BacktestContext.parseInstant(from).toEpochMilli(),
+            args.flag(SymbolSetResolution.SURVIVORSHIP_FLAG),
+        )
     }
 }
