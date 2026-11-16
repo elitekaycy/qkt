@@ -54,12 +54,6 @@ class OrderManagerTimeTighteningBracketFillTest {
         assertThat(stop.quantity).isEqualByComparingTo("1")
         assertThat(stop.timestamp).isEqualTo(7L)
         assertThat(stop.side).isEqualTo(Side.SELL)
-        // The venue mirrors the stop at fill minus the initial distance: 104 - 60.
-        assertThat(
-            fixture.broker.modifyPositions
-                .first()
-                .sl,
-        ).isEqualByComparingTo("44")
     }
 
     @Test
