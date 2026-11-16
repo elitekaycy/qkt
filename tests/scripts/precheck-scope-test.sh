@@ -100,6 +100,23 @@ test "$(cd / && PRECHECK_BASE=dev bash "$work/wt/scripts/precheck.sh" --scope 2>
 # A missing base checks everything.
 test "$(cd "$work/wt" && PRECHECK_BASE=no-such-ref bash scripts/precheck.sh --scope 2>/dev/null)" = gradle
 
+# Run by git as a hook, it inherits GIT_DIR with no GIT_WORK_TREE, which makes `git -C scripts` take scripts/ for the
+# work tree. From a linked worktree the whole run, and the hook that starts it, must still see the worktree root and a
+# clean tree: a docs-only branch passes.
+g "$work/repo" worktree add -q -b hooked "$work/hooked"
+echo notes > "$work/hooked/NOTES.md"
+g "$work/hooked" add -A
+g "$work/hooked" commit -qm docs
+hooked_git_dir="$(git -C "$work/hooked" rev-parse --absolute-git-dir)"
+(cd "$work/hooked" && GIT_DIR="$hooked_git_dir" PRECHECK_BASE=dev bash scripts/precheck.sh >/dev/null 2>&1) || {
+    echo "precheck fails from a linked worktree when git exports GIT_DIR" >&2
+    exit 1
+}
+(cd "$work/hooked" && GIT_DIR="$hooked_git_dir" PRECHECK_BASE=dev bash "$repo_root/.githooks/pre-push" >/dev/null 2>&1) || {
+    echo "the pre-push hook fails from a linked worktree when git exports GIT_DIR" >&2
+    exit 1
+}
+
 # The pre-push hook runs this script.
 grep -Fq 'scripts/precheck.sh' "$repo_root/.githooks/pre-push"
 

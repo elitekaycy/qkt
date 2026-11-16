@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+# Git exports GIT_DIR (and friends) to a hook. With GIT_DIR set and no GIT_WORK_TREE, git takes the current directory
+# as the work tree, so inside a linked worktree `git -C scripts rev-parse --show-toplevel` would name scripts/ and the
+# checks would inspect the wrong tree. Start from a clean git environment.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 if [ ! -x "$REPO_ROOT/scripts/precheck.sh" ]; then
