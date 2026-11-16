@@ -30,6 +30,6 @@
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "backtest-model.md:158 (fills at mid +- N/2) and :146 (a limit is never filled worse than its price) meet here; the limit price wins (README Q11)."
+    "backtest-model.md:166-168: a limit's cap holds against a stated spread, so the target fills at its level (README Q11)."
   ]
 }

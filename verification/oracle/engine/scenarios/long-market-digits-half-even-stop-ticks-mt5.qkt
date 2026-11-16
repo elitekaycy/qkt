@@ -1,0 +1,7 @@
+STRATEGY long_market_digits_half_even_stop_ticks_mt5 VERSION 1
+-- spreadPoints 3 puts fills on half a point; digits 2 rounds half to even: buy 100.525 -> 100.52, sell 99.485 -> 99.48
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.51 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

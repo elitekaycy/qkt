@@ -1,0 +1,35 @@
+{
+  "name": "short-stoplimit-marketable-ticks-mt5",
+  "proves": "a sell stop-limit whose trigger bid 99.94 already satisfies its 99.90 limit fills on that tick at the bid",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.94",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP_LIMIT",
+      "stopLoss": "100.94",
+      "takeProfit": "98.94"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.94",
+      "realized": "0.100",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.100",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "actions.md:133-135: the limit fills on the tick that trips the stop when that tick already satisfies it (README Q6)."
+  ]
+}

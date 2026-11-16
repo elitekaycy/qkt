@@ -1,0 +1,11 @@
+STRATEGY long_market_partial_close_then_close_hedging_ticks_paper VERSION 1
+-- on a hedging account SELL 0.5 * POSITION closes half the leg by ticket; CLOSE realises the rest
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1
+    WHEN syn.close = 102.00 AND POSITION.syn > 0
+    THEN SELL syn SIZING 0.5 * ABS(POSITION.syn)
+    WHEN syn.close = 103.00 AND POSITION.syn > 0
+    THEN CLOSE syn
