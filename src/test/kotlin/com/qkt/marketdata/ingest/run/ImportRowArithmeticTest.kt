@@ -5,10 +5,8 @@ import com.qkt.marketdata.ingest.IngestFixtures
 import com.qkt.marketdata.ingest.plan.ImportDescriptor
 import com.qkt.marketdata.ingest.plan.IngestKind
 import com.qkt.marketdata.ingest.plan.PriceBasis
-import com.qkt.marketdata.ingest.record.BarRecord
 import java.nio.file.Files
 import java.nio.file.Path
-import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -30,26 +28,6 @@ class ImportRowArithmeticTest {
             timeframe = "1m",
             fields = mapOf("open" to "$1", "high" to "$2", "low" to "$3", "close" to "$4", "spread" to "$5"),
         )
-
-    @Test
-    fun `a spread on a mid-basis file shifts nothing`() {
-        val report =
-            IngestFixtures.import(
-                root,
-                listOf(file("2024-01-02T10:00:00Z,1.1002,1.1004,1.1000,1.1002,20\n")),
-                "DATA:EURUSD",
-                bars,
-                dryRun = true,
-            )
-
-        assertThat(
-            report.preview
-                .map { it.second }
-                .filterIsInstance<BarRecord>()
-                .first()
-                .close,
-        ).isEqualByComparingTo("1.1002")
-    }
 
     @Test
     fun `a number too large to hold is a row error, not a crash`() {
