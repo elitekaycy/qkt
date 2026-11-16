@@ -4,6 +4,7 @@ why: 'A dated contract backtested without its root and catalog fills on the pape
   and no tick grid; its catalog now comes from the gateway account, so a missing or wrong catalog shows
   here as live and replay disagreeing on fills, fees or realized PnL.'
 status: ready
+group: btc-dated
 symbols:
 - DERIBIT:BTC_USDC_30OCT26
 timeframes:

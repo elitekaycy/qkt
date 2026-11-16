@@ -17,6 +17,11 @@ data_corpus=/var/tmp/qkt-validation/data-corpus
 # Its trader token comes from QKT_DERIV_GATEWAY_KEY in the environment.
 #deriv_gateway_url=http://127.0.0.1:8444
 #deriv_expected_login=g-aVrEeP
+# Optional: one more gateway on the same account per kill_switch case (deribit-gateway-pool.sh up; its `urls` prints them),
+# so the derivatives lane runs its groups of cases side by side instead of one after another. deriv_parallel caps the groups
+# at once (default 4).
+#deriv_drill_gateway_urls="http://127.0.0.1:18454 http://127.0.0.1:18455"
+#deriv_parallel=4
 # Optional: a gateway running the Bybit adapter on a Bybit testnet account adds the bybit lane.
 # Its trader token comes from QKT_BYBIT_GATEWAY_KEY (guardian: QKT_BYBIT_GUARDIAN_KEY).
 #bybit_gateway_url=http://127.0.0.1:18445

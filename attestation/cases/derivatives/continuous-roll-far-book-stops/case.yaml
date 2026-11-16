@@ -8,6 +8,7 @@ why: 'A roll must not trade into a book far from the measured price (#1587, #155
   collared leg left unfilled by a book that moved after this check is proven only by the soak''s 08:00 roll. The runner
   closes the held entry after judging it.'
 status: ready
+group: btc-front
 symbols:
 - DERIBIT:BTC_USDC@front
 timeframes:
