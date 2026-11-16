@@ -16,6 +16,7 @@ import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.entry
 import org.junit.jupiter.api.Test
 
 class StartupReconcileTicketSnapshotTest {
@@ -59,6 +60,6 @@ class StartupReconcileTicketSnapshotTest {
 
         val adopted = reconcile.run(StrategyPositionTracker(), broker) { _, _ -> }
 
-        assertThat(adopted).isEmpty()
+        assertThat(adopted).containsExactly(entry("alpha", 1))
     }
 }

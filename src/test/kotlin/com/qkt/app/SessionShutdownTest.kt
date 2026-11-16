@@ -77,7 +77,8 @@ class SessionShutdownTest {
         shutdown.stop()
 
         assertThat(mailbox.running.get()).isFalse()
-        assertThat(engineThread.isInterrupted || !engineThread.isAlive).isTrue()
+        engineThread.join(5_000L)
+        assertThat(engineThread.isAlive).isFalse()
     }
 
     @Test

@@ -159,7 +159,7 @@ class OrderManagerStackTriggerPriceTest {
         val bus = newBus()
         val clock = FixedClock(time = 0L)
         val broker =
-            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
         val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
         val plan =
             StackPlan(

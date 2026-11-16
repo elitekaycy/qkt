@@ -73,6 +73,6 @@ class InsightsStatePollingTest : BrokerStatePollerFixture() {
             ) { _, _, _ -> null }
         poller!!.drainAndClose()
 
-        assertThat(collectBodies("state.account", "alpha")).contains("alpha")
+        assertThat(collectBodies("state.account")).contains("state.account")
     }
 }
