@@ -85,6 +85,26 @@ class MaxSetPositionSizeTest {
     }
 
     @Test
+    fun `a set whose members move is capped on whoever is a member at each check`() {
+        var members = setOf("ALPACA:AAPL")
+        val moving = MaxSetPositionSize("rotation", "stocks", { members }, Money.of("3"), strategyPositions)
+        fill("ALPACA:AAPL", Money.of("2"), Side.BUY)
+        fill("ALPACA:MSFT", Money.of("2"), Side.BUY)
+        assertThat(moving.evaluate(order(qty = Money.of("2")), global)).isInstanceOf(Decision.Reject::class.java)
+        // MSFT is not a member yet: untouched. It joins: capped.
+        val msft = order(symbol = "ALPACA:MSFT", qty = Money.of("2"))
+        assertThat(moving.evaluate(msft, global)).isEqualTo(Decision.Approve)
+        members = members + "ALPACA:MSFT"
+        assertThat(moving.evaluate(msft, global)).isInstanceOf(Decision.Reject::class.java)
+        // AAPL leaves: it is no longer capped
+        members = setOf("ALPACA:MSFT")
+        assertThat(moving.evaluate(order(qty = Money.of("2")), global)).isEqualTo(Decision.Approve)
+        members = emptySet()
+        val large = order(symbol = "ALPACA:MSFT", qty = Money.of("50"))
+        assertThat(moving.evaluate(large, global)).isEqualTo(Decision.Approve)
+    }
+
+    @Test
     fun `construction validates its arguments`() {
         assertThatThrownBy {
             MaxSetPositionSize("", "s", stocks, Money.of("1"), strategyPositions)
@@ -95,5 +115,8 @@ class MaxSetPositionSizeTest {
         assertThatThrownBy {
             MaxSetPositionSize("r", "s", stocks, BigDecimal.ZERO, strategyPositions)
         }.hasMessage("maxQty must be > 0: 0")
+        assertThatThrownBy {
+            MaxSetPositionSize("", "s", { stocks }, Money.of("1"), strategyPositions)
+        }.hasMessage("strategyId must be non-blank")
     }
 }
