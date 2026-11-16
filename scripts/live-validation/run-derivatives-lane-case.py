@@ -101,9 +101,12 @@ def main():
     budget = args.budget_seconds or int(case.get("budget_seconds", lanes[case["lane"]]["budget_seconds"]))
     run = Run(args, case)
     run.lane_config = lanes.get(lane, {})
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
+    signal.signal(signal.SIGTERM, stop)  # a stopped runner still releases, sweeps and writes its verdict
+    stopped = False
     try:
         problems = run.execute(budget)
+    except Stopped as error:
+        stopped, problems = True, [str(error)]
     except SessionClosed as error:  # a venue wait took the case past its window: nothing was touched
         run.venue_waits, run.session_closed = error.wait, {"reason": str(error), "at": venue_health.utc(time.time() * 1000)}
         problems = [str(error)]
@@ -127,7 +130,16 @@ def main():
         except Exception as error:
             problems = problems + [f"sweep: the account may not be flat: {error}"]
         run.end_watch(problems)
-    return run.verdict(problems)
+    code = run.verdict(problems)
+    return 143 if stopped else code
+
+
+class Stopped(Exception):
+    """The runner was sent SIGTERM while the case ran."""
+
+
+def stop(*_):
+    raise Stopped("stopped: the runner was terminated before the case ended")
 
 
 def shared_account(case):
