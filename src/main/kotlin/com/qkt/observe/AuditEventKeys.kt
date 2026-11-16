@@ -12,6 +12,7 @@ import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.RuleDecisionEvent
+import com.qkt.events.SetMembershipChanged
 import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
@@ -38,6 +39,7 @@ internal fun auditStrategyId(event: Event): String? =
         is SignalSuppressedEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is CostIncurred -> event.strategyId.takeIf { it.isNotBlank() }
         is StructureEvent -> event.strategyId.takeIf { it.isNotBlank() }
+        is SetMembershipChanged -> event.strategyId
         else -> null
     }
 
@@ -73,6 +75,7 @@ internal fun auditSymbol(event: Event): String? =
         is RuleDecisionEvent -> event.candle.symbol
         is FillAccountedEvent -> event.symbol
         is RiskRejectedEvent -> event.request.symbol
+        is SetMembershipChanged -> event.member
         else -> null
     }
 

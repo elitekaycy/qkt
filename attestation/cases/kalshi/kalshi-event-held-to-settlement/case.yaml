@@ -1,0 +1,29 @@
+id: kalshi-event-held-to-settlement
+title: An event contract sold into the bid through a slot, held until the venue settles it at its outcome
+why: 'An event contract is never closed by an order here: its book is one-sided, so the only exit is the venue
+  resolving it at 1 or 0, minutes after trading stops, reported as a settlement and never as a deal. If qkt
+  misses it the slot holds a contract that no longer exists and never trades again; if the stream and a resync
+  both deliver it, it is booked twice; if it is booked at the last quote (0.01) instead of the outcome, or the
+  probability fee is booked at another rounding than the venue charged, realized PnL and the account disagree.
+  A SELL through the slot must also land on the contract the slot follows as NO bought at 1 less the bid.'
+status: scheduled
+release_proof: A contract settles only when its event's hour has ended and its result is in, up to 70 minutes after the entry, so no release waits for it. Replaced by GoldenBacktestTest's event-slots-paper (a slot's entries, probability fees and settlements at 1 and 0, byte for byte), scripts/live-validation/tests/test_event_settlement.py (this whole case against a fake gateway and qkt) and the qkt-venue-gateway's Kalshi contract suite on the demo. Run on its own at any hour, a new event opens every hour.
+symbols:
+- KALSHI:KXDEMOFUTHOURLY@front.atm
+timeframes:
+- 1m
+proves:
+- behaviour:event-slot-order
+- behaviour:event-settlement
+- behaviour:probability-fee
+- behaviour:gateway-settlement-stream
+fills: 1
+settles: 1
+replay: none
+budget_seconds: 5400
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- settlement-booked-once
+- settlement-at-venue-price
+- account-balance-equals-realized

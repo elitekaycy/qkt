@@ -97,6 +97,18 @@ venue with one closed deal, the same as on a netting account — it does not lea
 hedged against each other. Use `CLOSE` when you mean "flatten"; use an explicit hedge (`OCO_ENTRY`
 straddle or a bracket entry) when you really want both sides open.
 
+What the opposite order's size does, on each account:
+
+- **Smaller than the oldest leg** (`SELL btc SIZING 0.5 * POSITION.btc` on one long leg): hedging
+  closes that part of the oldest leg by its ticket and the rest of the leg stays open at its entry
+  price; netting reduces the position by the same amount. Both realise the same P&L.
+- **Larger than the open legs** (`SELL btc SIZING 0.2` over a 0.1 long): hedging closes every
+  opposite leg by ticket, then opens the 0.1 excess as a new short, two deals on the same price;
+  netting reverses the position in one fill, realising the closed 0.1 and opening a 0.1 short at the
+  fill price. Either way the strategy ends short 0.1.
+- An opposite entry that carries a `BRACKET` is an explicit hedge on a hedging account and opens its
+  own leg beside the old one; on a netting account it nets like any other order.
+
 ### Order type modifiers
 
 By default `BUY`/`SELL` submit market orders. To submit a limit order:
@@ -118,6 +130,10 @@ at the limit price instead of a market order chasing:
 BUY btc SIZING 0.1 ORDER_TYPE = STOP AT 67500 LIMIT AT 67520   -- trigger at 67,500, fill no worse than 67,520
 ```
 
+When the price that trips the stop already satisfies the limit (a buy whose triggering ask is at or
+below the limit, a sell whose triggering bid is at or above it), the limit fills on that same tick,
+like any limit the market is already through; otherwise it rests until the price comes back to it.
+
 The entry order types are therefore `MARKET` (the default), `LIMIT AT <price>`, `STOP AT <price>`,
 `STOP AT <price> LIMIT AT <price>`, and the trailing forms `TRAILING BY <distance>` /
 `TRAILING PCT <percent>`. Each takes an expression for its price, evaluated when the rule fires.
@@ -127,8 +143,13 @@ goes after the stream/sizing.
 ### `OCO { STOP AT ..., LIMIT AT ... }` — exit pair by price
 
 Where `BRACKET` states a stop and a target as distances or prices with `STOP_LOSS` /
-`TAKE_PROFIT`, `OCO` states the same two exits as raw order prices. Both children are required
-and either may reference the bar that fired the rule:
+`TAKE_PROFIT`, `OCO` states the same two exits as raw order prices. The entry is placed first;
+when it fills, the stop and the limit are placed as exits of that position, and the first to fill
+cancels the other. `BUY ... OCO { STOP AT s, LIMIT AT t }` is therefore
+`BUY ... BRACKET { STOP_LOSS AT s, TAKE_PROFIT AT t }` under another name, and a stop that sits on
+the entry price is refused the same way. For two *pending entries* linked one-cancels-other, use
+[`OCO_ENTRY`](#oco_entry). Both children are required and either may reference the bar that fired
+the rule:
 
 ```qkt
 WHEN btc.close CROSSES ABOVE ema(btc.close, 50) AND POSITION.btc = 0

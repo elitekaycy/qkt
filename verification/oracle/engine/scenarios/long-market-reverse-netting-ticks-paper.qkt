@@ -1,0 +1,11 @@
+STRATEGY long_market_reverse_netting_ticks_paper VERSION 1
+-- SELL 0.2 over a 0.1 long on a netting account reverses in one fill: realises the long, opens a 0.1 short
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1
+    WHEN syn.close = 102.00 AND POSITION.syn > 0
+    THEN SELL syn SIZING 0.2
+    WHEN syn.close = 101.00 AND POSITION.syn < 0
+    THEN CLOSE syn

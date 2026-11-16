@@ -1,0 +1,139 @@
+{
+  "name": "long-market-sizing-usd-gap-open-ticks-paper",
+  "proves": "SIZING 1000 USD sizes at the signal close 100.50 (9.95 lots) and fills on the next tick at 101.00",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "target",
+    "sizing": "usd",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.99",
+      "101.01"
+    ],
+    [
+      75,
+      "101.19",
+      "101.21"
+    ],
+    [
+      90,
+      "100.79",
+      "100.81"
+    ],
+    [
+      105,
+      "101.09",
+      "101.11"
+    ],
+    [
+      120,
+      "101.49",
+      "101.51"
+    ],
+    [
+      135,
+      "102.49",
+      "102.51"
+    ],
+    [
+      150,
+      "103.00",
+      "103.02"
+    ],
+    [
+      165,
+      "102.79",
+      "102.81"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "usd",
+          "value": "1000"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "sizing.md:66-68 sizes a market order at the signal bar's close; backtest-model.md:89-96 fills it on the tick that closed the bar (README Q1, Q2)."
+  ]
+}

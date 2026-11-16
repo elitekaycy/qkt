@@ -68,6 +68,9 @@ internal class IdentifierExprParser(
                     com.qkt.dsl.stdlib.FuncRegistry
                         .has(name.uppercase()) ->
                         FuncCall(name.uppercase(), args)
+                    // SUM_OF(expr, set) and its kin: lowered over the set's members when FOR EACH expands.
+                    com.qkt.dsl.sets.SetFunction
+                        .named(name) != null -> FuncCall(name.uppercase(), args)
                     else -> IndicatorCall(name, args)
                 }
             }

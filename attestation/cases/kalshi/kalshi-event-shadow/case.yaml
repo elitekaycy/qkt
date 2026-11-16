@@ -1,0 +1,18 @@
+id: kalshi-event-shadow
+title: Event contract fields and norm_cdf read on a live slot equal the replay's
+why: 'An event field is read as of the bar close, never the wall clock, and a slot reads the terms of whichever
+  contract it follows: minutes_left computed from the live clock, a fee priced at a stale ask, or a bar of the
+  contract the slot just left would each give a live value the replay never sees, and a strategy pricing a
+  contract with norm_cdf against them would trade on it. Planned, not ready: a gateway lane case is judged by its
+  fills and replays bars or a recorded chain, so it has no live-against-replay value comparison yet, and a slot
+  replay needs the family''s event catalog and quote ticks, which a session capture does not write.'
+status: planned
+symbols:
+- KALSHI:KXDEMOFUTHOURLY@front.atm
+timeframes:
+- 1m
+proves:
+- NORM_CDF
+- behaviour:event-fields-live-equal-replay
+assertions:
+- trace-parity

@@ -220,6 +220,30 @@ class CaseRun(unittest.TestCase):
         with open(os.path.join(out, "result.json")) as result:
             return done, json.load(result)
 
+    def test_a_runner_stopped_mid_case_still_sweeps_and_writes_a_failed_verdict(self):
+        gateway = FakeGateway()
+        self.addCleanup(gateway.server.server_close)
+        self.addCleanup(gateway.server.shutdown)
+        out = os.path.join(tempfile.mkdtemp(), "run")
+        env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_DERIV_GATEWAY_KEY="token",
+                   QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", FAKE_GATEWAY=gateway.url, FAKE_SETTLE="never")
+        runner = subprocess.Popen([sys.executable, RUNNER, "--case", CASE, "--out", out, "--gateway-url", gateway.url,
+                                   "--expected-login", "test-login", "--arm", "I_UNDERSTAND_DEMO_ORDER_0.01",
+                                   "--cli", os.path.join(HERE, "fake_qkt.py"), "--budget-seconds", "600"],
+                                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        log, deadline = os.path.join(out, "daemon.log"), time.time() + 30
+        while time.time() < deadline and not (os.path.exists(log) and "daemon ready" in open(log).read()):
+            time.sleep(0.2)
+        time.sleep(1)  # into the case's watch, past the daemon start
+        runner.terminate()
+        stdout, stderr = runner.communicate(timeout=60)
+        self.assertEqual(runner.returncode, 143, stdout + stderr)
+        self.assertNotIn("Traceback", stderr)
+        with open(os.path.join(out, "result.json")) as file:
+            result = json.load(file)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("stopped: the runner was terminated before the case ended", result["problems"])
+
     def test_a_settlement_booked_once_at_the_venue_price_passes(self):
         done, result = self.run_case("once")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)

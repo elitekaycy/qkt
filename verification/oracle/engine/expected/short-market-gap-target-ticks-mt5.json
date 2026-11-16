@@ -1,0 +1,35 @@
+{
+  "name": "short-market-gap-target-ticks-mt5",
+  "proves": "a tick whose ask gaps through a short's target fills at that ask, better than the level (--tp-fill print, the default)",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.49",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.49",
+      "takeProfit": "98.49"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "97.51",
+      "realized": "0.298",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.298",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "backtest-model.md:135-137: --tp-fill defaults to print, the crossing price when it beats the level (README Q7)."
+  ]
+}

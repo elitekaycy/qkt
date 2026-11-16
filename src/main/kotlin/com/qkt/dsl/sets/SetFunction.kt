@@ -1,0 +1,36 @@
+package com.qkt.dsl.sets
+
+/**
+ * A cross-member function over a symbol set: `RANK_OF(expr, set)`, `SUM_OF`, `AVG_OF`, `MAX_OF`, `MIN_OF` and
+ * `COUNT_OF(test, set)`, written inside `FOR EACH m IN <set>` with `expr` naming the loop variable (design §3.5).
+ *
+ * While a set's members are fixed, [SetFunctionLowering] rewrites each call into a [lowered] call whose arguments
+ * are `expr` once per member ([selfFirst]: this member's own value comes first), and the compiler evaluates it with
+ * set semantics: members whose value is Undefined are left out. The [lowered] name holds a `.`, which no identifier
+ * can, so a hand-written `RANK_OF(a, b, c)` keeps its strict meaning.
+ */
+enum class SetFunction(
+    val selfFirst: Boolean,
+) {
+    RANK_OF(true),
+    SUM_OF(false),
+    AVG_OF(false),
+    MAX_OF(false),
+    MIN_OF(false),
+    COUNT_OF(false),
+    ;
+
+    /** The name of this function once lowered over a set's members, e.g. `SUM_OF.SET`. */
+    val lowered: String get() = name + LOWERED_SUFFIX
+
+    companion object {
+        /** Marks a lowered call; `.` cannot appear in a function name a strategy writes. */
+        const val LOWERED_SUFFIX: String = ".SET"
+
+        /** The set function spelled [name] (any case), or null when [name] is not one. */
+        fun named(name: String): SetFunction? = entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+
+        /** The set function whose lowered name is [name], or null when [name] is not a lowered call. */
+        fun lowered(name: String): SetFunction? = entries.firstOrNull { it.lowered == name }
+    }
+}

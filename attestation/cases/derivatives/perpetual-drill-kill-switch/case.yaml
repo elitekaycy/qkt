@@ -5,8 +5,9 @@ why: 'The kill switch lives in the gateway, outside qkt: while it is on, an orde
   still close and book exactly what the venue did. A switch that lets risk through, or a daemon that
   loses its legs or misbooks the close around it, shows here.'
 status: ready
+group: eth-perp
 symbols:
-- DERIBIT:BTC_USDC_PERPETUAL
+- DERIBIT:ETH_USDC_PERPETUAL
 timeframes:
 - 1m
 warmup_bars:

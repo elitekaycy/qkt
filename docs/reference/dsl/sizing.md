@@ -58,6 +58,25 @@ Sizes the position to represent exactly $1000 of notional value (at current pric
 
 **When to use:** consistent dollar exposure across symbols of different price levels. "I want $1000 of BTC and $1000 of EUR regardless of how each is priced."
 
+## The price and the notional sizing uses
+
+"At current price" in `USD`, `PCT OF EQUITY` and `PCT OF BALANCE` is the order's entry estimate when
+the rule fires, not the price the order later fills at:
+
+- a market `BUY`/`SELL` uses the close of the bar that fired the rule (the target stream's latest
+  closed bar when the rule fired on another stream), even though it fills a moment later on the
+  next price (see [Fills](../../concepts/backtest-model.md#fills));
+- `ORDER_TYPE = LIMIT AT p` and `STOP AT p` use their own price `p`, and `STOP AT s LIMIT AT l` uses
+  the stop price `s`;
+- equity and balance are read at that same moment.
+
+`PCT RISK` and `RISK $` measure their stop distance from that same entry estimate. The notional of one
+lot is that price × the instrument's `contractSize` × the quote-to-account rate (1 when the symbol is
+quoted in the account currency), so `SIZING 1000 USD` on a contract-size-10 symbol at 100.50 is
+1000 / (100.50 × 10) = 0.995 lots, which rounds down to 0.99 on a 0.01 step: the fill notional
+`trades.csv` reports (`fillNotional`) is the amount asked for, less the rounding. The quantity is set
+then and never re-priced at the fill.
+
 ## Position-based (for partial closes)
 
 ```qkt

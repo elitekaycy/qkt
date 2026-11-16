@@ -1,0 +1,163 @@
+{
+  "name": "long-limit-sizing-pct-equity-ticks-paper",
+  "proves": "SIZING 5 PCT OF EQUITY on a LIMIT AT 99.80 sizes at the limit price: 500 / 99.80 = 5.01 lots",
+  "dimensions": {
+    "entry": "limit",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "target",
+    "sizing": "pct-equity",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.29",
+      "100.31"
+    ],
+    [
+      90,
+      "99.99",
+      "100.01"
+    ],
+    [
+      105,
+      "99.89",
+      "99.91"
+    ],
+    [
+      120,
+      "99.80",
+      "99.82"
+    ],
+    [
+      135,
+      "99.78",
+      "99.80"
+    ],
+    [
+      150,
+      "99.59",
+      "99.61"
+    ],
+    [
+      165,
+      "99.69",
+      "99.71"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "100.49",
+      "100.51"
+    ],
+    [
+      210,
+      "100.79",
+      "100.81"
+    ],
+    [
+      225,
+      "100.59",
+      "100.61"
+    ],
+    [
+      240,
+      "99.99",
+      "100.01"
+    ],
+    [
+      255,
+      "99.99",
+      "100.01"
+    ],
+    [
+      270,
+      "99.99",
+      "100.01"
+    ],
+    [
+      285,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "pctEquity",
+          "value": "5"
+        },
+        "orderType": {
+          "type": "LIMIT",
+          "price": "99.80"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "sizing.md:69-70: a LIMIT entry sizes at its own price, not the signal close (README Q1)."
+  ]
+}

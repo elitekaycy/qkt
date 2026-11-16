@@ -184,6 +184,13 @@ class GatewayDirectVenueTest {
     }
 
     @Test
+    fun `venue codes map back to the qkt symbols a bot command takes`() {
+        assertThat(venue.qktSymbol(option)).isEqualTo("DERIBIT:BTC_USDC_25DEC26_92000_C")
+        assertThat(venue.qktSymbol(perp)).isEqualTo("DERIBIT:SOL_USDC_PERPETUAL")
+        assertThat(venue.venueSymbol(venue.qktSymbol(perp))).isEqualTo(perp)
+    }
+
+    @Test
     fun `a position stop cannot be modified on a gateway`() {
         val filler = fillOnArrival("105.5")
         venue.place(market(), null, null, "bot-a-1")

@@ -2,7 +2,7 @@
   "name": "long-market-entry-and-stop-same-bar-bars-synthetic-paper",
   "proves": "the entry fills at the bar open and the same bar's low takes the stop at its level",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
-  "timestampGranularity": "bar",
+  "timestampGranularity": "tick",
   "trades": [
     {
       "ts": 1704880860000,
@@ -17,7 +17,7 @@
       "takeProfit": "102.50"
     },
     {
-      "ts": 1704880860000,
+      "ts": 1704880875000,
       "side": "SELL",
       "qty": "0.1",
       "price": "99.50",

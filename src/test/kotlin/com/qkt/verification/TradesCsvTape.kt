@@ -6,8 +6,9 @@ import kotlin.io.path.readLines
 
 /**
  * Reads a run's `trades.csv` into [ActualFill]s. The exit reason is what the artifact states about the fill:
- * a bracket or OCO stop leg's id ends in `-sl`, a target's in `-tp`; a `CLOSE_*`/`REDUCE_*` position effect
- * from any other order is a rule-driven close; everything else opened or added to a position (an entry).
+ * a bracket or OCO stop leg's id ends in `-sl`, a target's in `-tp`; a `REVERSE_*` position effect is a netted
+ * reversal, a `CLOSE_*`/`REDUCE_*` one from any other order a rule-driven close; everything else opened or added to
+ * a position (an entry).
  */
 object TradesCsvTape {
     fun read(file: Path): List<ActualFill> {
@@ -48,6 +49,7 @@ object TradesCsvTape {
         when {
             orderId.endsWith("-sl") -> "stop"
             orderId.endsWith("-tp") -> "target"
+            effect.startsWith("REVERSE") -> "reverse"
             effect.startsWith("CLOSE") || effect.startsWith("REDUCE") -> "close"
             else -> "entry"
         }

@@ -161,10 +161,12 @@ a field the instrument lacks being `null`.
 An MT5 ticket is a number, a gateway ticket its `client_order_id` string. `close`/`cancel` print an array
 (one element per ticket); `modify` prints `{ok,retcode,error}`. `account` prints
 `{ok,equity,balance,currency,margin,freeMargin,marginLevel,openProfit,leverage,login,server,hedging}`;
-`positions` `[{ticket,symbol,side,lots,entry,current,sl,tp,profit,swap,openedAtMs,comment}]`; `orders`
-`[{ticket,symbol,type,lots,price,sl,tp,expiresAt}]`; `quote` `{symbol,bid,ask,spread,timeMs}` (with `contract`
+`positions` `[{ticket,symbol,venueSymbol,side,lots,entry,current,sl,tp,profit,swap,openedAtMs,comment}]`; `orders`
+`[{ticket,symbol,venueSymbol,type,lots,price,sl,tp,expiresAt}]`; `quote` `{symbol,bid,ask,spread,timeMs}` (with `contract`
 after `symbol` when the symbol is an event slot); `bars`
-`[{t,o,h,l,c,v}]`; `history` `[{dealTicket,positionTicket,symbol,side,entry,lots,price,profit,commission,swap,fee,timeMs,comment}]`.
+`[{t,o,h,l,c,v}]`; `history` `[{dealTicket,positionTicket,symbol,venueSymbol,side,entry,lots,price,profit,commission,swap,fee,timeMs,comment}]`.
+In `positions`, `orders` and `history`, `symbol` is the qkt symbol (`EXNESS:XAUUSD`, `KALSHI:KXINXU_26NOV16H1600_T6999.99`),
+the one `quote`, `buy` and `close` take, and `venueSymbol` the venue's own code (`XAUUSDm`, `KXINXU-26NOV16H1600-T6999.99`).
 `markets`
 `[{symbol,family,event,title,category,strikeType,floor,cap,openAt,closeAt,expiry,frequency,takerFeeRate,makerFeeRate,trading}]`
 (`trading` is `full`, `disabled`, `close_only`, ...); `chain` `{event,closeAt,contracts:[{...the markets fields,bid,ask}]}`.

@@ -10,7 +10,7 @@ attestation/
   cases/<lane>/<id>/
     case.yaml             what the case proves, what it needs, how long it may take
     strategy.qkt          the strategy (order and shadow lanes) - optional for daemon/engine cases
-    instruments.yaml      derivatives lane: the `futures:`/`options:` roots the strategy trades
+    instruments.yaml      gateway lanes: the `futures:`/`options:` roots the strategy trades (`instruments: []` when none)
   lib/validate.py         schema check + coverage gate; run by CI
 ```
 
@@ -48,6 +48,7 @@ attestation/
 | `dated_from_root` | Derivatives lane: trade the root's dated contract listed 7 to 45 days from expiry in place of the case's symbol |
 | `expiring_option` | Derivatives lane: trade the option about to expire in place of the case's symbol (below) |
 | `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
+| `group` | Derivatives lane, required on a ready case: the cases of a group run one after another, groups side by side (below) |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 | `shared_account` | Gateway lanes: `false` for a case whose point is qkt refusing others' size on the account; every other case's broker sets `shared_account: true`, since these accounts are shared by design |
 | `continuous_roll` | Derivatives lane: a roll scheduled minutes ahead that the case holds through, and what must come of it (below) |
@@ -67,8 +68,8 @@ refuses one that does not.
 Futures, perpetuals and options run on a VGP gateway account (the Deribit testnet), not the MT5 demo, so
 the lane is opt-in: `run-attestation-catalog.sh --lanes ...,derivatives --deriv-gateway-url URL
 --deriv-expected-login LOGIN` with the trader token in `QKT_DERIV_GATEWAY_KEY`, or `deriv_gateway_url` and
-`deriv_expected_login` in the attestation profile. Its cases run one after another
-(`run-derivatives-lane-case.py`). The account is shared with release attestation and the live soak, so a
+`deriv_expected_login` in the attestation profile. Its cases run (`run-derivatives-lane-case.py`) one after another, or in
+parallel groups (next section). The account is shared with release attestation and the live soak, so a
 case judges and touches only its own strategy's (`scripts/live-validation/lib/strategy_scope.py`): its
 orders and deals by their client order ids (`dsl-<strategy>-`, `ORD-<strategy>-`), and its holding from
 its own deals, since a netting account's positions say nothing of who holds them. A case starts only when
@@ -80,6 +81,35 @@ position), and that replaying the venue's bars (or the recorded chain) makes the
 same legs). `account-balance-equals-realized` reads the account's whole cash, so a deal of another user
 inside the case window makes it `not comparable` (`balanceNote` in `result.json`), neither passed nor
 failed.
+
+### Parallel groups
+
+One account nets one position per instrument, so two cases may overlap only when they trade disjoint instruments (qkt's
+shared-account check judges every code a daemon trades, so a second daemon moving one is a refusal, and a second case's
+fills would be a wrong verdict). Each ready case names a `group:`; a group's cases run one after another and the groups side
+by side. A case's claims are the instrument classes it trades, derived from the case itself (`scripts/live-validation/lib/deriv_parallel.py`):
+`ROOT:front` (a `@front` roll's nearest two expiries), `ROOT:dated` (a dated contract 7 to 45 days out), `ROOT:perpetual`,
+`ROOT:options`. `validate.py` refuses two groups that share a claim. Two checks keep the classes apart at run time: a roll
+refuses a pair that reaches 6 days (so it never trades what a dated case picks, from 7), and every case takes a lock per claim
+(`lib/claim_lock.py`), so the cross lane's Deribit leg (the BTC perpetual) queues behind the group holding it.
+
+| group | gateway | cases |
+|---|---|---|
+| `btc-perp` | base | `perpetual-bracket-timed-exit`, `-drill-flat-restart`, `-drill-gateway-outage`, `-drill-qkt-restart` |
+| `btc-front` | base | `continuous-roll-carries`, `-far-book-stops` |
+| `eth-front` | base, and its own for `-refused-leg-resumes` | `continuous-roll-refused-leg-resumes`, `-restored-moves-collar` (ETH_USDC) |
+| `btc-dated` | base | `dated-future-bracket-timed-exit`, `dated-future-margin-floor-refuses-entry` |
+| `eth-perp` | its own | `perpetual-drill-kill-switch` (ETH_USDC_PERPETUAL) |
+| `btc-options` | base | `option-put-spread-open-close` |
+
+Only BTC_USDC and ETH_USDC have a two-sided book and a daily chain on the testnet (the other USDC roots' dailies are empty or
+wide, a roll needs both), so a case moves to ETH only where it must (`kill_switch` cases, and the roll whose group they share).
+`kill_switch` is per gateway process, and a daemon refuses to start while a switch is on, so each such case runs against
+a gateway of its own: `run-attestation-catalog.sh --deriv-drill-gateway-url URL` once per such case (`deribit-gateway-pool.sh up`
+starts them, same account and key), `--deriv-parallel N` (default 4) caps the groups at once. `gateway_outage` is not one of
+them: it cuts a loopback proxy the runner owns, never the gateway; `qkt_restart` touches only the daemon. Without the drill
+gateways the lane runs one case at a time, as before. A case that reads the account's whole balance
+(`account-balance-equals-realized`) stays `scheduled`: another group's deals always make it "not comparable".
 
 ### The bybit lane
 
@@ -93,6 +123,31 @@ lane is opt-in with `run-attestation-catalog.sh --lanes ...,bybit --bybit-gatewa
 `bybit_expected_login` in the attestation profile. It runs beside the derivatives lane: the accounts are
 separate. Funding, which Bybit charges at 00:00, 08:00 and 16:00 UTC, is proven by the soak in
 `scripts/live-validation/funding-soak-bybit`, run before one of those times.
+
+### The kalshi lane
+
+`cases/kalshi/` holds binary event contracts (yes/no markets that pay 1 or 0) on a Kalshi demo account behind a
+gateway running the qkt-venue-gateway's Kalshi adapter, reached as a `type: gateway` broker named `kalshi`; qkt has
+no Kalshi code of its own. The runner is the derivatives lane's `run-derivatives-lane-case.py`; the lane is opt-in
+with `run-attestation-catalog.sh --lanes ...,kalshi --kalshi-gateway-url URL --kalshi-expected-login LOGIN` (the
+gateway's `account_login`) and the trader token in `QKT_KALSHI_GATEWAY_KEY` (the guardian token in
+`QKT_KALSHI_GUARDIAN_KEY` for a kill-switch drill), or `kalshi_gateway_url` and `kalshi_expected_login` in the
+attestation profile. Its strategies trade an event slot (`KALSHI:KXDEMOFUTHOURLY@front.atm`, the demo's hourly
+test series), so no case names a contract, and a live slot reads its family from the gateway's listing, so
+`instruments.yaml` declares nothing.
+
+The demo's book is one-sided (a maker's bid at 0.01, usually no offer), so no case may need both sides: a position
+is opened by selling into the bid (NO bought at 1 less the bid, at most 0.99 a contract plus the fee) and closed
+only by the venue settling the event. That happens at the event's own time, so `kalshi-event-held-to-settlement`
+is `scheduled`: run on its own at any hour (a new event opens every hour), it sells one contract, holds it until
+the hour's result is in (up to 70 minutes; its budget is 5400 s) and asserts what
+[holding through an expiry](#holding-through-an-expiry) asserts, the settlement price being the outcome, 1 or 0:
+sold at 0.01 with a 0.0007 fee, the venue net is `0.01 - 0.0007 = 0.0093` when the event resolves NO and
+`0.01 - 0.0007 - 1 = -0.9907` when it resolves YES. A run stopped while it holds cannot be swept flat against an
+empty offer; the account is flat again once the event settles. `test_event_settlement.py` runs the whole case
+offline against a Kalshi-shaped fake gateway. `kalshi-event-shadow` (event fields and `norm_cdf` live against
+replay) is `planned`: a gateway lane case is judged by its fills, with no live-against-replay value comparison, so
+the lane has no `ready` case yet and a release that names the gateway only checks it in the preflight.
 
 ### Holding through an expiry
 

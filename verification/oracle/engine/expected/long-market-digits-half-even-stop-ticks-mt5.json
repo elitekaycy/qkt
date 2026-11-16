@@ -1,0 +1,35 @@
+{
+  "name": "long-market-digits-half-even-stop-ticks-mt5",
+  "proves": "spreadPoints 3 puts fills on half a point; digits 2 rounds half to even: buy 100.525 -> 100.52, sell 99.485 -> 99.48",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.52",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.52",
+      "takeProfit": "102.52"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.48",
+      "realized": "-0.104",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.104",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "backtest-model.md:121-122: mt5-sim rounds fill prices to digits half to even (README Q5)."
+  ]
+}

@@ -137,6 +137,14 @@ class PreflightTest(unittest.TestCase):
         world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": False, "kill_switch": {}}})
         self.assertIn("venue link is down", self.failed(world)["alpaca-gateway"])
 
+    def test_a_kalshi_gateway_in_the_profile_needs_its_token_and_is_checked(self):
+        self.p.update(kalshi_gateway_url="http://127.0.0.1:2", kalshi_expected_login="k")
+        world = Fake({"/v1/health": {"account_login": "other", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}})
+        failed = self.failed(world)
+        self.assertIn("QKT_KALSHI_GATEWAY_KEY", failed["tokens"])
+        self.assertNotIn("QKT_KALSHI_GUARDIAN_KEY", failed["tokens"])  # no ready case of the lane drills the kill switch
+        self.assertIn("logged into other, expected k", failed["kalshi-gateway"])
+
     def test_a_refused_token_is_not_unreachable(self):
         self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
         world = Fake({"/v1/health": urllib.error.HTTPError("u", 401, "no", {}, None)})

@@ -1,0 +1,144 @@
+{
+  "name": "short-stoplimit-marketable-ticks-mt5",
+  "proves": "a sell stop-limit whose trigger bid 99.94 already satisfies its 99.90 limit fills on that tick at the bid",
+  "dimensions": {
+    "entry": "stop-limit",
+    "exit": "bracket-by",
+    "side": "short",
+    "fills": "ticks",
+    "path": "target",
+    "sizing": "fixed",
+    "costs": "spread",
+    "broker": "mt5-sim",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.19",
+      "100.21"
+    ],
+    [
+      90,
+      "99.94",
+      "99.96"
+    ],
+    [
+      105,
+      "99.79",
+      "99.81"
+    ],
+    [
+      120,
+      "99.49",
+      "99.51"
+    ],
+    [
+      135,
+      "98.99",
+      "99.01"
+    ],
+    [
+      150,
+      "98.92",
+      "98.94"
+    ],
+    [
+      165,
+      "99.09",
+      "99.11"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "STOP_LIMIT",
+          "stop": "100.00",
+          "limit": "99.90"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "actions.md:133-135: the limit fills on the tick that trips the stop when that tick already satisfies it (README Q6)."
+  ]
+}

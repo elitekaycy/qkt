@@ -1,0 +1,35 @@
+{
+  "name": "long-market-sizing-usd-gap-open-ticks-paper",
+  "proves": "SIZING 1000 USD sizes at the signal close 100.50 (9.95 lots) and fills on the next tick at 101.00",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "9.95",
+      "price": "101.00",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "100.00",
+      "takeProfit": "103.00"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "9.95",
+      "price": "103.01",
+      "realized": "19.9995",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "19.9995",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "sizing.md:66-68 sizes a market order at the signal bar's close; backtest-model.md:89-96 fills it on the tick that closed the bar (README Q1, Q2)."
+  ]
+}

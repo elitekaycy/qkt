@@ -49,6 +49,7 @@ class BotVenuesTest {
             assertThat(opened.broker).isEqualTo("exness")
             assertThat(opened.venue).isInstanceOf(Mt5DirectVenue::class.java)
             assertThat(opened.venue.venueSymbol("EXNESS:XAUUSD")).isEqualTo("XAUUSDm")
+            assertThat(opened.venue.qktSymbol("XAUUSDm")).isEqualTo("EXNESS:XAUUSD")
         }
     }
 
