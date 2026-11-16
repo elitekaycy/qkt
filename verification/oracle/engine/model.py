@@ -227,7 +227,7 @@ class Action:
     stack: Optional[Stack] = None  # stack.md
     tiers: tuple = ()  # of Tier (stack-at.md)
     exit_after_sec: Optional[int] = None  # exit-after.md
-    legs: tuple = ()  # kind ocoEntry: two entry Actions (actions.md:223-238)
+    legs: tuple = ()  # kind ocoEntry: two entry Actions (actions.md:244-259)
 
     @staticmethod
     def parse(raw: dict) -> "Action":

@@ -55,7 +55,7 @@ class Pending:
 
 def enter(st, action: Action, bar, p, group: Optional[int] = None) -> None:
     """Sizing from the signal bar (README Q1) then the order: MARKET fills now; LIMIT/STOP/STOP_LIMIT rest
-    (actions.md:104-123); TRAILING rests engine-held (add-stop-loss.md:79-83)."""
+    (actions.md:112-135); TRAILING rests engine-held (add-stop-loss.md:79-83)."""
     ex = action.exit
     ot = action.order_type
     # sizing.md:61-71: the entry estimate is the signal close for a market order, the order's own price otherwise.
@@ -84,7 +84,7 @@ def enter(st, action: Action, bar, p, group: Optional[int] = None) -> None:
 
 
 def enter_oco(st, action: Action, bar, p) -> None:
-    """actions.md:223-238: "Submits two pending entry orders linked one-cancels-other. When either leg fills,
+    """actions.md:244-259: "Submits two pending entry orders linked one-cancels-other. When either leg fills,
     the broker auto-cancels the other." Each leg carries its own BRACKET."""
     st.next_group += 1
     for leg in action.legs:
@@ -157,7 +157,7 @@ def triggered(o: Pending, tick) -> bool:
 def work_pending(st, p) -> None:
     """Resting entries in placement order, then each live STACK's next layer (stack.md:179: "Layers in the list
     trigger in order"). Two OCO_ENTRY legs reached on one print: "the leg with the closer trigger to the candle's
-    open fills first" (actions.md:256) and the other is cancelled (actions.md:225)."""
+    open fills first" (actions.md:277) and the other is cancelled (actions.md:246)."""
     winners = _oco_winners(st, p)
     for o in st.pending:
         if not o.live:

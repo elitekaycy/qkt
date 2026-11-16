@@ -163,6 +163,6 @@
     }
   ],
   "notes": [
-    "actions.md:256: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."
+    "actions.md:277: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."
   ]
 }

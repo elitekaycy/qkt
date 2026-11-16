@@ -474,7 +474,7 @@ CASES: list = [
                 position=None,
             )
         ],
-        notes=["actions.md:256 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."],
+        notes=["actions.md:277 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."],
     ),
     Case(
         "oco-entry-gap-through-both-legs-bars-synthetic-paper",
@@ -494,7 +494,7 @@ CASES: list = [
             )
         ],
         fill_mode="bars-synthetic",
-        notes=["actions.md:256: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."],
+        notes=["actions.md:277: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."],
     ),
     Case(
         "oco-entry-straddle-dual-breach-bars-synthetic-paper",
@@ -514,7 +514,7 @@ CASES: list = [
             )
         ],
         fill_mode="bars-synthetic",
-        notes=["The SELL trigger is closer to the 100.30 open (actions.md:256) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."],
+        notes=["The SELL trigger is closer to the 100.30 open (actions.md:277) and the flat bar replays its low first (backtest-data.md:25-27), so both rules pick the SELL (README QB9)."],
     ),
     # --- two rules on one bar ----------------------------------------------------------------------------------
     Case(

@@ -126,7 +126,7 @@ the rewrite (`gen.py --check` passes on them byte for byte). Line numbers at ori
 | EXIT AFTER closes the entry's own leg at market on the first tick at or after fill time + duration; a bracket is cancelled first, a stop or target filling first drops the timer; a pending entry's timer starts at its fill; each STACK_AT leg is timed from its own fill. | `docs/reference/dsl/exit-after.md:9-11,27-38` |
 | A TRAILING entry ratchets its extreme (low-water for a buy, high-water for a sell) and fires a market order when price reverses by the distance; `PCT` is whole percentage points. | `docs/how-to/add-stop-loss.md:65,79-83`; `actions.md:46` |
 | An armed trailing stop sits at entry -+ distance, arms once MFE reaches the threshold (0 trails from the fill), then sits at the running favourable extreme -+ distance; it never disarms. | `docs/reference/dsl/bracket.md:152-169` |
-| OCO_ENTRY places two pending entries; the first to fill cancels the other; each carries its own bracket. Two legs reached together: "the leg with the closer trigger to the candle's open fills first". | `docs/reference/dsl/actions.md:223-238,172` |
+| OCO_ENTRY places two pending entries; the first to fill cancels the other; each carries its own bracket. Two legs reached together: "the leg with the closer trigger to the candle's open fills first". | `docs/reference/dsl/actions.md:244-259,172` |
 
 ### Questions where the docs are silent (tranche B)
 
@@ -152,9 +152,9 @@ The scenarios are built so the reading below does not change their fills; each i
   reversal both PCT bases trip on the same tick.
 - **QB7 Armed trailing extreme.** `bracket.md:165` "running favorable extreme since fill" does not name the quote.
   The oracle uses the mark (mid, as MFE in `stack-at.md:89-90`); every trigger tick is through the level on either.
-- **QB8 OCO_ENTRY tie-break on ticks.** `actions.md:256` states it for a candle. On ticks the oracle takes the open
+- **QB8 OCO_ENTRY tie-break on ticks.** `actions.md:277` states it for a candle. On ticks the oracle takes the open
   of the gap tick's bar; the closer leg is listed first so submission order agrees.
-- **QB9 OCO_ENTRY dual breach on the synthetic path.** `actions.md:256` (closer to the open fills first) and
+- **QB9 OCO_ENTRY dual breach on the synthetic path.** `actions.md:277` (closer to the open fills first) and
   `backtest-data.md:25-27` (a flat bar replays its low before its high) disagree when the open is nearer the high.
   The scenario has the open nearer the low, where both pick the same leg.
 - **QB10 Not covered on purpose:** a gap through two STACK rungs on one tick (`stack.md:179` "waits for the previous
