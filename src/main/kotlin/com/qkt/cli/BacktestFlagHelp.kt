@@ -1,5 +1,8 @@
 package com.qkt.cli
 
+import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.broker.TakeProfitFill
+
 /**
  * Plain-language flag descriptions for the backtest family (`backtest`, `sweep`, `walkforward`,
  * `research`), which share one option set (#1380). Written for non-experts: what the flag does,
@@ -46,17 +49,17 @@ internal object BacktestFlagHelp {
             "account-currency" to "booking currency code, e.g. --account-currency USD",
             "fx-missing-policy" to "warn or fail on a missing FX rate (default fail)",
             "fx-source" to "FX rate source for conversion",
-            "seed" to "deterministic seed, e.g. --seed 7 (default random)",
+            "seed" to "seed for random slippage, e.g. --seed 7 (default 42: runs repeat exactly)",
             "execution" to "execution preset name from config, e.g. --execution mt5-realistic",
             "execution-latency" to "order delay model, e.g. --execution-latency fixed:100ms",
             "order-spacing" to "minimum spacing between orders, e.g. --order-spacing 500ms",
             "stop-latency" to "stop-order delay, e.g. --stop-latency 300ms",
-            "tp-fill" to "take-profit fill model: level or touch",
+            "tp-fill" to tpFillHelp(),
             "slippage" to "slippage model, e.g. --slippage fixed-points:3",
             "reject-every" to "chaos testing: reject every Nth order (default off)",
-            "partial-fill" to "chaos testing: split fills into partials (default off)",
+            "partial-fill" to "chaos testing: fill each order in two slices, e.g. --partial-fill 0.5 (default off)",
             "dataset" to "pinned dataset snapshot to replay instead of the live store",
-            "position-mode" to "netting or hedging position model",
+            "position-mode" to "netting or hedging position model (default hedging)",
             "funding" to "perpetual funding: on (default) or off",
             "commission-per-lot" to
                 "override every symbol's commission, e.g. --commission-per-lot 7 (account currency per 1.0 lot per side)",
@@ -88,4 +91,11 @@ internal object BacktestFlagHelp {
             "verbose" to "full output plus engine logs (default is the short summary)",
             "no-report" to "write no report bundle to disk",
         )
+
+    /** The `--tp-fill` line, built from [TakeProfitFill] so it names exactly what the parser accepts (#1720). */
+    private fun tpFillHelp(): String {
+        val default = ExecutionSimulationConfig().takeProfitFill
+        val values = TakeProfitFill.entries.map { if (it == default) "${it.id} (default)" else it.id }
+        return "take-profit fill model for a gap-crossed target: " + values.joinToString(" or ")
+    }
 }
