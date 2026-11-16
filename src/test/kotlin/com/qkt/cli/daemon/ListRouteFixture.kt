@@ -28,6 +28,7 @@ abstract class ListRouteFixture {
         stateDir: StateDir,
         streamStops: List<com.qkt.broker.StreamStop> = emptyList(),
         childMeta: (String) -> StrategyHandle.ChildMeta? = { null },
+        streamBrokers: Map<String, String> = emptyMap(),
     ): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
@@ -51,6 +52,8 @@ abstract class ListRouteFixture {
                     override fun flatten() = Unit
 
                     override fun streamStops() = streamStops
+
+                    override fun streamBrokers(): Map<String, String> = streamBrokers
                 }
             val server =
                 ObservabilityServer(
