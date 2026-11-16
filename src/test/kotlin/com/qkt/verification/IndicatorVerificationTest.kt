@@ -10,7 +10,8 @@ import org.junit.jupiter.api.TestFactory
  * Every registered indicator and numeric function against the independent oracle in
  * `verification/oracle/indicators` (TA-Lib / numpy / pandas / scipy, see `gen.py`): one dynamic test per
  * fixture, every bar compared, `null` (Undefined) positions included, at the tolerance the fixture states.
- * Fixtures that expose a known bug are held in [IndicatorVerificationKnownBugsTest] instead of here.
+ * A fixture that exposes a bug is excluded from the factory and `@Disabled` with the reason in a sibling
+ * test class until the fix lands; none is excluded at present.
  */
 class IndicatorVerificationTest {
     @TestFactory
@@ -18,7 +19,6 @@ class IndicatorVerificationTest {
         val series = VerificationFixtures.series()
         return VerificationFixtures
             .indicatorFixtures()
-            .filterNot { (name, _) -> name in IndicatorVerificationKnownBugsTest.KNOWN_BUGS }
             .map { (name, fixture) -> dynamicTest(name) { verify(name, fixture, series.getValue(fixture.series)) } }
     }
 

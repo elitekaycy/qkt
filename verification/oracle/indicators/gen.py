@@ -495,19 +495,23 @@ def vwap_ticks(f: pd.DataFrame, n: int) -> np.ndarray:
 
 def session_vwap(f: pd.DataFrame, anchor_hour: int):
     """Cumulative sum(tp*v)/sum(v) since the last anchorHour:00 UTC, with the volume-weighted population stdev
-    of tp around it. A session whose anchor candle was not observed stays null until the next anchor."""
+    of tp around it, computed in two passes over the session's bars (E[tp^2] - E[tp]^2 cancels at large prices
+    and reads a spurious 1e-3 on a one-bar session). A session whose anchor candle was not observed stays null
+    until the next anchor."""
     vwap, sd = nan(len(f)), nan(len(f))
-    session, ok, sv, spv, sp2v = None, False, 0.0, 0.0, 0.0
+    session, ok, tps, vols = None, False, [], []
     for i, (s, h, l, c, v) in enumerate(zip(f["start"], f["high"], f["low"], f["close"], f["volume"])):
         idx = (s - anchor_hour * MS_HOUR) // MS_DAY
         if idx != session:
-            session, ok, sv, spv, sp2v = idx, (s - anchor_hour * MS_HOUR) % MS_DAY == 0, 0.0, 0.0, 0.0
+            session, ok, tps, vols = idx, (s - anchor_hour * MS_HOUR) % MS_DAY == 0, [], []
         if ok and v > 0:
-            tp = (h + l + c) / 3
-            sv, spv, sp2v = sv + v, spv + tp * v, sp2v + tp * tp * v
-        if sv > 0:
-            vwap[i] = spv / sv
-            sd[i] = math.sqrt(max(sp2v / sv - vwap[i] ** 2, 0.0))
+            tps.append((h + l + c) / 3)
+            vols.append(v)
+        if vols:
+            sv = math.fsum(vols)
+            mean = math.fsum(tp * w for tp, w in zip(tps, vols)) / sv
+            vwap[i] = mean
+            sd[i] = math.sqrt(math.fsum(w * (tp - mean) ** 2 for tp, w in zip(tps, vols)) / sv)
     return vwap, sd
 
 
