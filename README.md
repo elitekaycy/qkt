@@ -42,6 +42,12 @@ live. Time, ids and randomness are injected, so identical inputs give identical 
 It trades CFDs, futures, perpetuals and options. Backtest and live differences are listed, not hidden, in the
 [parity register](docs/parity/backtest-vs-live.md).
 
+<p align="center">
+  <img alt="qkt-insights: balance, open positions, performance, calendar and symbols traded for a running instance" src="docs/assets/qkt-insights-dashboard.webp" width="840">
+</p>
+
+<p align="center"><sub>qkt-insights, the dashboard that reads qkt's event stream. Account details in this screenshot are placeholders.<br/><a href="https://github.com/elitekaycy/qkt-insights/blob/dev/docs/PAGES.md">Every page</a></sub></p>
+
 <br/>
 
 ## Quick start
