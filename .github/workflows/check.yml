@@ -89,8 +89,11 @@ jobs:
       - name: Install diff-coverage tools
         if: steps.changes.outputs.full == 'true'
         run: pip install --quiet -r config/coverage-requirements.txt
+      # Three test JVMs in parallel (qkt.testing.gradle.kts); set QKT_TEST_FORKS to 1 to run the suite serially.
       - name: Build + test + ktlint + coverage floor
         if: steps.changes.outputs.full == 'true'
+        env:
+          QKT_TEST_FORKS: '3'
         run: ./gradlew build koverXmlReport koverHtmlReport --no-daemon
       # Every line a pull request adds or edits under src/main must run under test
       # (docs/contributing/test-coverage.md). Kover's XML report is read locally; nothing is uploaded.
