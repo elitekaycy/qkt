@@ -43,10 +43,10 @@ It trades CFDs, futures, perpetuals and options. Backtest and live differences a
 [parity register](docs/parity/backtest-vs-live.md).
 
 <p align="center">
-  <img alt="qkt-insights: balance, open positions, performance, calendar and symbols traded for a running instance" src="docs/assets/qkt-insights-dashboard.webp" width="840">
+  <img alt="qkt-insights Home: balance, equity, today, open risk, drawdown, open positions, strategies and realized P&L for a demo account" src="docs/assets/qkt-insights-dashboard.webp" width="840">
 </p>
 
-<p align="center"><sub>qkt-insights, the dashboard that reads qkt's event stream. Account details in this screenshot are placeholders.<br/><a href="https://github.com/elitekaycy/qkt-insights/blob/dev/docs/PAGES.md">Every page</a></sub></p>
+<p align="center"><sub>qkt-insights, the dashboard that reads qkt's event stream. Demo account: three strategies replayed from qkt backtests, no real money.<br/><a href="https://github.com/elitekaycy/qkt-insights">About qkt-insights</a></sub></p>
 
 <br/>
 
