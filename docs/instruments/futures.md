@@ -66,7 +66,10 @@ a roll still ahead is priced at its own minute by the live session that reaches 
 from the venue's bars, and appended to the history (a session ignores any record that
 was dated after it started, as an older fetch wrote them). The series is adjusted forward from the first
 measured roll; `roll.anchor` keeps a later contract at raw prices instead, for a
-panama series that would otherwise fall below zero (crude across 2020). Live, a
+panama series that would otherwise fall below zero (crude across 2020). A fetch re-prices
+every roll it can from the stored bars, which can move the series a session's open positions were
+booked in: the next start books that move on each open position as a cost (`cost:series rebased ...`,
+quantity x multiplier x the contract's shift change), so their P&L stays the contract legs'. Live, a
 continuous stream trades on a `type: gateway` account (parity rows A53-A57). A strategy whose
 roll failed is stopped on the stream: every order is refused, even after a restart, until a
 [`qkt resume`](../reference/cli-commands.md) finds nothing of it left on the stream and clears the stop.

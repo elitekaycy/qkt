@@ -67,7 +67,8 @@ internal class StreamLane(
             hearsOldContract = rollQuoteTaps != null,
         )
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
-    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
+    private val rebase = LaneSeriesRebase(chainOf)
+    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled, rebase)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val collared = rollPriceBand != null
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space, collared)
@@ -109,6 +110,7 @@ internal class StreamLane(
     /** The session is restored: the venue is told so and the lane goes on ([LaneRecovery.ready]). */
     fun ready() {
         recovery.ready()
+        rebase.publish(bus)
         save()
     }
 

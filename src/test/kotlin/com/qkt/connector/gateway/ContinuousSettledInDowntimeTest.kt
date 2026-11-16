@@ -13,6 +13,7 @@ import com.qkt.common.Side
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.BrokerEvent
+import com.qkt.events.CostIncurred
 import com.qkt.events.TickEvent
 import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
@@ -63,6 +64,7 @@ internal class ContinuousSettledInDowntimeTest {
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val engine = java.util.concurrent.CopyOnWriteArrayList<BrokerEvent.OrderFilled>()
         val answered = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val costs = java.util.concurrent.CopyOnWriteArrayList<CostIncurred>()
         lateinit var venueBus: EventBus
         private val registry = DailyExpiryChain.registry(store)
         private val directory = requireNotNull(registry.futures())
@@ -95,6 +97,7 @@ internal class ContinuousSettledInDowntimeTest {
 
         init {
             bus.subscribe<BrokerEvent.OrderFilled> { engine += it }
+            bus.subscribe<CostIncurred> { costs += it }
             bus.subscribe<BrokerEvent.OrderAccepted> { answered += it.clientOrderId }
             bus.subscribe<BrokerEvent.OrderRejected> { answered += it.clientOrderId }
         }
@@ -119,8 +122,8 @@ internal class ContinuousSettledInDowntimeTest {
         atMs: Long,
     ) = Tick("PAPER_DERIBIT:$contract", BigDecimal(price), atMs, bid = BigDecimal(price), ask = BigDecimal(price))
 
-    /** Holds 0.03 long on 5NOV26, the front on 11-03 after the 08:00 roll, then goes down. */
-    private fun holdsBeforeTheDowntime() {
+    /** Holds 0.03 long on 5NOV26, the front on 11-03 after the 08:00 roll, then goes down; returns that process. */
+    private fun holdsBeforeTheDowntime(): Process {
         val at = ms("2026-11-03T09:00:00Z")
         val before = Process(at, listOf(quote("ETH_USDC_5NOV26", "2350", at)))
         before.startsTrading()
@@ -129,6 +132,7 @@ internal class ContinuousSettledInDowntimeTest {
             BrokerEvent.OrderFilled("entry", "v", entry, Side.BUY, BigDecimal("2350"), BigDecimal("0.03"), "s", at),
         )
         fake.venue.settlements += WireSettlement("ETH_USDC_5NOV26", "2413.83", ms("2026-11-05T08:00:00Z"))
+        return before
     }
 
     private fun restart(): Process {
@@ -171,5 +175,44 @@ internal class ContinuousSettledInDowntimeTest {
         Thread.sleep(200)
         assertThat(again.settles()).isEmpty()
         assertThat(fake.submits.single().symbol).isEqualTo("ETH_USDC_7NOV26")
+    }
+
+    /**
+     * qkt#1683: soak_k31's cycle booked 0.09 more than the venue. While the daemon was down, `qkt fetch --rolls`
+     * rebuilt the history and priced an earlier roll 3 points apart from the record the entry was booked through, so
+     * the settlement after the restart mapped into a series 3 points above the entry's: 0.03 x 3 = 0.09. The move is
+     * booked as a cost on the open position, so the cycle nets the contract legs exactly.
+     */
+    @Test
+    fun `a roll history rebuilt in the downtime books the series move, so the cycle nets the venue's`() {
+        val before = holdsBeforeTheDowntime()
+        val rolls = RollHistoryStore(dir.resolve("rolls"))
+        val history = requireNotNull(rolls.read(DailyExpiryChain.root.root))
+        val first = ms("2026-11-02T08:00:00Z")
+        rolls.write(
+            history.copy(
+                rolls =
+                    history.rolls.map {
+                        if (it.atMs == first && it.from == "ETH_USDC_3NOV26") {
+                            it.copy(fromPrice = BigDecimal(it.fromPrice).add(BigDecimal(3)).toPlainString())
+                        } else {
+                            it
+                        }
+                    },
+            ),
+        )
+
+        val after = restart()
+
+        val entry = before.engine.single { it.clientOrderId == "entry" }.price
+        val settle = after.settles().single().price
+        val continuous = settle.subtract(entry).multiply(BigDecimal("0.03"))
+        val cost = after.costs.single { it.strategyId == "s" }
+        assertThat(cost.symbol).isEqualTo(FRONT)
+        assertThat(cost.amount).isEqualByComparingTo("0.09")
+        assertThat(continuous.subtract(cost.amount)).isEqualByComparingTo(
+            BigDecimal("2413.83").subtract(BigDecimal("2350")).multiply(BigDecimal("0.03")),
+        )
+        assertThat(restart().costs).isEmpty()
     }
 }
