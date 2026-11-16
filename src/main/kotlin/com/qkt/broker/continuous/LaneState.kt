@@ -82,7 +82,7 @@ internal class LaneState(
                 ?.filterIsInstance<CarryStep.Waiting>()
                 ?.map { it.leg.id }
                 .orEmpty()
-        rebase.restore(saved.contract?.let(::index), saved.contractShift, positions)
+        rebase.restore(saved.contract?.let(::index), saved.contractShift)
         return RestoredLane(saved.contract?.let(::index), run, saved.legs.map { it.leg }.filter { it.id !in awaited })
     }
 

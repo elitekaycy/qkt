@@ -2,80 +2,119 @@ package com.qkt.broker.continuous
 
 import com.qkt.bus.EventBus
 import com.qkt.derivatives.futures.ContinuousChain
+import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.CostIncurred
+import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * Keeps a live lane's booked P&L on the contract legs when its stream's series moved under an open position (#1683).
+ * Keeps a lane's booked P&L and working orders on the contract legs when its stream's series moves under them
+ * (#1683, #1754).
  *
- * The engine holds each strategy's position at continuous prices, mapped through the contract's shift as the roll
- * history gave it when the position was booked. A roll history rebuilt while the daemon was down (`qkt fetch --rolls`
- * re-prices every roll from the stored bars) can give the same contract another shift, and every exit after the
- * restart is then mapped by the new one: a long 0.03 whose contract's shift grew 3 points books 0.09 more than the
- * venue paid. So each save records the shift of the contract the lane is on ([savedShift]); a restart that finds the
- * chain shifting that contract by a different amount ([restore]) books what the move adds to each open position as
- * a cost, `quantity × multiplier × (new shift − saved shift)`, once the session is restored ([publish]). Until then
- * the saved shift stays the one saved, so a crash in between books it on the next start instead.
+ * The engine holds each strategy's position, and each order's levels, at continuous prices: contract prices plus the
+ * contract's shift as the roll history gave it. `qkt fetch --rolls` re-prices every roll from the stored bars, so a
+ * rebuilt history can give the same contract another shift. A session reads it at its next start, or, running, at its
+ * next live roll measurement. Mapped by the new shift, every exit would book the move on top of the venue's P&L (a long
+ * 0.03 whose contract's shift grew 3 points books 0.09 more than the venue paid), and every working order would be
+ * sent the move away from where it rests.
  *
- * Only panama streams take orders ([orderRefusal]), so a position, and so a cost, only ever exists on an additive
- * shift.
+ * So the lane maps its contract by the shift its positions stand at ([space]), saved with the lane ([savedShift]) and
+ * restored after a restart ([restore]). Once the session is [active], a chain that shifts that contract differently
+ * ([check]) books the move on each open position as a cost, `quantity × multiplier × (new shift − old shift)`, moves
+ * each working order on the contract the same amount in the series, so its venue order stays at the contract price it
+ * rests at, and maps by the chain's shift from then on. The venue's orders are left alone: they rest where the strategy
+ * put them against the market it saw, and their fills now map into the series the engine marks in.
+ *
+ * Only panama streams take orders ([orderRefusal]), so a position or an order only ever stands on an additive shift.
  */
 internal class LaneSeriesRebase(
     private val chainOf: () -> ContinuousChain,
+    private val bus: EventBus,
+    private val positions: Map<String, BigDecimal>,
+    private val orders: ContinuousOrderMap,
+    private var active: Boolean,
+    private val moved: () -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(LaneSeriesRebase::class.java)
 
-    /** The shift restored and not yet booked over, on the contract index it was saved for; null when none waits. */
-    private var held: Pair<Int, BigDecimal>? = null
-    private var costs: List<CostIncurred> = emptyList()
+    /** The contract the lane is on and the shift its positions and orders stand at; null before its first. */
+    private var basis: Pair<Int, BigDecimal>? = null
 
-    /**
-     * The shift the lane's positions stand at on contract [index], to save; null before its first contract or past the
-     * measured history.
-     */
+    /** The chain last compared with [basis]: a chain is rebuilt whenever its history changes. */
+    private var seen: ContinuousChain? = null
+
+    /** Contract [index]'s mapping: at the shift the lane stands at on its contract, else the chain's. */
+    fun space(index: Int): PriceSpace {
+        val chain = chainOf()
+        val at = basis?.takeIf { it.first == index } ?: return chain.spaceFor(index)
+        return PriceSpace(chain.adjust, at.second, chain.root.tickSize)
+    }
+
+    /** The shift to save for contract [index]; null before its first contract or past the measured history. */
     fun savedShift(index: Int?): BigDecimal? {
-        held?.takeIf { it.first == index }?.let { return it.second }
+        basis?.takeIf { it.first == index }?.let { return it.second }
         return index?.takeIf(chainOf()::covers)?.let { chainOf().spaceFor(it).shift }
     }
 
-    /**
-     * Compares the [saved] shift of contract [index] with the chain's: when they differ, each of [positions] (signed,
-     * by strategy) is owed what the move adds to its continuous P&L, held as a cost until [publish].
-     */
+    /** The lane is on contract [index] at the [saved] shift (the chain's when an older qkt saved none). */
     fun restore(
         index: Int?,
         saved: BigDecimal?,
-        positions: Map<String, BigDecimal>,
     ) {
+        if (saved == null) return track(index)
+        basis = index?.let { it to saved }
+    }
+
+    /** The lane is now on contract [index], at the chain's shift. */
+    fun track(index: Int?) {
         val chain = chainOf()
-        if (index == null || saved == null || !chain.covers(index)) return
+        seen = chain
+        basis = index?.takeIf(chain::covers)?.let { it to chain.spaceFor(it).shift }
+    }
+
+    /** The session is restored: the move a restart found is booked now, and later ones as they come. */
+    fun activate() {
+        active = true
+        check()
+    }
+
+    /** Books a move of the lane's contract in a chain rebuilt since the last look, when active. */
+    fun check() {
+        val chain = chainOf()
+        if (!active || chain === seen) return
+        seen = chain
+        val (index, old) = basis ?: return
+        if (!chain.covers(index)) return
         val now = chain.spaceFor(index).shift
-        val delta = now.subtract(saved)
+        val delta = now.subtract(old)
         if (delta.signum() == 0) return
         val contract = chain.contractSymbol(index)
         log.warn(
-            "{} roll history moved {} from shift {} to {} since the lane saved it; booking it on its open positions",
+            "{} roll history moved {} from shift {} to {}; booking it on open positions and moving working orders",
             chain.symbol,
             contract,
-            saved.toPlainString(),
+            old.toPlainString(),
             now.toPlainString(),
         )
-        held = index to saved
-        val reason = "series rebased $contract ${saved.toPlainString()}->${now.toPlainString()}"
-        costs =
-            positions
-                .filterValues { it.signum() != 0 }
-                .map { (id, quantity) ->
-                    val amount = quantity.multiply(chain.root.multiplier).multiply(delta)
-                    CostIncurred(id, chain.symbol, amount, reason, null)
-                }
+        basis = index to now
+        orders.on(index).forEach { orders.add(it.copy(request = it.request.shifted(delta))) }
+        moved()
+        val reason = "series rebased $contract ${old.toPlainString()}->${now.toPlainString()}"
+        positions
+            .filterValues { it.signum() != 0 }
+            .forEach { (id, quantity) ->
+                val amount = quantity.multiply(chain.root.multiplier).multiply(delta)
+                bus.publish(CostIncurred(id, chain.symbol, amount, reason, null))
+            }
     }
 
-    /** Books the costs [restore] held on [bus], and saves the chain's shift from now on. */
-    fun publish(bus: EventBus) {
-        costs.forEach(bus::publish)
-        costs = emptyList()
-        held = null
-    }
+    /** This order with every level [delta] higher in the series. */
+    private fun OrderRequest.shifted(delta: BigDecimal): OrderRequest =
+        when (this) {
+            is OrderRequest.Limit -> copy(limitPrice = limitPrice + delta)
+            is OrderRequest.Stop -> copy(stopPrice = stopPrice + delta)
+            is OrderRequest.StopLimit -> copy(stopPrice = stopPrice + delta, limitPrice = limitPrice + delta)
+            else -> this
+        }
 }
