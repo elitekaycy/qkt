@@ -459,22 +459,41 @@ CASES: list = [
     # --- OCO_ENTRY ---------------------------------------------------------------------------------------------
     Case(
         "oco-entry-gap-through-both-legs-ticks-paper",
-        "a gap tick reaches both legs: the leg whose trigger is closer to the bar's open fills, the other is cancelled",
-        dims("oco-entry", "oco-entry-gap", collision="oco-entry-both-legs-gapped"),
+        "a gap tick reaches both legs: the leg nearer the previous tick fills (the move crossed it first), the other is cancelled",
+        dims("oco-entry", "oco-entry-gap", side="short", collision="oco-entry-both-legs-gapped"),
         [SIGNAL, ["100.50", "100.40", "100.30", "100.20"], ["98.80", "99.20", "99.81", "99.70"], ["99.60"] * 4],
         [
             rule(
                 {
                     "kind": "ocoEntry",
                     "legs": [
-                        order("BUY", order_type={"type": "LIMIT", "price": "99.00"}, exit=by("1.00", "1.00")),
                         order("SELL", order_type={"type": "STOP", "price": "99.50"}, exit=by("1.00", "1.00")),
+                        order("BUY", order_type={"type": "LIMIT", "price": "99.00"}, exit=by("1.00", "1.00")),
                     ],
                 },
                 position=None,
             )
         ],
-        notes=["actions.md:277 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."],
+        notes=["actions.md:277-283: on ticks the reference is the previous tick (mid 100.20); the SELL stop at 99.50 is 0.70 from it, the BUY limit 1.20, and the SELL is listed first so listing order cannot decide it."],
+    ),
+    Case(
+        "oco-entry-gap-equal-distance-listing-order-ticks-paper",
+        "two legs at the same distance from the previous tick: the one written first fills, the other is cancelled",
+        dims("oco-entry", "oco-entry-tie", collision="oco-entry-both-legs-gapped"),
+        [SIGNAL, ["100.50", "100.40", "100.30", "100.20"], ["98.80", "99.20", "99.81", "99.70"], ["99.60"] * 4],
+        [
+            rule(
+                {
+                    "kind": "ocoEntry",
+                    "legs": [
+                        order("BUY", order_type={"type": "LIMIT", "price": "99.70"}, exit=by("1.00", "1.00")),
+                        order("SELL", order_type={"type": "STOP", "price": "99.70"}, exit=by("1.00", "1.00")),
+                    ],
+                },
+                position=None,
+            )
+        ],
+        notes=["actions.md:277-283: both triggers sit 0.50 from the previous tick (mid 100.20), so the leg written first fills."],
     ),
     Case(
         "oco-entry-gap-through-both-legs-bars-synthetic-paper",
@@ -494,7 +513,7 @@ CASES: list = [
             )
         ],
         fill_mode="bars-synthetic",
-        notes=["actions.md:277: \"the leg with the closer trigger to the candle's open fills first\"; the BUY limit (0.20 from the 98.80 open) is listed second."],
+        notes=["actions.md:277-283: on the synthetic path the reference is the bar's open; the BUY limit (0.20 from the 98.80 open) is listed second."],
     ),
     Case(
         "oco-entry-gap-closer-leg-listed-first-bars-synthetic-paper",

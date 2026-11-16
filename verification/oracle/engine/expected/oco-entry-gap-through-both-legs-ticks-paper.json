@@ -1,35 +1,35 @@
 {
   "name": "oco-entry-gap-through-both-legs-ticks-paper",
-  "proves": "a gap tick reaches both legs: the leg whose trigger is closer to the bar's open fills, the other is cancelled",
+  "proves": "a gap tick reaches both legs: the leg nearer the previous tick fills (the move crossed it first), the other is cancelled",
   "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
   "timestampGranularity": "tick",
   "trades": [
     {
       "ts": 1704880920000,
-      "side": "BUY",
+      "side": "SELL",
       "qty": "0.1",
       "price": "98.80",
       "realized": "0.0",
       "reason": "entry",
-      "orderType": "LIMIT",
-      "stopLoss": "97.80",
-      "takeProfit": "99.80"
+      "orderType": "STOP",
+      "stopLoss": "99.80",
+      "takeProfit": "97.80"
     },
     {
       "ts": 1704880950000,
-      "side": "SELL",
+      "side": "BUY",
       "qty": "0.1",
       "price": "99.81",
-      "realized": "0.101",
-      "reason": "target",
-      "orderType": "LIMIT"
+      "realized": "-0.101",
+      "reason": "stop",
+      "orderType": "STOP"
     }
   ],
-  "realized": "0.101",
+  "realized": "-0.101",
   "commission": "0.0",
   "rejections": 0,
   "openAtEnd": false,
   "notes": [
-    "actions.md:277 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."
+    "actions.md:277-283: on ticks the reference is the previous tick (mid 100.20); the SELL stop at 99.50 is 0.70 from it, the BUY limit 1.20, and the SELL is listed first so listing order cannot decide it."
   ]
 }

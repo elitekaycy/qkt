@@ -1,10 +1,10 @@
 {
   "name": "oco-entry-gap-through-both-legs-ticks-paper",
-  "proves": "a gap tick reaches both legs: the leg whose trigger is closer to the bar's open fills, the other is cancelled",
+  "proves": "a gap tick reaches both legs: the leg nearer the previous tick fills (the move crossed it first), the other is cancelled",
   "dimensions": {
     "feature": "oco-entry",
     "shape": "oco-entry-gap",
-    "side": "long",
+    "side": "short",
     "broker": "paper",
     "fills": "ticks",
     "mode": "hedging",
@@ -118,27 +118,6 @@
         "legs": [
           {
             "kind": "entry",
-            "side": "BUY",
-            "sizing": {
-              "form": "fixed",
-              "value": "0.1"
-            },
-            "orderType": {
-              "type": "LIMIT",
-              "price": "99.00"
-            },
-            "exit": {
-              "kind": "bracket",
-              "stop": {
-                "by": "1.00"
-              },
-              "target": {
-                "by": "1.00"
-              }
-            }
-          },
-          {
-            "kind": "entry",
             "side": "SELL",
             "sizing": {
               "form": "fixed",
@@ -157,12 +136,33 @@
                 "by": "1.00"
               }
             }
+          },
+          {
+            "kind": "entry",
+            "side": "BUY",
+            "sizing": {
+              "form": "fixed",
+              "value": "0.1"
+            },
+            "orderType": {
+              "type": "LIMIT",
+              "price": "99.00"
+            },
+            "exit": {
+              "kind": "bracket",
+              "stop": {
+                "by": "1.00"
+              },
+              "target": {
+                "by": "1.00"
+              }
+            }
           }
         ]
       }
     }
   ],
   "notes": [
-    "actions.md:277 states the tie-break for a candle; on ticks the gap tick opens its bar. The closer leg is also listed first, so submission order agrees (README QB8)."
+    "actions.md:277-283: on ticks the reference is the previous tick (mid 100.20); the SELL stop at 99.50 is 0.70 from it, the BUY limit 1.20, and the SELL is listed first so listing order cannot decide it."
   ]
 }
