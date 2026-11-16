@@ -44,18 +44,14 @@ See `.claude/skills/qkt/SKILL.md` §3 for the full ruleset.
 
 ## Pre-push checklist
 
-Run before every push:
+Install the pre-push hook once per clone with `scripts/install-hooks.sh`; it runs `scripts/precheck.sh`
+on every push. Skip it with `git push --no-verify` only for docs emergencies.
 
-```bash
-./scripts/precheck.sh
-```
-
-This runs:
-
-1. `./gradlew build` — must pass
-2. `./gradlew test` — must pass
-3. `git status` — must be clean
-4. A scan for common problems (TODO/FIXME without issue links)
+The default fast mode diffs against `origin/dev` (`PRECHECK_BASE` overrides) and, when sources, build
+logic or Gradle files changed, runs `ktlintCheck checkFileSize compileKotlin compileTestKotlin` and the
+source-policy tests in one Gradle call (a few minutes warm, under the shared JVM lock when present).
+Docs-only changes skip Gradle. On failure it prints the fix (for example `./gradlew ktlintFormat`).
+`scripts/precheck.sh --full` runs the full `./gradlew build` and `test`; CI always runs the full suite.
 
 Every line a PR adds or edits under `src/main` must run under a test; CI refuses the PR
 otherwise. Check yours with `scripts/check-diff-coverage.sh origin/dev` after
