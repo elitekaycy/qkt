@@ -44,7 +44,13 @@ private fun heldSymbols(
 ): Set<String> =
     persistor
         .legBookSymbols(strategyId)
-        .filterTo(sortedSetOf()) { persistor.loadLegBook(strategyId, it)?.legs.orEmpty().isNotEmpty() }
+        .filterTo(sortedSetOf()) { symbol ->
+            persistor
+                .loadLegBook(strategyId, symbol)
+                ?.legs
+                .orEmpty()
+                .isNotEmpty()
+        }
 
 /**
  * Refuses a live start that would leave a held position with no rule: a symbol on a filtered set's venue that

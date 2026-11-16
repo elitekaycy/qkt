@@ -167,4 +167,38 @@ class StrategyHandleSymbolSetTest {
 
         assertThat(ast.streams.map { it.qktSymbol }).containsExactly("GW:XAGUSD", "GW:XAUUSD")
     }
+
+    @Test
+    fun `a held symbol on a plain declared stream of the set's venue does not refuse the start`() {
+        val file =
+            tmp.resolve("mixed.qkt").also {
+                Files.writeString(
+                    it,
+                    """
+                    STRATEGY metals VERSION 1
+                    SYMBOLS
+                        fx = GW:EURUSD EVERY 1m
+                        m = GW:* WHERE category = Metals TOP 1 BY symbol ASC EVERY 1m
+                    RULES
+                        WHEN fx.close > 100 THEN BUY fx SIZING 1
+                    """.trimIndent(),
+                )
+            }
+        val persistor = FileStatePersistor(tmp.resolve("persist"))
+        persistor.saveLegBook("metals", "GW:EURUSD", book("GW:EURUSD", open = true))
+
+        val ast = liveStrategyAst(file, listing, 0L, persistor)
+
+        assertThat(ast.streams.map { it.qktSymbol }).containsExactly("GW:EURUSD", "GW:XAGUSD")
+    }
+
+    @Test
+    fun `without a catalog the strategy is returned unresolved and held books are not read`() {
+        val persistor = FileStatePersistor(tmp.resolve("persist"))
+        persistor.saveLegBook("metals", "GW:XPTUSD", book("GW:XPTUSD", open = true))
+
+        val ast = liveStrategyAst(strategy(), null, 0L, persistor)
+
+        assertThat(ast.streams.map { it.alias }).containsExactly("m")
+    }
 }
