@@ -108,6 +108,9 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                 values =
                     setOf(
                         "config",
+                        "instruments",
+                        "as-of",
+                        "data-root",
                         "broker",
                         "tf",
                         "count",
