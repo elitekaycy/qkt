@@ -72,6 +72,11 @@ class ExprTransform(
      * a second walker that would drift the next time a node type is added.
      */
     private val onStreamField: (StreamFieldRef) -> ExprAst = { it },
+    /**
+     * Hook for function calls, handed each call after its arguments were rewritten. Defaults to identity; symbol-set
+     * expansion uses it to lower `SUM_OF(expr, set)` and its kin over a set's members.
+     */
+    private val onFuncCall: (FuncCall) -> ExprAst = { it },
     private val onRef: (Ref) -> ExprAst,
 ) {
     private val orderSpecs = OrderSpecTransform(this)
@@ -96,7 +101,7 @@ class ExprTransform(
                     expr(e.elseExpr),
                 )
             is Aggregate -> Aggregate(e.fn, expr(e.series), e.window)
-            is FuncCall -> FuncCall(e.name, e.args.map(::expr))
+            is FuncCall -> onFuncCall(FuncCall(e.name, e.args.map(::expr)))
             is IsNull -> IsNull(expr(e.expr), e.negated)
             is NumLit, is BoolLit, is StringLit, is AccountRef, is StreakRef, is TradesRef,
             is CooldownRef, is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,

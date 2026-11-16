@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.common.IdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ActionOpts
+import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.execution.OrderRequest
@@ -27,8 +28,6 @@ internal class EntryOrderCompiler(
     private val childPriceFreezer: ChildPriceFreezer,
     private val sizingCompiler: SizingCompiler,
 ) {
-    private val ocoExits = OcoExitOrderBuilder(ids)
-
     fun compile(
         stream: String,
         opts: ActionOpts,
@@ -36,9 +35,7 @@ internal class EntryOrderCompiler(
     ): (EvalContext) -> List<Signal> {
         val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
 
-        // Phase 27: STACK_AT on an OCO parent is silently broken — the OCO id is never
-        // echoed back on a broker fill (the broker fills leg1.id or leg2.id), so the
-        // engine would never be constructed. Reject loudly until OCO leg-id wiring lands.
+        // STACK_AT on an exit OCO is untested; reject loudly rather than attach tiers silently.
         require(!(opts.oco != null && opts.stackAts.isNotEmpty())) {
             "STACK_AT cannot be combined with OCO on the same action"
         }
@@ -66,6 +63,11 @@ internal class EntryOrderCompiler(
 
         // Submit path: any non-trivial option → emit Signal.Submit(OrderRequest.X)
         require(opts.bracket == null || opts.oco == null) { "Cannot combine BRACKET and OCO on the same action" }
+        // `OCO { STOP AT s, LIMIT AT t }` is the entry's exit pair stated as raw prices (actions.md):
+        // the same two exits as `BRACKET { STOP_LOSS AT s, TAKE_PROFIT AT t }`, so it takes the
+        // bracket path and its legs are placed reduce-only on the entry fill, one cancelling the other.
+        val bracket: BracketAst? =
+            opts.bracket ?: opts.oco?.let { BracketAst(stopLoss = it.stop, takeProfit = it.limit) }
 
         val tif = TifTranslator.translate(opts.tif)
         val orderType = opts.orderType ?: Market
@@ -73,13 +75,11 @@ internal class EntryOrderCompiler(
 
         val gtdDeadlineExpr = compileGtdDeadline(opts.tif, orderType, exprCompiler)
 
-        val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
-        val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
-        val frozenSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
-        val frozenTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
-        val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
-        val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
-        val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
+        val compiledSL = bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
+        val compiledTP = bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
+        val frozenSL = bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
+        val frozenTP = bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
+        val staticStopDistance: BigDecimal? = resolveStaticStopDistance(bracket?.stopLoss)
         val compiledSize =
             sizingCompiler.compile(
                 sizing,
@@ -116,7 +116,7 @@ internal class EntryOrderCompiler(
                         return@buySell emptyList()
                     }
             val resolvedBracket: ResolvedBracket? =
-                if (opts.bracket != null) {
+                if (bracket != null) {
                     when (val resolution = resolveBracket(compiledSL, compiledTP, ctx, side, entry, skipLog, stream)) {
                         is BracketResolution.Resolved -> resolution.bracket
                         BracketResolution.Undefined -> return@buySell emptyList()
@@ -139,8 +139,7 @@ internal class EntryOrderCompiler(
 
             val request: OrderRequest =
                 when {
-                    opts.bracket != null -> {
-                        val bracket = requireNotNull(resolvedBracket)
+                    resolvedBracket != null -> {
                         // Frozen ASTs snapshot indicator subexpressions at entry so OrderManager's
                         // fill-time re-anchor sees literal arithmetic only. The bracket prices
                         // resolved above from the same context, so a null snapshot cannot happen
@@ -151,29 +150,14 @@ internal class EntryOrderCompiler(
                             side = side,
                             quantity = qty,
                             entry = entryReq,
-                            takeProfit = bracket.takeProfit,
-                            stopLoss = bracket.stopLoss,
+                            takeProfit = resolvedBracket.takeProfit,
+                            stopLoss = resolvedBracket.stopLoss,
                             takeProfitAst = frozenTP?.freeze(ctx),
                             stopLossAst = frozenSL?.freeze(ctx),
                             timeInForce = tif,
                             timestamp = ts,
                         )
                     }
-                    opts.oco != null ->
-                        ocoExits.build(
-                            compiledOcoLeg1,
-                            compiledOcoLeg2,
-                            ctx,
-                            side,
-                            entry,
-                            symbol,
-                            qty,
-                            tif,
-                            ts,
-                            skipLog,
-                            stream,
-                        )
-                            ?: return@buySell emptyList()
                     else -> entryReq
                 }
 

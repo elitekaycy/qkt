@@ -92,14 +92,15 @@ The doc contradiction the first version found (`backtest-model.md` listing FX co
 
 ## Results (2026-11-16)
 
-56 of 58 scenarios agree with qkt to the digit. Two disagree and are held `@Disabled` in
-`ExecutionVerificationKnownBugsTest`, asserting the documented behaviour:
+All 58 scenarios agree with qkt to the digit. None is held in `ExecutionVerificationKnownBugsTest`; three
+disagreed until their fixes:
 
-- `long-market-oco-stop-ticks-paper`, `short-market-oco-target-ticks-paper`: `BUY syn SIZING 0.1 OCO { STOP AT
-  99.50, LIMIT AT 102.50 }` submits no entry at all. qkt places a `StandaloneOCO` of the two *exit* prices as
-  opening orders (`legIntent: Open`), so the first leg to trigger opens an opposite-side position instead of closing
-  a long (`actions.md:143-152`: OCO "states the same two exits as raw order prices" on a `BUY`/`SELL` entry). #1715.
-
-`short-stoplimit-marketable-ticks-paper` disagreed until #1716: a paper `STOP AT 100.00 LIMIT AT 99.90` whose
-trigger tick (bid 99.94, mid 99.95) already satisfied the limit filled at the bid 99.94, not the tick's mid. It now
-fills at the mid, as `backtest-model.md` states, and runs in the main set.
+- `long-market-oco-stop-ticks-paper`, `short-market-oco-target-ticks-paper` (fixed, #1715): `BUY syn SIZING 0.1 OCO
+  { STOP AT 99.50, LIMIT AT 102.50 }` submitted no entry at all. qkt placed a `StandaloneOCO` of the two *exit*
+  prices as opening orders (`legIntent: Open`), so the first leg to trigger opened an opposite-side position instead
+  of closing a long (`actions.md:143-152`: OCO "states the same two exits as raw order prices" on a `BUY`/`SELL`
+  entry). `OCO` now compiles to the same bracket as `BRACKET { STOP_LOSS AT, TAKE_PROFIT AT }`; both scenarios run
+  in `ExecutionVerificationTest`.
+- `short-stoplimit-marketable-ticks-paper` (fixed, #1716): a paper `STOP AT 100.00 LIMIT AT 99.90` whose trigger
+  tick (bid 99.94, mid 99.95) already satisfied the limit filled at the bid 99.94, not the tick's mid. It now fills
+  at the mid, as `backtest-model.md` states, and runs in the main set.

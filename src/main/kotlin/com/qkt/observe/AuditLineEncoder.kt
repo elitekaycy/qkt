@@ -8,6 +8,7 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.RuleDecisionEvent
+import com.qkt.events.SetMembershipChanged
 import com.qkt.events.SignalEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
@@ -76,6 +77,12 @@ internal fun encodeAuditLine(event: Event): String =
         if (event is FillAccountedEvent) appendAccountedFill(event)
         if (event is BrokerEvent.OrderFilled) appendFill(event)
         if (event is BrokerEvent.OrderPartiallyFilled) appendPartialFill(event)
+        if (event is SetMembershipChanged) {
+            append(",\"set\":").append(jsonString(event.set))
+            append(",\"change\":").append(jsonString(event.change.name.lowercase()))
+            append(",\"rank\":").append(event.rank)
+            append(",\"windowEndMs\":").append(event.windowEndMs)
+        }
         // Ticks and candles are fully described by their structured block and make
         // up ~99% of lines; the stringified payload doubled every one of them.
         if (!hasCompleteStructuredBlock(event)) {

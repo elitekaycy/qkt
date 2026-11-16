@@ -404,6 +404,10 @@ softmax(<self>, <peer>, ...)      -- softmax weight of <self> among the values, 
 norm_cdf(<expr>)                  -- standard normal probability of at most <expr>, in [0, 1]
 ```
 
+Over a [symbol set](streams.md#symbol-sets-exnesseurusd-xauusd-alpaca-where-), `RANK_OF(expr, set)`, `SUM_OF`,
+`AVG_OF`, `MAX_OF`, `MIN_OF` and `COUNT_OF` read every member at once inside `FOR EACH`; see
+[cross-member functions](foreach.md#cross-member-functions).
+
 `max`/`min` with two or more arguments are plain scalar functions; with one argument and a
 `SINCE` window they are the [aggregates](#aggregates) below. The three cross-sectional helpers
 score the **first** argument against the rest, so the same call written from each stream's rule
