@@ -158,7 +158,7 @@ class BacktestContext private constructor(
             startingBalances = startingBalances,
             dailyDdBasis = haltConfig.dailyDdBasis,
             totalDdBasis = haltConfig.totalDdBasis,
-            strategyRiskLimits = perStrategyRisk.mapValues { (_, limits) -> limits.toLimits() },
+            strategyRiskLimits = backtestStrategyRiskLimits(perStrategyRisk, ast),
             bookCapital = bookCapital,
             instruments = instruments,
             accountingConfig = accountingConfig,
