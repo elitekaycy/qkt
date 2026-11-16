@@ -68,8 +68,14 @@ class GatewayRoutingTest {
         assertThat(routing.attach(broker("a", "a"))).isFalse()
         routing.attach(broker("all", null))
 
-        assertThat(heard.getValue("a").map { it.strategyId }).containsExactly("a")
-        assertThat(heard.getValue("all").map { it.strategyId }).containsExactly("b")
+        assertThat(
+            heard.getValue("a").filterIsInstance<BrokerEvent.OrderAccepted>().map { it.strategyId },
+        ).containsExactly("a")
+        assertThat(
+            heard.getValue("all").filterIsInstance<BrokerEvent.OrderAccepted>().map {
+                it.strategyId
+            },
+        ).containsExactly("b")
     }
 
     @Test
