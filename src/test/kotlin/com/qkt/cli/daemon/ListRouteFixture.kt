@@ -27,8 +27,8 @@ abstract class ListRouteFixture {
     protected fun stubFactory(
         stateDir: StateDir,
         streamStops: List<com.qkt.broker.StreamStop> = emptyList(),
-        childMeta: (String) -> StrategyHandle.ChildMeta? = { null },
         streamBrokers: Map<String, String> = emptyMap(),
+        childMeta: (String) -> StrategyHandle.ChildMeta? = { null },
     ): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
