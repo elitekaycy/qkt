@@ -67,7 +67,7 @@ internal class StreamLane(
             hearsOldContract = rollQuoteTaps != null,
         )
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
-    private val rebase = LaneSeriesRebase(chainOf)
+    private val rebase = LaneSeriesRebase(chainOf, bus, positions, orders, store == null) { spaces.clear() }
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled, rebase)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val collared = rollPriceBand != null
@@ -109,8 +109,8 @@ internal class StreamLane(
 
     /** The session is restored: the venue is told so and the lane goes on ([LaneRecovery.ready]). */
     fun ready() {
+        rebase.activate()
         recovery.ready()
-        rebase.publish(bus)
         save()
     }
 
@@ -159,6 +159,7 @@ internal class StreamLane(
         nowMs: Long,
         tick: Tick? = null,
     ): Int? {
+        if (!rolls.inFlight) rebase.check()
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
         if (previous == index) return index
@@ -166,6 +167,7 @@ internal class StreamLane(
         if (rolls.inFlight) return null
         current = index
         if (previous == null) {
+            rebase.track(index)
             save()
             return index
         }
@@ -177,6 +179,7 @@ internal class StreamLane(
     /** Applies what a roll left behind, then tells the engine of the closes and costs. */
     private fun applyRoll(outcome: RollOutcome) {
         tap.sync(current, clock.now())
+        rebase.track(current)
         stops.putAll(outcome.stopped)
         outcome.closes.forEach { positions.merge(it.strategyId, it.signedQuantity(), BigDecimal::add) }
         // Saved before the engine hears of it: a crash in between cannot publish the roll's closes twice.
@@ -190,5 +193,5 @@ internal class StreamLane(
         store?.save(state.snapshot(current))
     }
 
-    private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
+    private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { rebase.space(index) }
 }

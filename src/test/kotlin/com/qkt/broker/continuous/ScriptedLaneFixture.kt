@@ -39,6 +39,7 @@ internal class ScriptedLaneFixture(
     private val rollPriceBand: BigDecimal? = null,
     laneVenue: ((EventBus, FixedClock, PositionProvider) -> Broker)? = null,
     val taps: RollQuoteTaps? = null,
+    rolls: RollHistory? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
@@ -81,23 +82,29 @@ internal class ScriptedLaneFixture(
             ),
             mapOf(
                 root.root to
-                    RollHistory(
-                        root.root,
-                        "8d@08:00",
-                        listOf(
-                            RollRecord(
-                                ms("2024-06-20T08:00:00Z"),
-                                "BTCUSDT_240628",
-                                "BTCUSDT_240927",
-                                "65000",
-                                "65000",
+                    (
+                        rolls ?: RollHistory(
+                            root.root,
+                            "8d@08:00",
+                            listOf(
+                                RollRecord(
+                                    ms("2024-06-20T08:00:00Z"),
+                                    "BTCUSDT_240628",
+                                    "BTCUSDT_240927",
+                                    "65000",
+                                    "65000",
+                                ),
+                                RollRecord(roll, "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
+                                RollRecord(nextRoll, "BTCUSDT_241227", "BTCUSDT_250328", "64000", "64500"),
                             ),
-                            RollRecord(roll, "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
-                            RollRecord(nextRoll, "BTCUSDT_241227", "BTCUSDT_250328", "64000", "64500"),
-                        ),
+                        )
                     ),
             ),
         )
+
+    /** The roll history this session started on. */
+    val history: RollHistory = requireNotNull(registry.history(root.root))
+    val chains = ContinuousChains(requireNotNull(registry.futures()))
 
     val clock = FixedClock(time = startMs)
     val bus = EventBus(clock, MonotonicSequenceGenerator())
@@ -110,7 +117,7 @@ internal class ScriptedLaneFixture(
         ContinuousContractBroker(
             bus,
             clock,
-            ContinuousChains(requireNotNull(registry.futures())),
+            chains,
             setOf(front),
             ledger,
             ContractFillLog(),
@@ -147,7 +154,8 @@ internal class ScriptedLaneFixture(
     fun restart(
         atMs: Long = clock.time,
         taps: RollQuoteTaps? = null,
-    ) = ScriptedLaneFixture(persistor, atMs, rollPriceBand, taps = taps)
+        rolls: RollHistory? = null,
+    ) = ScriptedLaneFixture(persistor, atMs, rollPriceBand, taps = taps, rolls = rolls)
 
     fun slice(
         id: String,
