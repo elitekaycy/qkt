@@ -1,11 +1,13 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.FuncCall
+import com.qkt.dsl.sets.SetFunction
 import com.qkt.dsl.stdlib.FuncRegistry
 
 /**
  * Compiles a stdlib function call (`abs(x)`, `max(a, b)`, ...) looked up in [FuncRegistry]. Any
- * non-numeric argument makes the call [Value.Undefined].
+ * non-numeric argument makes the call [Value.Undefined]. A cross-member function already lowered over a
+ * set's members compiles with set semantics ([SetFunctionCompiler]).
  */
 internal object FuncCallCompiler {
     fun compile(
@@ -13,7 +15,16 @@ internal object FuncCallCompiler {
         ruleAlias: String?,
         exprs: ExprCompiler,
     ): CompiledExpr {
-        require(FuncRegistry.has(call.name)) { "Unknown function: ${call.name}" }
+        val setFunction = SetFunction.lowered(call.name)
+        if (setFunction != null) return SetFunctionCompiler.compile(setFunction, call, ruleAlias, exprs)
+        require(FuncRegistry.has(call.name)) {
+            if (SetFunction.named(call.name) == null) {
+                "Unknown function: ${call.name}"
+            } else {
+                "${call.name}(expr, set) is a cross-member function: use it inside FOR EACH <m> IN <set>, naming a " +
+                    "symbol set declared in SYMBOLS as its last argument and the loop variable in expr"
+            }
+        }
         val args = call.args.map { exprs.compile(it, ruleAlias) }
         return CompiledExpr { ctx ->
             // One pre-sized list instead of two intermediate .map lists per evaluation.
