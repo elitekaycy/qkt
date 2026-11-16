@@ -23,7 +23,8 @@ import java.math.BigDecimal
  *
  * Needs [lookback] + 1 prices before it reports (one price seeds the first return). When
  * the 1-bar variance is zero (a perfectly flat or constant-return window) the ratio is
- * undefined and reported as null rather than a misleading number.
+ * undefined and reported as null rather than a misleading number; so is a window holding a
+ * return off a zero or negative base price ([SimpleReturnWindow]).
  *
  * e.g. returns +1%, -1%, +1%, -1% (k = 2) → every 2-bar sum is 0 → VR 0 (maximal
  * reversion); returns +1%, +1%, -1%, -1% (k = 2) → VR ~1.33 (short-run persistence).
@@ -40,13 +41,12 @@ class VarianceRatio(
         }
     }
 
-    private val returns: ArrayDeque<BigDecimal> = ArrayDeque(lookback)
-    private var prevPrice: BigDecimal? = null
+    private val window = SimpleReturnWindow(lookback)
 
     override val warmupBars: Int = lookback + 1
 
     override val isReady: Boolean
-        get() = returns.size >= lookback
+        get() = window.isFull
 
     // Computed once per update; value() is read once per referencing expression node per bar,
     // and each read re-ran the full O(lookback x k) walk.
@@ -55,18 +55,14 @@ class VarianceRatio(
     private val kBd = BigDecimal(k)
 
     override fun update(input: BigDecimal) {
-        val prev = prevPrice
-        if (prev != null) {
-            returns.addLast(input.subtract(prev, Money.CONTEXT).divide(prev, Money.CONTEXT))
-            if (returns.size > lookback) returns.removeFirst()
-        }
-        prevPrice = input
-        lastValue = if (returns.size >= lookback) compute() else null
+        window.push(input)
+        lastValue = if (window.isFull && window.isDefined) compute() else null
     }
 
     override fun value(): BigDecimal? = lastValue
 
     private fun compute(): BigDecimal? {
+        val returns = window.returns
         var sum1 = BigDecimal.ZERO
         for (r in returns) sum1 = sum1.add(r, Money.CONTEXT)
         val mean1 = sum1.divide(n1, Money.CONTEXT)

@@ -534,7 +534,7 @@ WHEN session_window(12, 0, 12, 1) AND session_momentum(eur.candle, 12, 14, 3) > 
 THEN BUY eur SIZING 0.1
 ```
 
-It is `null` until `<nDays>` in-window days have completed.
+It is `null` until `<nDays>` in-window days have completed, and while one of those days opened at a zero or negative price (its return has no value, so the sum is undefined until that day rolls out).
 
 ### Anchored return (sub-bar, grid-anchored)
 
@@ -645,7 +645,7 @@ WHEN percentile_rank(skew(aud.close, 20), 250) < 0.1
 THEN BUY aud SIZING 0.1
 ```
 
-Warmup is `<period> + 1` bars (one extra price is needed to form the first return). A flat window with no return dispersion reports 0.
+Warmup is `<period> + 1` bars (one extra price is needed to form the first return). A flat window with no return dispersion reports 0. A return off a zero or negative price has no value, so the indicator is `null` while the window holds one.
 
 ### Efficiency ratio
 
@@ -680,7 +680,7 @@ WHEN variance_ratio(aud.close, 5, 100) < 1 AND zscore(aud.close, 20) >= 2
 THEN SELL aud SIZING 0.1
 ```
 
-Like `zscore`, the series can be any expression referencing a stream — `variance_ratio(gold.close / silver.close, 5, 120)` gates a pairs spread on its own stationarity. Warmup is `<lookback> + 1` bars; it returns `null` until then, and also when the 1-bar variance is zero (a flat window, where the ratio is undefined).
+Like `zscore`, the series can be any expression referencing a stream — `variance_ratio(gold.close / silver.close, 5, 120)` gates a pairs spread on its own stationarity. Warmup is `<lookback> + 1` bars; it returns `null` until then, when the 1-bar variance is zero (a flat window, where the ratio is undefined), and while the window holds a return off a zero or negative price (which has no value).
 
 ### Lag (series offset)
 
