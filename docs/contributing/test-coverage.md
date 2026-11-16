@@ -12,6 +12,28 @@ The floor only goes up. When a PR raises total coverage, raise the floor in the 
 new whole-number value (the percentage printed by `./gradlew koverLog`); never lower it. The
 end state is `line=100` and `branch=100`.
 
+## Docs-only pull requests
+
+A pull request whose every changed path is documentation that nothing reads skips the build, tests,
+coverage gates and data e2e suite; the `build` check still reports success, with a `docs-only`
+notice on the run. Commit authors are still checked. `scripts/classify-ci-changes.sh` decides from
+the PR merge commit's changed paths alone:
+
+- **Docs-only:** `docs/**`, `*.md`, `mkdocs.yml` and `requirements-docs.txt`.
+- **Never docs-only:** anything under `src/`, `build-logic/`, `gradle/`, `config/`, `scripts/`,
+  `tests/`, `verification/`, `attestation/`, `.github/`, `examples/`, `strategies/` or `editor/`,
+  any `*.gradle.kts` or `gradlew*`, and the docs that tests or the build read:
+  `docs/reference/dsl/`, `docs/reference/dsl-grammar.md`, `docs/reference/cli-commands.md`,
+  `docs/reference/bot-cli.md`, `docs/examples/`, `docs/tutorials/`, `docs/how-to/`,
+  `docs/index.md` and `docs/assets/`.
+- **Anything else**, an empty change, or a classifier error runs the full build.
+
+Pushes to `dev` and `testing` always run the full build, so promotion to `testing` and the
+`coverage` artifact on every `dev` commit do not depend on this rule. A test that starts reading
+another docs page adds it to the classifier's list in the same PR;
+`tests/scripts/classify-ci-changes-test.sh` fails when a literal docs path in `src/test` or the
+build scripts would be classified docs-only.
+
 ## Running it locally
 
 ```bash
