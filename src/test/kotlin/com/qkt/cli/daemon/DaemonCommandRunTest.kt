@@ -76,13 +76,23 @@ class DaemonCommandRunTest {
             )
         val thread = Thread { exit.set(DaemonCommand(Args(args)).run()) }.apply { isDaemon = true }
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as Logger
+        // The daemon writes its control port before the auto-deploy pass and prints "daemon ready" after it; wait for
+        // that line on the daemon's own stdout so none of its boot output lands in the `status` capture below.
+        val boot = ByteArrayOutputStream()
+        val prevOut = System.out
+        System.setOut(PrintStream(boot, true))
         thread.start()
         try {
             val stateDir = StateDir.resolve(sd.toString())
             val end = System.currentTimeMillis() + 30_000L
-            while (stateDir.readControlPort() == null && thread.isAlive && System.currentTimeMillis() < end) {
-                Thread.sleep(50)
+            try {
+                fun booting() = !boot.toString().contains("[INFO] daemon ready")
+                while (booting() && thread.isAlive && System.currentTimeMillis() < end) Thread.sleep(50)
+            } finally {
+                System.setOut(prevOut)
             }
+            assertThat(boot.toString()).contains("[INFO] daemon ready")
+            assertThat(stateDir.readControlPort()).isNotNull()
             val (statusCode, health, _) = daemon("status", "--json")
 
             assertThat(statusCode).isEqualTo(ExitCodes.SUCCESS)
