@@ -81,7 +81,7 @@ internal class OrderCancellation(
     fun cancelPendingForSymbol(
         symbol: String,
         closing: Boolean = false,
-        strategyId: String? = null,
+        strategyId: String?,
     ) {
         val owned = { request: OrderRequest -> strategyId == null || request.strategyId == strategyId }
         // Cancel pending stacks targeting this symbol.
@@ -116,7 +116,7 @@ internal class OrderCancellation(
      * Protective monitors, risk-reducing exits, and composite containers whose entry has filled
      * remain active. Their risk-increasing pending children are still cancelled individually.
      */
-    fun cancelEntriesForHalt(strategyId: String? = null) {
+    fun cancelEntriesForHalt(strategyId: String?) {
         val entryIds =
             book.orders.values
                 .filter { managed ->

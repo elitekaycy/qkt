@@ -153,4 +153,37 @@ class OrderManagerStackTriggerPriceTest {
                 BigDecimal("49800"),
             )
     }
+
+    @Test
+    fun `a buy layer resting behind the seed reports its limit trigger`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker =
+            FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT))
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val plan =
+            StackPlan(
+                listOf(
+                    LayerSpec(1, SizeQty(NumLit(BigDecimal("0.1"))), com.qkt.dsl.ast.Market, Immediate),
+                    LayerSpec(
+                        2,
+                        SizeQty(NumLit(BigDecimal("0.1"))),
+                        com.qkt.dsl.ast.Market,
+                        At(
+                            BinaryOp(BinOp.SUB, StackEntryRef, NumLit(BigDecimal("200"))),
+                            StackDirection.BELOW,
+                        ),
+                    ),
+                ),
+            )
+        manager.submit(
+            OrderRequest.Stack("stk-dip", "BTCUSDT", Side.BUY, BigDecimal("0.2"), plan, TimeInForce.GTC, clock.now()),
+        )
+        broker.emitFill(broker.submits[0], price = Money.of("50000"))
+
+        val info = manager.pendingStackLayerInfos().single()
+
+        assertThat(info.layer).isEqualTo(2)
+        assertThat(info.triggerPrice).isEqualByComparingTo(BigDecimal("49800"))
+    }
 }

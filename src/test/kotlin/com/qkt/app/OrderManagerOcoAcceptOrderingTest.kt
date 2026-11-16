@@ -174,4 +174,31 @@ class OrderManagerOcoAcceptOrderingTest {
         assertThat(om.getOrder("l1")?.state).isEqualTo(OrderState.PARTIALLY_FILLED)
         assertThat(om.getOrder("l2")?.state).isEqualTo(OrderState.CANCELLED)
     }
+
+    @Test
+    fun `a late rejection of leg1 after leg2 was placed leaves leg2 working`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        broker.emitAcceptOnSubmit = false
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        om.submit(
+            OrderRequest.StandaloneOCO(
+                id = "oco1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                leg1 = limit("l1", Side.BUY, "100"),
+                leg2 = limit("l2", Side.SELL, "120"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        broker.emitAccept("l1")
+
+        bus.publish(BrokerEvent.OrderRejected("l1", null, "late venue reject"))
+
+        assertThat(om.getOrder("l2")?.state).isNotEqualTo(OrderState.REJECTED)
+        assertThat(broker.cancels).doesNotContain("l2")
+    }
 }

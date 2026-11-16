@@ -34,9 +34,8 @@ internal class StackExecution(
     private val log: Logger,
 ) {
     fun submit(req: OrderRequest.Stack): SubmitAck {
-        val firstLayer =
-            req.plan.layers.firstOrNull()
-                ?: error("StackPlan must have at least one layer")
+        // StackPlan requires at least one layer.
+        val firstLayer = req.plan.layers.first()
         // Layer 1 may be Immediate (market) or At (pending limit/stop). Both are supported.
         stacks.register(req.id, req.plan, req.plan.outerBracket)
         val now = clock.now()
