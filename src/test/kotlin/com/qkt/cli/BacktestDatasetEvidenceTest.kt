@@ -54,7 +54,7 @@ class BacktestDatasetEvidenceTest {
 
         assertThat(context.evidence.id).isNotBlank()
         assertThat(context.evidence.hash).startsWith("sha256:")
-        assertThat(context.evidence.qualityPolicy).isEqualTo("strict")
+        assertThat(context.evidence.qualityPolicy).isEqualTo("research")
         assertThat(context.evidence.mutableStore).isFalse()
         assertThat(
             Path.of(context.dataRoot!!).toAbsolutePath().normalize(),
