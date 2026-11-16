@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.derivatives.events.EventChainSymbol
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.derivatives.options.chain.OptionRootSymbol
@@ -14,7 +15,8 @@ import java.time.ZoneOffset
  * The chain counterpart of tick coverage: every UTC day an option contract trades (up to its expiry)
  * and every day of a chain analytics stream or option root feed must hold a stored chain day of the root's declared
  * series, or the run fails naming the fetch that fills the gap (unless incomplete data is allowed,
- * which warns instead).
+ * which warns instead). An event family's `CHAIN:` stream reads the family's quote ticks, not a chain, so it is not
+ * checked here.
  */
 internal object OptionChainCoverage {
     private class Need(
@@ -47,6 +49,7 @@ internal object OptionChainCoverage {
         val streams =
             symbols.mapNotNull { s ->
                 when {
+                    EventChainSymbol.isEventChain(s) -> null
                     s.startsWith(
                         ChainAnalyticsSymbol.PREFIX,
                     ) -> Need(s, ChainAnalyticsSymbol.parse(s).getOrThrow().root, to)

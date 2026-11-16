@@ -6,6 +6,7 @@ import com.qkt.common.Clock
 import com.qkt.instrument.EventTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.MarketDataGateConfig
 
@@ -42,12 +43,14 @@ internal fun liveMarketDataGate(
 /**
  * Whether [symbol]'s prices are judged for outliers: not an option's or an event contract's. An option code of a
  * declared root that its catalog does not list yet (a venue lists the next expiries during the day, the catalog
- * refreshes on a schedule) is still an option, so it is not judged either.
+ * refreshes on a schedule) is still an option, so it is not judged either, nor is an event slot, which follows its
+ * family's contracts' prices.
  */
 internal fun judgesPriceOutliers(
     instruments: InstrumentRegistry,
     symbol: String,
 ): Boolean {
+    if (SlotSymbol.isSlot(symbol)) return false
     val meta = instruments.lookup(symbol)
     if (meta != null) return meta.derivative !is OptionTerms && meta.derivative !is EventTerms
     return instruments.options()?.isOptionCode(symbol) != true

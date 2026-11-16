@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.candles.TimeWindow
+import com.qkt.connectivity.DirectEventVenue
 import com.qkt.connectivity.DirectPosition
 import com.qkt.connectivity.DirectResult
 import com.qkt.connectivity.DirectVenue
@@ -18,7 +19,8 @@ import java.math.BigDecimal
  * [GatewayOrders] (the engine's own mapping, so a one-shot price lands on the same tick grid), are sent
  * with an idempotent `client_order_id`, and are then read back until the venue says what became of
  * them ([GatewayDirectOutcome]). A position here carries no stop or target (VGP v1 has none), so a protected entry is refused
- * and pointed at a session, where the engine holds the bracket.
+ * and pointed at a session, where the engine holds the bracket. Its event contracts are read through
+ * [GatewayEventReads].
  */
 class GatewayDirectVenue(
     private val name: String,
@@ -29,7 +31,8 @@ class GatewayDirectVenue(
     private val pollTimeoutMs: Long = 10_000,
     private val pollMs: Long = 200,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
-) : DirectVenue {
+) : DirectVenue,
+    DirectEventVenue by GatewayEventReads(prefix, client, baseUrl, apiKey, clock, EVENT_QUOTE_WAIT_MS) {
     private val symbols = GatewaySymbols(prefix)
     private val reads = GatewayDirectReads(name, client)
     private val outcome = GatewayDirectOutcome(name, client, clock, pollTimeoutMs, pollMs)
@@ -149,3 +152,6 @@ class GatewayDirectVenue(
         override fun allPositions(): Map<String, Position> = emptyMap()
     }
 }
+
+/** How long a one-shot event read waits for every contract of an event to quote. */
+private const val EVENT_QUOTE_WAIT_MS = 3_000L

@@ -4,6 +4,7 @@ import com.qkt.app.LiveSession.Companion.RECONCILE_READ_ATTEMPTS
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.common.Clock
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.observe.insights.TicketAttribution
 import com.qkt.persistence.PersistedLeg
 import com.qkt.persistence.StatePersistor
@@ -16,7 +17,8 @@ import org.slf4j.LoggerFactory
  * or refusal. Runs once at startup before the engine thread takes ticks, e.g. a persisted
  * BUY 0.10 leg the venue still holds is re-attached; one the venue no longer lists is retired;
  * a venue position nobody persisted throws [ReconcileException] unless mismatches are ignored. On an
- * account-wide venue every persisted book of the strategy is restored, declared symbol or not.
+ * account-wide venue every persisted book of the strategy is restored, declared symbol or not, and the books of its
+ * event slots are rebuilt from the contracts of their families it holds again ([restoreSlotBooks]).
  */
 internal class StartupReconcile(
     private val strategies: List<Pair<String, Strategy>>,
@@ -26,6 +28,7 @@ internal class StartupReconcile(
     private val ignoreMismatches: Boolean,
     private val reconcileReadBackoffMs: Long,
     ticketAttribution: TicketAttribution,
+    private val instruments: InstrumentRegistry,
 ) {
     // Logged under the session's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
@@ -98,9 +101,9 @@ internal class StartupReconcile(
                 null
             }
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
-        for ((strategyId, _) in strategies) {
+        for ((strategyId, strategy) in strategies) {
             // An account-wide venue also restores the books of symbols the strategy never declared:
-            // the option legs a structure picked when it fired.
+            // the option legs a structure picked when it fired, and the contracts an event slot traded.
             val undeclared = persistor.legBookSymbols(strategyId).filter { it !in symbols && broker.isAccountWide(it) }
             for (symbol in symbols + undeclared) {
                 // A shared netting account's position is every strategy's net: each persisted book stands.
@@ -165,6 +168,7 @@ internal class StartupReconcile(
                     }
                 }
             }
+            restoreSlotBooks(strategyId, strategy, undeclared, strategyPositions, instruments)
         }
         return adoptedLegCounts
     }

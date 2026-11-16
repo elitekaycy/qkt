@@ -43,6 +43,17 @@ class GatewaySymbols(
                 .toMap()
     }
 
+    /**
+     * Adds [more] to the listing held, over what it held of the same codes: contracts a family read heard of between
+     * two full listing reads ([GatewayEventFamilies]), so an order on one listed since finds its code and tick.
+     */
+    @Synchronized
+    fun include(more: List<WireInstrument>) {
+        toVenue = toVenue + more.associate { qkt(it.code) to it.code }
+        listed = listed + more.associateBy { qkt(it.code) }
+        ticks = ticks + more.mapNotNull { i -> positive(i.tickSize)?.let { qkt(i.code) to it } }
+    }
+
     /** What the latest listing states about [qktSymbol]: its code, kind, contract size, tick and currency. */
     fun instrument(qktSymbol: String): VenueInstrument? =
         listed[qktSymbol]?.let {
