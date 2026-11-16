@@ -92,6 +92,16 @@ class ChildPriceResolverTest {
     }
 
     @Test
+    fun `RR with a zero or negative stop distance has no target and returns null`() {
+        val r = resolver.compile(ChildRr(NumLit(BigDecimal("3"))), kind = ChildKind.TAKE_PROFIT)
+        // A stop on the entry price has no risk to multiply: the target would sit on the entry too.
+        assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = BigDecimal.ZERO)).isNull()
+        assertThat(
+            r.evaluate(ec, side = Side.SELL, entry = BigDecimal("100"), stopDistance = BigDecimal("-1")),
+        ).isNull()
+    }
+
+    @Test
     fun `AT returns null when expression is undefined`() {
         val r = resolver.compile(ChildAt(AccountRef("last_trade_pnl")), kind = ChildKind.STOP_LOSS)
         assertThat(r.evaluate(ec, side = Side.BUY, entry = BigDecimal("100"), stopDistance = null)).isNull()

@@ -1,6 +1,8 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ActionOpts
+import com.qkt.dsl.ast.BinOp
+import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cmp
 import com.qkt.dsl.ast.CmpOp
@@ -79,6 +81,37 @@ class RuleEdgeGatingTest {
     fun `condition true on the first evaluated bar fires`() {
         val signals = feed(strategyWith(above100), listOf("150", "160"))
         assertThat(signals).hasSize(1)
+    }
+
+    // close / (close - 100) > 0: TRUE above 100, FALSE below, and Undefined exactly at 100 (division
+    // by zero), so one price series can flicker the condition through an Undefined bar.
+    private val undefinedAt100: ExprAst =
+        CmpOp(
+            Cmp.GT,
+            BinaryOp(
+                BinOp.DIV,
+                StreamFieldRef("btc", "close"),
+                BinaryOp(BinOp.SUB, StreamFieldRef("btc", "close"), NumLit(BigDecimal("100"))),
+            ),
+            NumLit(BigDecimal.ZERO),
+        )
+
+    @Test
+    fun `an Undefined bar holds the edge so TRUE Undefined TRUE fires once`() {
+        val signals = feed(strategyWith(undefinedAt100), listOf("90", "150", "100", "150", "150"))
+        assertThat(signals).hasSize(1)
+    }
+
+    @Test
+    fun `an Undefined bar holds a false edge so Undefined then TRUE is one rising edge`() {
+        val signals = feed(strategyWith(undefinedAt100), listOf("100", "100", "150"))
+        assertThat(signals).hasSize(1)
+    }
+
+    @Test
+    fun `a FALSE bar after Undefined still re-arms the rule`() {
+        val signals = feed(strategyWith(undefinedAt100), listOf("150", "100", "90", "150"))
+        assertThat(signals).hasSize(2)
     }
 
     @Test

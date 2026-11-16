@@ -28,6 +28,7 @@ class GeneratedNumericFunctionStrategyTest {
             "MAX" to Case("max(1, 5, 3)", "5"),
             "MIN" to Case("min(1, 5, 3)", "1"),
             "MOD" to Case("mod(-7, 3)", "2"),
+            "NORM_CDF" to Case("norm_cdf(0)", "0.5"),
             "NORMALIZE" to Case("normalize(3, 1, 5)", "0.5"),
             "POW" to Case("pow(2, 3)", "8"),
             "RANK_OF" to Case("rank_of(5, 3, 1)", "1"),

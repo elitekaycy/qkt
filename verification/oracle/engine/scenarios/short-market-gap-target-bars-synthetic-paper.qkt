@@ -1,0 +1,7 @@
+STRATEGY short_market_gap_target_bars_synthetic_paper VERSION 1
+-- a target the next bar opens beyond fills at that open (the default take-profit pricing)
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 0.1 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

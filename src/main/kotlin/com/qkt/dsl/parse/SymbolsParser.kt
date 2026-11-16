@@ -3,6 +3,7 @@ package com.qkt.dsl.parse
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.SyncGroupDecl
+import com.qkt.dsl.sets.SetSpecParser
 
 /**
  * Parses the `SYMBOLS` block: each `<alias> = ...` declaration (read by [StreamDeclParser]) and
@@ -27,6 +28,9 @@ internal class SymbolsParser(
             // (`<broker>:<symbol> ...`). A basket combines already-declared streams.
             if (cursor.peek().kind == TokenKind.BASKET) {
                 baskets.add(streamDeclParser.parseBasket(alias))
+            } else if (cursor.peek().kind == TokenKind.IDENT && cursor.peekAt(1).kind == TokenKind.PLUS) {
+                // `majors = fx + crypto`: a union of symbol sets declared above.
+                out.add(SetSpecParser(cursor).parseUnionDecl(alias, out))
             } else if (cursor.peek().kind == TokenKind.SERIES) {
                 series.add(streamDeclParser.parseSeries(alias))
             } else {

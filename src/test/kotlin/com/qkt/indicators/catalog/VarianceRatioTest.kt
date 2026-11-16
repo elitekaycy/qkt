@@ -41,6 +41,25 @@ class VarianceRatioTest {
     }
 
     @Test
+    fun `a return off a zero price is undefined until it leaves the window`() {
+        val vr = VarianceRatio(k = 2, lookback = 4)
+        // 0 -> 100 has no defined return, so the window holding it reports null, not an
+        // exception; once four later returns have pushed it out the ratio is the 4/3 case.
+        feed(vr, "0", "100", "110", "121", "108.9")
+        assertThat(vr.isReady).isTrue()
+        assertThat(vr.value()).isNull()
+        feed(vr, "98.01")
+        assertThat(vr.value()!!.toDouble()).isCloseTo(1.33333333, within(1e-8))
+    }
+
+    @Test
+    fun `a return off a negative price is undefined`() {
+        val vr = VarianceRatio(k = 2, lookback = 3)
+        feed(vr, "-1", "100", "110", "121")
+        assertThat(vr.value()).isNull()
+    }
+
+    @Test
     fun `flat prices have zero one-bar variance and report null`() {
         val vr = VarianceRatio(k = 2, lookback = 4)
         feed(vr, "100", "100", "100", "100", "100")

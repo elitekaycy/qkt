@@ -1,0 +1,12 @@
+{
+  "name": "long-stoplimit-limit-never-fills-ticks-paper",
+  "proves": "a stop-limit whose stop trades but whose limit the ask never returns to books nothing",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [],
+  "realized": "0",
+  "commission": "0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

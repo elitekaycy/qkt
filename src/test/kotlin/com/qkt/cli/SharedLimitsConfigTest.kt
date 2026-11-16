@@ -106,4 +106,19 @@ class SharedLimitsConfigTest {
         val off = risk(facts(load(tmp, "source: tv"), false).standalone(emptyList(), null))
         assertThat(off["hardDailyLoss"]).isEqualTo(mapOf("value" to null, "source" to "default"))
     }
+
+    @Test
+    fun `a bot session warns that the hard limit is the daemon's and about an unset daily loss`(
+        @TempDir tmp: Path,
+    ) {
+        val hard =
+            captureCliRun { warnBotSessionRiskConfig(load(tmp, "risk:\n  hard_daily_loss: 500"), true).let { 0 } }
+        assertThat(hard.err.lines()).hasSize(3)
+        assertThat(hard.err.lines()[0]).startsWith("[WARN] risk.max_daily_loss is not set")
+        assertThat(hard.err.lines()[1])
+            .isEqualTo("[WARN] risk.hard_daily_loss is enforced by qkt daemon only; this session does not apply it.")
+
+        val quiet = captureCliRun { warnBotSessionRiskConfig(load(tmp, "risk:\n  max_daily_loss: 8"), true).let { 0 } }
+        assertThat(quiet.err).isEmpty()
+    }
 }

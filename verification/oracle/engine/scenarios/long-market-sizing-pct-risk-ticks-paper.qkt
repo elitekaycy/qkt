@@ -1,0 +1,7 @@
+STRATEGY long_market_sizing_pct_risk_ticks_paper VERSION 1
+-- SIZING 1 PCT RISK with a 2.00 stop and contractSize 10 is exactly 5 lots; the stop loses just under 1%
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 1 PCT RISK BRACKET { STOP_LOSS BY 2.00, TAKE_PROFIT BY 4.00 }

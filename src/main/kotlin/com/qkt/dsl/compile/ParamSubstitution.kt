@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
@@ -51,6 +52,17 @@ object ParamSubstitution {
                 ast.rules.map { rule ->
                     when (rule) {
                         is WhenThen -> WhenThen(cond = t.expr(rule.cond), action = t.action(rule.action))
+                        is ForEachSet ->
+                            ForEachSet(
+                                rule.iterVar,
+                                rule.set,
+                                WhenThen(
+                                    t.expr(rule.template.cond),
+                                    t.action(rule.template.action),
+                                    rule.template.line,
+                                ),
+                                rule.line,
+                            )
                     }
                 },
             schedules = ast.schedules.map { it.copy(action = t.action(it.action)) },

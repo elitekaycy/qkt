@@ -25,6 +25,12 @@ private val THREE = BigDecimal(3)
  * deterministic and reads identically in backtest and live. Volume-less candles
  * (volume 0) carry no weight, matching [VWAP].
  *
+ * The variance is the volume-weighted population variance of typical price around the
+ * VWAP, accumulated with West's incremental update (`m2 += v * (tp - oldMean) * (tp - newMean)`)
+ * rather than `E[tp²] - E[tp]²`: the one-pass form cancels catastrophically at large prices
+ * (a spurious ~0.001 stdev on a session's first bar at BTC prices), the incremental form is
+ * exactly zero there and stays accurate throughout the session.
+ *
  * e.g. two equal-volume candles at typical prices 10 and 20 → vwap 15, stdev 5.
  */
 class SessionVwap(
@@ -44,7 +50,12 @@ class SessionVwap(
     private var session: Long = Long.MIN_VALUE
     private var sumVol = BigDecimal.ZERO
     private var sumPv = BigDecimal.ZERO
-    private var sumP2v = BigDecimal.ZERO
+
+    /** Running volume-weighted mean of typical price, at full precision (the rounded VWAP is derived in [bands]). */
+    private var mean = BigDecimal.ZERO
+
+    /** Running sum of `v * (tp - mean)²`, so `m2 / sumVol` is the weighted population variance. */
+    private var m2 = BigDecimal.ZERO
     private var completeSession = false
 
     override val warmupBars: Int = 1
@@ -59,7 +70,8 @@ class SessionVwap(
             completeSession = Math.floorMod(input.startTime - anchorOffsetMs, MS_PER_DAY) == 0L
             sumVol = BigDecimal.ZERO
             sumPv = BigDecimal.ZERO
-            sumP2v = BigDecimal.ZERO
+            mean = BigDecimal.ZERO
+            m2 = BigDecimal.ZERO
         }
         if (!completeSession) return
         val volume = input.volume
@@ -69,19 +81,26 @@ class SessionVwap(
                 .add(input.low, MathContext.DECIMAL128)
                 .add(input.close, MathContext.DECIMAL128)
                 .divide(THREE, MathContext.DECIMAL128)
-        val pv = tp.multiply(volume, MathContext.DECIMAL128)
+        val first = sumVol.signum() == 0
         sumVol = sumVol.add(volume, MathContext.DECIMAL128)
-        sumPv = sumPv.add(pv, MathContext.DECIMAL128)
-        sumP2v = sumP2v.add(tp.multiply(pv, MathContext.DECIMAL128), MathContext.DECIMAL128)
+        sumPv = sumPv.add(tp.multiply(volume, MathContext.DECIMAL128), MathContext.DECIMAL128)
+        if (first) {
+            mean = tp
+            return
+        }
+        val delta = tp.subtract(mean, MathContext.DECIMAL128)
+        val newMean = sumPv.divide(sumVol, MathContext.DECIMAL128)
+        val spread = delta.multiply(tp.subtract(newMean, MathContext.DECIMAL128), MathContext.DECIMAL128)
+        m2 = m2.add(volume.multiply(spread, MathContext.DECIMAL128), MathContext.DECIMAL128)
+        mean = newMean
     }
 
     /** Current session VWAP and band stddev, or null until a volume-bearing candle this session. */
     fun bands(): Bands? {
         if (sumVol.signum() <= 0) return null
         val vwap = sumPv.divide(sumVol, Money.CONTEXT)
-        val meanSq = sumP2v.divide(sumVol, Money.CONTEXT)
-        var variance = meanSq.subtract(vwap.multiply(vwap, Money.CONTEXT), Money.CONTEXT)
-        if (variance.signum() < 0) variance = BigDecimal.ZERO
+        // m2 is a sum of non-negative terms; max guards the last-digit rounding of a near-constant session.
+        val variance = m2.max(BigDecimal.ZERO).divide(sumVol, MathContext.DECIMAL128)
         val stdev = variance.sqrt(Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
         return Bands(vwap.setScale(Money.SCALE, Money.ROUNDING), stdev)
     }

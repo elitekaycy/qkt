@@ -11,6 +11,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
@@ -18,6 +19,7 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
+import com.qkt.instrument.QuoteCurrencyGuard
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
@@ -80,7 +82,7 @@ class LiveSession(
     private val equityBasis: LiveEquityBasis = LiveEquityBasis.VENUE,
     private val warmupOverride: WarmupSpec? = null,
     private val mdcStrategy: String? = null,
-    private val candleHub: com.qkt.dsl.compile.CandleHub? = null,
+    private val candleHub: CandleHub? = null,
     private val onWarmupTick: (Tick) -> Unit = {},
     private val onTrade: (Trade, java.math.BigDecimal, String) -> Unit = { _, _, _ -> },
     private val onSignal: (Signal) -> Unit = {},
@@ -290,7 +292,7 @@ class LiveSession(
     /** The strategy whose state holds what belongs to the whole session: its risk state and stream lanes. */
     private val stateOwner = strategies.firstOrNull()?.first ?: "session"
     private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock, persistor, stateOwner)
-    private val source: MarketSource = continuous.source
+    private val source: MarketSource = liveSlotSource(continuous.source, strategies, instrumentRegistry)
 
     /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
     private val brokers = SessionBrokers(strategies, symbols, brokerFactories, instrumentRegistry)
@@ -423,11 +425,7 @@ class LiveSession(
         // unit-contract default for paper/crypto paths.
         if (instruments !is com.qkt.instrument.NoopInstrumentRegistry) {
             for (symbol in symbols) {
-                if (!com.qkt.instrument.QuoteCurrencyGuard
-                        .requiresContractSizeMeta(symbol)
-                ) {
-                    continue
-                }
+                if (!QuoteCurrencyGuard.requiresContractSizeMeta(symbol)) continue
                 requireNotNull(instruments.lookup(symbol)) {
                     "InstrumentMeta unresolvable for $symbol at deploy — refusing to start " +
                         "(PnL would silently book contractSize=1)"
@@ -447,6 +445,7 @@ class LiveSession(
                 ignoreMismatches,
                 reconcileReadBackoffMs,
                 ticketAttribution,
+                instruments,
             ).run(strategyPositions, broker, downtimeCloses::onLegRetired)
 
         val engine = Engine(bus, priceTracker)
@@ -543,9 +542,7 @@ class LiveSession(
             )
         val trades = RecentTrades()
 
-        val pipelineCandleHub =
-            candleHub ?: com.qkt.dsl.compile
-                .CandleHub()
+        val pipelineCandleHub = candleHub ?: CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
         val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)

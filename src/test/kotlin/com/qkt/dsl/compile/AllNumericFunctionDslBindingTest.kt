@@ -18,6 +18,7 @@ class AllNumericFunctionDslBindingTest {
             "MAX" to "max(1, 2, 3)",
             "MIN" to "min(1, 2, 3)",
             "MOD" to "mod(7, 3)",
+            "NORM_CDF" to "norm_cdf(1.96)",
             "NORMALIZE" to "normalize(3, 1, 5)",
             "POW" to "pow(2, 3)",
             "RANK_OF" to "rank_of(3, 1, 5)",

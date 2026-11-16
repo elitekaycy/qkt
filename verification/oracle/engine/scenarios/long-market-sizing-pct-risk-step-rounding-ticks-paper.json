@@ -1,0 +1,137 @@
+{
+  "name": "long-market-sizing-pct-risk-step-rounding-ticks-paper",
+  "proves": "SIZING 0.5 PCT RISK with a 1.50 stop and contractSize 10 is 3.333 lots, quantized down to 3.33",
+  "dimensions": {
+    "entry": "market",
+    "exit": "bracket-by",
+    "side": "long",
+    "fills": "ticks",
+    "path": "target",
+    "sizing": "pct-risk-step",
+    "costs": "none",
+    "broker": "paper",
+    "mode": "hedging"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "10",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "100.99",
+      "101.01"
+    ],
+    [
+      135,
+      "102.49",
+      "102.51"
+    ],
+    [
+      150,
+      "103.50",
+      "103.52"
+    ],
+    [
+      165,
+      "103.29",
+      "103.31"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "pctRisk",
+          "value": "0.5"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.50"
+          },
+          "target": {
+            "by": "3.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": []
+}

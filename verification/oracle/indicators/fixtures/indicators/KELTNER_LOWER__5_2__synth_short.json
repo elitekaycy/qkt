@@ -1,0 +1,1 @@
+{"indicator":"KELTNER_LOWER","args":["5","2"],"series":"synth_short","input":"candle","oracle":"TA-Lib 0.6.4 (ta-lib 0.6.8), numpy 2.3.4, pandas 2.3.3, scipy 1.16.3","tolerance":{"abs":1.5000000000000002e-08,"rel":1e-09},"note":"EMA(close) +- k * Wilder ATR, from 8-decimal reads","values":[null,null,null,null,null]}

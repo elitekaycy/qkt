@@ -20,7 +20,8 @@ import java.math.BigDecimal
  *
  * [period] counts returns, so the indicator needs `period + 1` prices before it reports.
  * When every return in the window is identical (`sigma = 0`) the distribution has no shape,
- * so skewness is reported as 0.
+ * so skewness is reported as 0. A return off a zero or negative base price has no value; the
+ * indicator is undefined (null) while the window holds one ([SimpleReturnWindow]).
  *
  * e.g. returns mostly small-positive with one large-negative → negative value; a symmetric
  * window → ~0.
@@ -32,13 +33,12 @@ class Skew(
         require(period > 2) { "Skew.period must be > 2 (third moment needs at least 3 returns): $period" }
     }
 
-    private val returns: ArrayDeque<BigDecimal> = ArrayDeque(period)
-    private var prevPrice: BigDecimal? = null
+    private val window = SimpleReturnWindow(period)
 
     override val warmupBars: Int = period + 1
 
     override val isReady: Boolean
-        get() = returns.size >= period
+        get() = window.isFull
 
     // Computed once per update; value() is read once per referencing expression node per bar,
     // and each read re-walked the whole window.
@@ -46,18 +46,14 @@ class Skew(
     private val n = BigDecimal(period)
 
     override fun update(input: BigDecimal) {
-        val prev = prevPrice
-        if (prev != null) {
-            returns.addLast(input.subtract(prev, Money.CONTEXT).divide(prev, Money.CONTEXT))
-            if (returns.size > period) returns.removeFirst()
-        }
-        prevPrice = input
-        lastValue = if (returns.size >= period) compute() else null
+        window.push(input)
+        lastValue = if (window.isFull && window.isDefined) compute() else null
     }
 
     override fun value(): BigDecimal? = lastValue
 
     private fun compute(): BigDecimal {
+        val returns = window.returns
         // Mean of returns.
         var sum = BigDecimal.ZERO
         for (r in returns) sum = sum.add(r, Money.CONTEXT)

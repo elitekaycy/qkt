@@ -20,9 +20,10 @@ import com.qkt.marketdata.source.SymbolPattern
  * The simulated broker a replay of [symbols] fills against: one [ExecutionSimulationConfig.brokerKind]
  * broker, or, when strategies declare broker-qualified streams, a [CompositeBroker] with one such
  * broker per route in [brokerSymbols] iteration order. Futures symbols always fill on the exchange
- * stack instead ([replayFuturesRoutes]), whatever the broker kind; a run without them gets exactly
- * the broker it got before futures existed. Built once per replay. The paper and MT5 brokers trade each symbol only
- * inside its session under [calendar] ([ReplaySessions]); the exchange stack takes orders at all times, as live.
+ * stack instead ([replayFuturesRoutes]), whatever the broker kind, and event contracts on their own venue
+ * ([replayEventRoutes]); a run without them gets exactly the broker it got before futures existed.
+ * Built once per replay. The paper and MT5 brokers trade each symbol only inside its session under
+ * [calendar] ([ReplaySessions]); the exchange stack takes orders at all times, as live.
  */
 internal fun replayBroker(
     executionConfig: ExecutionSimulationConfig,
@@ -70,7 +71,8 @@ internal fun replayBroker(
     }
     val futures =
         replayFuturesRoutes(executionConfig, bus, clock, books, barFills, calendar, symbols) +
-            replayOptionRoutes(bus, clock, books, calendar, symbols)
+            replayOptionRoutes(bus, clock, books, calendar, symbols) +
+            replayEventRoutes(executionConfig, bus, clock, books, barFills, symbols)
     val readOnly = { s: String -> s.startsWith(OptionRootSymbol.PREFIX) || s.startsWith(ChainAnalyticsSymbol.PREFIX) }
     val options = books.instruments.optionSymbols(symbols)
     books.execution.describe(
