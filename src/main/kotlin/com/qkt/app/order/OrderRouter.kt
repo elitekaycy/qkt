@@ -166,7 +166,9 @@ internal class OrderRouter(
     }
 
     private fun holdPending(request: OrderRequest): SubmitAck {
-        ops.update(request.id) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
+        // Store the dispatched request, not only the state: a bracket's managed stop is re-dispatched on the entry
+        // fill anchored to the fill price and time, and the stop ticker reads the stored request.
+        ops.update(request.id) { it.copy(request = request, state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
         val trailingSeed =
             if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
                 prices.priceOf(request.symbol)
