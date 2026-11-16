@@ -21,11 +21,13 @@ data class EntryRiskReport(
 /**
  * Per-bracket risk (`|entry - stop| x qty x contractSize`) and protection prices for the
  * backtest report. Only the backtest consumes them, so a live session constructs this disabled —
- * otherwise the maps would grow for the life of a 24/7 session. Each entry is consumed once.
+ * otherwise the maps would grow for the life of a 24/7 session. Each entry is consumed once. A STACK
+ * entry has no bracket request of its own; [stackEntries] resolves its levels from the stack's plan.
  */
 internal class BracketRiskRecorder(
     private val enabled: Boolean,
     private val instruments: InstrumentRegistry,
+    private val stackEntries: StackEntryRisk? = null,
 ) {
     private val riskByClientOrderId: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val protectionByClientOrderId: MutableMap<String, ProtectionLevels> = ConcurrentHashMap()
@@ -71,7 +73,9 @@ internal class BracketRiskRecorder(
         symbol: String,
     ): EntryRiskReport? {
         if (!enabled) return null
-        val bracket = reportBracketByClientOrderId[clientOrderId] ?: return null
+        val bracket =
+            reportBracketByClientOrderId[clientOrderId]
+                ?: return stackEntries?.forFill(clientOrderId, quantity, fillPrice, symbol)
         val ids = listOf(bracket.id, bracket.entry.id, clientOrderId).distinct()
         for (id in ids) {
             reportBracketByClientOrderId.remove(id)
