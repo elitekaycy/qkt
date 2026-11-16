@@ -143,8 +143,13 @@ goes after the stream/sizing.
 ### `OCO { STOP AT ..., LIMIT AT ... }` — exit pair by price
 
 Where `BRACKET` states a stop and a target as distances or prices with `STOP_LOSS` /
-`TAKE_PROFIT`, `OCO` states the same two exits as raw order prices. Both children are required
-and either may reference the bar that fired the rule:
+`TAKE_PROFIT`, `OCO` states the same two exits as raw order prices. The entry is placed first;
+when it fills, the stop and the limit are placed as exits of that position, and the first to fill
+cancels the other. `BUY ... OCO { STOP AT s, LIMIT AT t }` is therefore
+`BUY ... BRACKET { STOP_LOSS AT s, TAKE_PROFIT AT t }` under another name, and a stop that sits on
+the entry price is refused the same way. For two *pending entries* linked one-cancels-other, use
+[`OCO_ENTRY`](#oco_entry). Both children are required and either may reference the bar that fired
+the rule:
 
 ```qkt
 WHEN btc.close CROSSES ABOVE ema(btc.close, 50) AND POSITION.btc = 0
