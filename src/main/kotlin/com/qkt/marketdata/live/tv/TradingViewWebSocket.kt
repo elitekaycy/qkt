@@ -2,6 +2,7 @@ package com.qkt.marketdata.live.tv
 
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import com.qkt.common.coverage.ExcludeFromCoverage
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -187,6 +188,7 @@ class TradingViewWebSocket(
         const val DEFAULT_ORIGIN = "https://www.tradingview.com"
         const val ANONYMOUS_TOKEN = "unauthorized_user_token"
 
+        @ExcludeFromCoverage("the default url and origin only run against the live tradingview.com endpoint")
         fun connect(
             url: String = DEFAULT_URL,
             origin: String = DEFAULT_ORIGIN,

@@ -18,7 +18,7 @@ object UsFederalCalendar {
      * One-off closures: executive orders, days of mourning and Washington-area emergency closures.
      * Counting a day as closed can only make a release later, never earlier, so a doubtful day is included.
      */
-    val SPECIAL_CLOSURES: Set<LocalDate> =
+    private val SPECIAL_CLOSURES: Set<LocalDate> =
         listOf(
             "2004-06-11", // President Reagan, day of mourning
             "2007-01-02", // President Ford, day of mourning
