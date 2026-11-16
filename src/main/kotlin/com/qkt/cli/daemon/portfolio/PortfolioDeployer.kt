@@ -567,18 +567,12 @@ class PortfolioDeployer(
                                 perStrategyOverride = perStrategyOverride,
                             ),
                     ),
-                perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
-                perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
-                perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
-                perStrategyMaxDrawdownPct = perStrategyOverride?.maxDrawdownPct,
-                perStrategyMaxDailyDrawdownPct = perStrategyOverride?.maxDailyDrawdownPct,
-                perStrategyMaxTradesPerDay = perStrategyOverride?.maxTradesPerDay,
-                perStrategyCooldownAfterLossMs = perStrategyOverride?.cooldownAfterLossMs,
-                perStrategyCooldownAfterLossAfterConsecutive =
-                    perStrategyOverride?.cooldownAfterLossAfterConsecutive ?: 1,
-                perStrategyLossStreakHalt = perStrategyOverride?.lossStreakHalt,
-                perStrategyLossStreakHaltScope =
-                    perStrategyOverride?.lossStreakHaltScope ?: com.qkt.risk.HaltScope.PERSISTENT,
+                perStrategyLimits =
+                    com.qkt.cli.liveRiskLimits(
+                        compiledChild.strategyId,
+                        perStrategyOverride,
+                        compiledChild.ast.streams,
+                    ),
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,

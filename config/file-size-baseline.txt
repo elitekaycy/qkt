@@ -6,12 +6,12 @@
 947 src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployerE2ETest.kt
 899 src/test/kotlin/com/qkt/app/LiveSessionBrokerCoverageTest.kt
 897 src/test/kotlin/com/qkt/connector/mt5/MT5ClientTest.kt
-833 src/main/kotlin/com/qkt/app/LiveSession.kt
+807 src/main/kotlin/com/qkt/app/LiveSession.kt
 755 src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt
 691 src/test/kotlin/com/qkt/connector/mt5/MT5PositionPollerCloseTest.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
 662 src/main/kotlin/com/qkt/cli/Config.kt
-658 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
+652 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 658 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcherTest.kt
 567 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 559 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
