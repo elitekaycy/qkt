@@ -1,0 +1,146 @@
+{
+  "name": "short-market-oto-limit-child-never-fills-netting-ticks-paper",
+  "proves": "a SELL LIMIT AT entry + 0.50 child the bid never reaches stays out of the position; CLOSE takes the parent only",
+  "dimensions": {
+    "feature": "oto",
+    "shape": "oto-child-unfilled",
+    "side": "short",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "netting",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "netting",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.97",
+      "100.99"
+    ],
+    [
+      105,
+      "100.69",
+      "100.71"
+    ],
+    [
+      120,
+      "100.39",
+      "100.41"
+    ],
+    [
+      135,
+      "100.19",
+      "100.21"
+    ],
+    [
+      150,
+      "100.09",
+      "100.11"
+    ],
+    [
+      165,
+      "100.04",
+      "100.06"
+    ],
+    [
+      180,
+      "99.99",
+      "100.01"
+    ],
+    [
+      195,
+      "99.99",
+      "100.01"
+    ],
+    [
+      210,
+      "99.99",
+      "100.01"
+    ],
+    [
+      225,
+      "100.01",
+      "100.03"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "SELL",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "onFill": [
+          {
+            "side": "SELL",
+            "size": "0.05",
+            "orderType": {
+              "type": "LIMIT",
+              "entryOffset": "0.50"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "when": {
+        "barClose": "100.05",
+        "position": "short"
+      },
+      "do": {
+        "kind": "close"
+      }
+    }
+  ],
+  "notes": []
+}

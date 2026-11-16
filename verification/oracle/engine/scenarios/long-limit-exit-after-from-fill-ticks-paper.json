@@ -1,0 +1,132 @@
+{
+  "name": "long-limit-exit-after-from-fill-ticks-paper",
+  "proves": "a LIMIT entry filling 45 s after placement closes 1m after its fill, not 1m after the signal",
+  "dimensions": {
+    "feature": "exit-after",
+    "shape": "exit-after-pending",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.29",
+      "100.31"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.98",
+      "100.00"
+    ],
+    [
+      120,
+      "100.09",
+      "100.11"
+    ],
+    [
+      135,
+      "100.19",
+      "100.21"
+    ],
+    [
+      150,
+      "100.29",
+      "100.31"
+    ],
+    [
+      165,
+      "100.39",
+      "100.41"
+    ],
+    [
+      180,
+      "100.44",
+      "100.46"
+    ],
+    [
+      195,
+      "100.44",
+      "100.46"
+    ],
+    [
+      210,
+      "100.44",
+      "100.46"
+    ],
+    [
+      225,
+      "100.44",
+      "100.46"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "LIMIT",
+          "price": "100.00"
+        },
+        "exitAfterSec": 60
+      }
+    }
+  ],
+  "notes": []
+}

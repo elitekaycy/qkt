@@ -1,0 +1,7 @@
+STRATEGY long_market_exit_after_ticks_paper VERSION 1
+-- EXIT AFTER 2m closes the leg at market on the tick at fill + 120 s
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 EXIT AFTER 2m

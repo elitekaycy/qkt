@@ -1,0 +1,31 @@
+{
+  "name": "short-market-oto-limit-child-never-fills-netting-ticks-paper",
+  "proves": "a SELL LIMIT AT entry + 0.50 child the bid never reaches stays out of the position; CLOSE takes the parent only",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880980000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.00",
+      "realized": "0.050",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.050",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

@@ -1,0 +1,157 @@
+{
+  "name": "long-market-exit-after-target-first-drops-timer-ticks-paper",
+  "proves": "the target fills before the 3m deadline, so the timer is dropped and nothing else is sent",
+  "dimensions": {
+    "feature": "exit-after",
+    "shape": "exit-after-bracket-first",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.99",
+      "101.01"
+    ],
+    [
+      90,
+      "101.50",
+      "101.52"
+    ],
+    [
+      105,
+      "101.39",
+      "101.41"
+    ],
+    [
+      120,
+      "101.29",
+      "101.31"
+    ],
+    [
+      135,
+      "101.29",
+      "101.31"
+    ],
+    [
+      150,
+      "101.29",
+      "101.31"
+    ],
+    [
+      165,
+      "101.29",
+      "101.31"
+    ],
+    [
+      180,
+      "101.19",
+      "101.21"
+    ],
+    [
+      195,
+      "101.19",
+      "101.21"
+    ],
+    [
+      210,
+      "101.19",
+      "101.21"
+    ],
+    [
+      225,
+      "101.19",
+      "101.21"
+    ],
+    [
+      240,
+      "101.09",
+      "101.11"
+    ],
+    [
+      255,
+      "101.09",
+      "101.11"
+    ],
+    [
+      270,
+      "101.09",
+      "101.11"
+    ],
+    [
+      285,
+      "101.09",
+      "101.11"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "1.00"
+          }
+        },
+        "exitAfterSec": 180
+      }
+    }
+  ],
+  "notes": []
+}

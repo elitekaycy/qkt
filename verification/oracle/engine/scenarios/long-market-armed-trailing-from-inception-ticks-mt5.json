@@ -1,0 +1,118 @@
+{
+  "name": "long-market-armed-trailing-from-inception-ticks-mt5",
+  "proves": "AFTER MFE >= 0 trails from the fill: the stop follows the 100.80 high to 100.40 and fills at bid minus slip",
+  "dimensions": {
+    "feature": "armed-trailing",
+    "shape": "armed-trailing-inception",
+    "side": "long",
+    "broker": "mt5-sim",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "spread+slippage",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "slippagePoints": 1
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.59",
+      "100.61"
+    ],
+    [
+      105,
+      "100.38",
+      "100.40"
+    ],
+    [
+      120,
+      "100.29",
+      "100.31"
+    ],
+    [
+      135,
+      "100.29",
+      "100.31"
+    ],
+    [
+      150,
+      "100.29",
+      "100.31"
+    ],
+    [
+      165,
+      "100.29",
+      "100.31"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "trail": "0.40",
+            "afterMfe": "0"
+          },
+          "target": {
+            "by": "3.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": []
+}

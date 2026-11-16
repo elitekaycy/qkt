@@ -1,0 +1,117 @@
+{
+  "name": "long-stop-oto-parent-never-fills-child-dropped-ticks-paper",
+  "proves": "a STOP parent that never triggers places none of its ON_FILL children",
+  "dimensions": {
+    "feature": "oto",
+    "shape": "oto-parent-unfilled",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "100.19",
+      "100.21"
+    ],
+    [
+      105,
+      "99.99",
+      "100.01"
+    ],
+    [
+      120,
+      "99.99",
+      "100.01"
+    ],
+    [
+      135,
+      "99.99",
+      "100.01"
+    ],
+    [
+      150,
+      "99.99",
+      "100.01"
+    ],
+    [
+      165,
+      "99.99",
+      "100.01"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "orderType": {
+          "type": "STOP",
+          "price": "102.00"
+        },
+        "onFill": [
+          {
+            "side": "BUY",
+            "size": "0.05"
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

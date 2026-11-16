@@ -1,0 +1,10 @@
+STRATEGY oco_entry_gap_through_both_legs_ticks_paper VERSION 1
+-- a gap tick reaches both legs: the leg whose trigger is closer to the bar's open fills, the other is cancelled
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50
+    THEN OCO_ENTRY {
+        BUY syn SIZING 0.1 ORDER_TYPE = LIMIT AT 99.00 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 },
+        SELL syn SIZING 0.1 ORDER_TYPE = STOP AT 99.50 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }
+    }

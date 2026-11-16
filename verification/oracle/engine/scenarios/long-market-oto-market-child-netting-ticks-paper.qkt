@@ -1,0 +1,9 @@
+STRATEGY long_market_oto_market_child_netting_ticks_paper VERSION 1
+-- a market ON_FILL child fills with its parent on the parent's fill tick; CLOSE flattens both as one netted position
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN BUY syn SIZING 0.1 ON_FILL { BUY syn SIZING 0.05 }
+    WHEN syn.close = 101.00 AND POSITION.syn > 0
+    THEN CLOSE syn

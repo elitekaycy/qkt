@@ -1,0 +1,53 @@
+{
+  "name": "two-rules-same-bar-market-and-limit-short-ticks-mt5",
+  "proves": "mt5-sim: one rule sells at market, the other rests a sell limit at 100.80; both legs take their own targets",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.49",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.49",
+      "takeProfit": "99.49"
+    },
+    {
+      "ts": 1704880875000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.80",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "101.80",
+      "takeProfit": "99.80"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.80",
+      "realized": "0.100",
+      "reason": "target",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704880965000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.49",
+      "realized": "0.100",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.200",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

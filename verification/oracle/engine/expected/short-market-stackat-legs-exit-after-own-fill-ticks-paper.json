@@ -1,0 +1,51 @@
+{
+  "name": "short-market-stackat-legs-exit-after-own-fill-ticks-paper",
+  "proves": "EXIT AFTER 1m with STACK_AT: the primary closes 60 s after its fill, the tier leg 60 s after its own (30 s later)",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.05",
+      "price": "100.20",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.20",
+      "takeProfit": "98.20"
+    },
+    {
+      "ts": 1704880920000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.10",
+      "realized": "0.040",
+      "reason": "close",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "99.90",
+      "realized": "0.0150",
+      "reason": "close",
+      "orderType": "MARKET"
+    }
+  ],
+  "realized": "0.0550",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}
