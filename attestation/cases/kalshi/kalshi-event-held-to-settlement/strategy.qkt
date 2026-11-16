@@ -1,0 +1,10 @@
+STRATEGY atto_event_settle VERSION 1
+
+SYMBOLS
+    k = KALSHI:KXDEMOFUTHOURLY@front.atm EVERY 1m
+
+RULES
+    -- One contract sold into the resting bid opens NO at 1 less the bid: at most 0.99 a contract plus the fee,
+    -- whichever way the event resolves. No entry in an event's last two minutes, where the order races the close.
+    WHEN k.bid >= 0.01 AND k.minutes_left > 2 AND POSITION.k = 0 AND TRADES.today = 0
+    THEN SELL k SIZING 1

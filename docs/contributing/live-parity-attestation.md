@@ -33,6 +33,9 @@ tests. It runs against the exact immutable image built from `testing`, never a m
    Its preflight resolves the commit's `:edge` digest from the docker workflow log before
    the build, so it needs a `gh` that can read run logs (2.55 returns them empty; 2.88 works):
    a run that cannot pin its image stops in seconds with the `gh` version in the reason.
+   The lanes on a gateway account (derivatives, bybit, alpaca, kalshi, cross) run only when the
+   profile names their gateway (`scripts/live-validation/attestation-profile.example`,
+   [`attestation/README.md`](../../attestation/README.md)); a machine without one skips that lane.
 6. Dispatch `paper-soak.yml` with the attestation path. The trusted runner verifies
    the exact SHA, image revision, demo mode, metrics, and every artifact hash, then
    uploads the immutable bundle.

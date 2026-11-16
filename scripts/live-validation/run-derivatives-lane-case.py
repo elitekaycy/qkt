@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One derivatives attestation case on a VGP gateway account (futures, perpetuals, options).
+"""One derivatives attestation case on a VGP gateway account (futures, perpetuals, options, shares, event contracts).
 
     run-derivatives-lane-case.py --case DIR --out DIR --gateway-url URL --expected-login LOGIN
         --arm I_UNDERSTAND_DEMO_ORDER_0.01 [--cli PATH] [--budget-seconds N]
