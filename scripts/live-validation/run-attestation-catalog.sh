@@ -9,11 +9,13 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca][,cross]] [--max-parallel N]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca][,kalshi][,cross]]
+         [--max-parallel N]
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--deriv-drill-gateway-url URL ...] [--deriv-parallel N]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
+         [--kalshi-gateway-url URL --kalshi-expected-login LOGIN]
          [--cross-venue LABEL=URL@LOGIN ...] [--binding FILE] [--session-wait-max-h H]
          [--venue-wait-max SECONDS] [--deribit-public-url URL]
 
@@ -26,6 +28,8 @@ instruments, run side by side, at most --deriv-parallel (default 4) at once, eac
 class it trades, and the cross lane's Deribit leg queues behind the same locks.
 The bybit lane is the same on a gateway running the Bybit adapter: the --bybit-* flags and
 QKT_BYBIT_GATEWAY_KEY (QKT_BYBIT_GUARDIAN_KEY for its kill-switch drill); it runs beside the derivatives lane.
+The kalshi lane is the same on a gateway running the Kalshi adapter (binary event contracts, the Kalshi demo): the
+--kalshi-* flags and QKT_KALSHI_GATEWAY_KEY (QKT_KALSHI_GUARDIAN_KEY for a kill-switch drill); its own account.
 The cross lane runs one daemon on this MT5 demo and the gateway venues its cases name: one --cross-venue flag per
 gateway venue (its broker prefix, URL and login), its trader token in QKT_CROSS_<LABEL>_KEY (its guardian token in
 QKT_CROSS_<LABEL>_GUARDIAN_KEY for a kill-switch drill). Its cases run one after another, each under its own magic.
@@ -46,7 +50,7 @@ wait logged and recorded in DIR/session-waits.jsonl), up to --session-wait-max-h
 past that its cases fail as `session`, by name. Whatever the plan says, no session-bound case starts unless it can
 finish before the close (attest_session.py can-start); one that cannot fails as `session` and a resumed run reruns it.
 
-A gateway lane case (derivatives, bybit, alpaca, cross) first waits for its venue (lib/venue_health.py: the gateway's
+A gateway lane case (derivatives, bybit, alpaca, kalshi, cross) first waits for its venue (lib/venue_health.py: the gateway's
 venue link and, on Deribit, each of its instruments `open` with a fresh ticker on --deribit-public-url, default the
 testnet's API), up to --venue-wait-max seconds (default 21600), and samples the venue while it runs. An attempt that
 failed while those samples show the venue unavailable is recorded as `venue-outage` with its evidence and reruns once the
@@ -61,7 +65,8 @@ out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; ar
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
 deriv_drill_urls=(); deriv_parallel=4
-alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=(); session_wait_max_h=72
+alpaca_gateway_url=""; alpaca_expected_login=""; kalshi_gateway_url=""; kalshi_expected_login=""
+cross_venues=(); session_wait_max_h=72
 venue_wait_max=21600; deribit_public_url="https://test.deribit.com/api/v2"
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -82,6 +87,8 @@ while [ "$#" -gt 0 ]; do
         --deriv-parallel) deriv_parallel="${2:-}"; shift 2 ;;
         --bybit-gateway-url) bybit_gateway_url="${2:-}"; shift 2 ;;
         --bybit-expected-login) bybit_expected_login="${2:-}"; shift 2 ;;
+        --kalshi-gateway-url) kalshi_gateway_url="${2:-}"; shift 2 ;;
+        --kalshi-expected-login) kalshi_expected_login="${2:-}"; shift 2 ;;
         --alpaca-gateway-url) alpaca_gateway_url="${2:-}"; shift 2 ;;
         --alpaca-expected-login) alpaca_expected_login="${2:-}"; shift 2 ;;
         --cross-venue) cross_venues+=(--venue "${2:-}"); shift 2 ;;
@@ -199,8 +206,8 @@ if [[ ",$lanes," == *,shadow,* ]]; then
         magic=$((magic + 1))
     fi
 fi
-# A venue-gateway lane (derivatives: Deribit; bybit: the Bybit adapter) runs its ready cases one after another on
-# its own netting account; the lanes run beside each other.
+# A venue-gateway lane (derivatives: Deribit; bybit, alpaca, kalshi: that adapter) runs its ready cases one after
+# another on its own account; the lanes run beside each other.
 run_gateway_lane() {  # lane url login key guardian
     local lane="$1" url="$2" login="$3" id code=0
     export QKT_DERIV_GATEWAY_KEY="$4" QKT_DERIV_GUARDIAN_KEY="$5"
@@ -357,6 +364,13 @@ if [[ ",$lanes," == *,bybit,* ]]; then
     gateway_lane bybit "$bybit_gateway_url" "$bybit_expected_login" "$QKT_BYBIT_GATEWAY_KEY" \
         "${QKT_BYBIT_GUARDIAN_KEY:-}"
 fi
+if [[ ",$lanes," == *,kalshi,* ]]; then
+    [ -n "$kalshi_gateway_url" ] && [ -n "$kalshi_expected_login" ] ||
+        fail "--lanes kalshi needs --kalshi-gateway-url and --kalshi-expected-login"
+    [ -n "${QKT_KALSHI_GATEWAY_KEY:-}" ] || fail "--lanes kalshi needs QKT_KALSHI_GATEWAY_KEY"
+    gateway_lane kalshi "$kalshi_gateway_url" "$kalshi_expected_login" "$QKT_KALSHI_GATEWAY_KEY" \
+        "${QKT_KALSHI_GUARDIAN_KEY:-}"
+fi
 # The cross lane: one daemon per case on the MT5 demo (its own magic) and the gateway venues the case names, one case
 # after another, since a case's gateway legs and drills (a kill switch, an outage) are its venue's for the whole case.
 # Each case reserves four magics, one per possible attempt.
@@ -395,7 +409,7 @@ record_round() {
     for i in "${!pids[@]}"; do
         name="${names[$i]}"; code=0; wait "${pids[$i]}" || code=$?
         case "$name" in  # recorded case by case as they ran
-            derivatives|bybit|alpaca|cross)
+            derivatives|bybit|alpaca|kalshi|cross)
                 [ "$code" = 0 ] || grep -h '^deriv-parallel:' "$out/logs/$name.log" 2>/dev/null || true  # why a plan did not start
                 continue ;;
         esac

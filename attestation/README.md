@@ -10,7 +10,7 @@ attestation/
   cases/<lane>/<id>/
     case.yaml             what the case proves, what it needs, how long it may take
     strategy.qkt          the strategy (order and shadow lanes) - optional for daemon/engine cases
-    instruments.yaml      derivatives lane: the `futures:`/`options:` roots the strategy trades
+    instruments.yaml      gateway lanes: the `futures:`/`options:` roots the strategy trades (`instruments: []` when none)
   lib/validate.py         schema check + coverage gate; run by CI
 ```
 
@@ -123,6 +123,31 @@ lane is opt-in with `run-attestation-catalog.sh --lanes ...,bybit --bybit-gatewa
 `bybit_expected_login` in the attestation profile. It runs beside the derivatives lane: the accounts are
 separate. Funding, which Bybit charges at 00:00, 08:00 and 16:00 UTC, is proven by the soak in
 `scripts/live-validation/funding-soak-bybit`, run before one of those times.
+
+### The kalshi lane
+
+`cases/kalshi/` holds binary event contracts (yes/no markets that pay 1 or 0) on a Kalshi demo account behind a
+gateway running the qkt-venue-gateway's Kalshi adapter, reached as a `type: gateway` broker named `kalshi`; qkt has
+no Kalshi code of its own. The runner is the derivatives lane's `run-derivatives-lane-case.py`; the lane is opt-in
+with `run-attestation-catalog.sh --lanes ...,kalshi --kalshi-gateway-url URL --kalshi-expected-login LOGIN` (the
+gateway's `account_login`) and the trader token in `QKT_KALSHI_GATEWAY_KEY` (the guardian token in
+`QKT_KALSHI_GUARDIAN_KEY` for a kill-switch drill), or `kalshi_gateway_url` and `kalshi_expected_login` in the
+attestation profile. Its strategies trade an event slot (`KALSHI:KXDEMOFUTHOURLY@front.atm`, the demo's hourly
+test series), so no case names a contract, and a live slot reads its family from the gateway's listing, so
+`instruments.yaml` declares nothing.
+
+The demo's book is one-sided (a maker's bid at 0.01, usually no offer), so no case may need both sides: a position
+is opened by selling into the bid (NO bought at 1 less the bid, at most 0.99 a contract plus the fee) and closed
+only by the venue settling the event. That happens at the event's own time, so `kalshi-event-held-to-settlement`
+is `scheduled`: run on its own at any hour (a new event opens every hour), it sells one contract, holds it until
+the hour's result is in (up to 70 minutes; its budget is 5400 s) and asserts what
+[holding through an expiry](#holding-through-an-expiry) asserts, the settlement price being the outcome, 1 or 0:
+sold at 0.01 with a 0.0007 fee, the venue net is `0.01 - 0.0007 = 0.0093` when the event resolves NO and
+`0.01 - 0.0007 - 1 = -0.9907` when it resolves YES. A run stopped while it holds cannot be swept flat against an
+empty offer; the account is flat again once the event settles. `test_event_settlement.py` runs the whole case
+offline against a Kalshi-shaped fake gateway. `kalshi-event-shadow` (event fields and `norm_cdf` live against
+replay) is `planned`: a gateway lane case is judged by its fills, with no live-against-replay value comparison, so
+the lane has no `ready` case yet and a release that names the gateway only checks it in the preflight.
 
 ### Holding through an expiry
 

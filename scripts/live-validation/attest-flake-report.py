@@ -125,7 +125,8 @@ def soak(a):
     lanes = "orders,risk,book,engine,daemon,stress"; extra = []
     for lane, url, login, flag in (("derivatives", "deriv_gateway_url", "deriv_expected_login", "deriv"),
                                    ("bybit", "bybit_gateway_url", "bybit_expected_login", "bybit"),
-                                   ("alpaca", "alpaca_gateway_url", "alpaca_expected_login", "alpaca")):
+                                   ("alpaca", "alpaca_gateway_url", "alpaca_expected_login", "alpaca"),
+                                   ("kalshi", "kalshi_gateway_url", "kalshi_expected_login", "kalshi")):
         if p.get(url):
             lanes += f",{lane}"
             extra += [f"--{flag}-gateway-url", p[url], f"--{flag}-expected-login", p[login]]
