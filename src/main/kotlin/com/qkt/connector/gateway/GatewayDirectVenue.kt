@@ -43,6 +43,8 @@ class GatewayDirectVenue(
     override fun venueSymbol(qktSymbol: String): String =
         listing.let { symbols.venue(qktSymbol) } ?: error("gateway $name does not list $qktSymbol")
 
+    override fun qktSymbol(venueSymbol: String): String = symbols.qkt(venueSymbol)
+
     override fun facts(qktSymbol: String): VenueFacts {
         val instrument = listing.getValue(venueSymbol(qktSymbol))
         val quote = quoteOnce(instrument)
