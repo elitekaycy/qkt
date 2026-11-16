@@ -40,6 +40,11 @@ tasks.test {
         .dir("docs/reference/dsl")
         .withPropertyName("dslReferenceDocs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // IndicatorVerificationTest replays these oracle fixtures; a fixture-only change must re-run `test` too.
+    inputs
+        .dir("verification/oracle/indicators")
+        .withPropertyName("indicatorOracleFixtures")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     // Forward `-Dsoak.*` to the test JVM so soak runs can be scaled from the command line
     // (e.g. -Dsoak.ticks=50000000 for a multi-hour run). Gradle's -D lands on the build JVM
     // only; without this the soak knobs never reach the fork.
