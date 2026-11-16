@@ -50,7 +50,7 @@ class SetMemberInstancesTest {
     private val hub = CandleHub()
     private val signals = mutableListOf<Signal>()
     private val warmups = mutableListOf<Pair<HubKey, Int>>()
-    private var warmupBars: List<Candle> = flat(3)
+    private var warmupEnabled = true
     private val membership = SetMembership()
     private val instances =
         SetMemberInstances(
@@ -60,14 +60,17 @@ class SetMemberInstancesTest {
             { signals += it },
         ) { k, n ->
             warmups += k to n
-            warmupBars
+            if (warmupEnabled) flat(n, k.qktSymbol) else emptyList()
         }
 
-    private fun flat(n: Int): List<Candle> =
+    private fun flat(
+        n: Int,
+        symbol: String = "BACKTEST:AAA",
+    ): List<Candle> =
         (n downTo 1).map { i ->
             val start = t0 - i * minute
             val one = BigDecimal.ONE
-            Candle("BACKTEST:AAA", one, one, one, one, BigDecimal.ZERO, start, start + minute)
+            Candle(symbol, one, one, one, one, BigDecimal.ZERO, start, start + minute)
         }
 
     /** One bar of [symbol] at [price] in minute [m] after t0, closed by a tick in the next minute. */
@@ -80,7 +83,7 @@ class SetMemberInstancesTest {
         hub.feed(Tick(symbol, BigDecimal(price), t0 + (m + 1) * minute))
     }
 
-    private fun sides(): List<Side> = signals.map { (it as Signal.Submit).request.side }
+    private fun sides(): List<Side?> = signals.map { it.orderSide()?.second }
 
     private fun step(
         vararg members: String,
@@ -97,7 +100,7 @@ class SetMemberInstancesTest {
         assertThat(signals).isEmpty()
         bar("BACKTEST:AAA", 0, "5")
         assertThat(sides()).containsExactly(Side.BUY)
-        assertThat((signals.single() as Signal.Submit).request.strategyId).isEqualTo("movers")
+        assertThat((signals.single() as Signal.Buy).symbol).isEqualTo("BACKTEST:AAA")
     }
 
     @Test
@@ -108,7 +111,7 @@ class SetMemberInstancesTest {
         assertThat(hub.keys()).doesNotContain(key)
         bar("BACKTEST:AAA", 0, "5")
         assertThat(signals).isEmpty()
-        warmupBars = emptyList()
+        warmupEnabled = false
         step("AAA")
         assertThat(warmups).hasSize(2)
         assertThat(hub.seededHistory(key)).isEmpty()
@@ -150,8 +153,8 @@ class SetMemberInstancesTest {
 
     @Test
     fun `a stream the hub already holds history for is not warmed again`() {
-        hub.register(key, 5, "someone-else")
-        hub.seed(key, flat(3))
+        hub.register(key, 50, "someone-else")
+        hub.seed(key, flat(40))
         step("AAA")
         assertThat(warmups).isEmpty()
         bar("BACKTEST:AAA", 0, "5")

@@ -1,24 +1,25 @@
 package com.qkt.dsl.sets
 
-import com.qkt.common.Side
+import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledStrategy
 import com.qkt.dsl.compile.HubKey
-import com.qkt.execution.OrderRequest
 import com.qkt.instrument.universe.MembershipChange
 import com.qkt.instrument.universe.MembershipStep
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.WarmupSpec
+import com.qkt.strategy.WarmupStream
 
 /**
  * The live instances of one symbol set's members (runtime membership plan, step 3), driven by the membership steps
  * of [com.qkt.instrument.universe.SetMembership]. Members are the venue's bare symbols.
  *
  * - A member that joins (or is restored) gets its own compiled instance ([SetMemberTemplate]), registered on [hub]
- *   under its own owner id so it can be dropped alone. Its stream is warmed with up to its retention of closed bars
- *   from [warmup] (key, bar count) when the hub holds none, then replayed through its indicators exactly as a declared
- *   stream's warmup is. It evaluates from the next close on, never at the close it joined.
+ *   under its own owner id so it can be dropped alone. Its stream is warmed with the closed bars its warmup asks for,
+ *   read from [warmup] (key, bar count) when the hub holds none, then replayed through its indicators exactly as a
+ *   declared stream's warmup is. It evaluates from the next close on, never at the close it joined.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
  * - A sticky member (it holds but left the ranking) keeps running, but an order that would open or add on it is
@@ -60,12 +61,15 @@ internal class SetMemberInstances(
     private fun join(member: String) {
         val instance = template.compile(member)
         val owner = owner(member)
-        for (key in instance.declaredStreams.values.toSet() + instance.retentionByKey.keys) {
-            hub.register(key, instance.retentionByKey[key] ?: 1, owner)
-        }
         val key = instance.declaredStreams.getValue(template.alias(member))
-        if (hub.seededHistory(key).isEmpty()) {
-            val bars = warmup(key, instance.retentionByKey[key] ?: 1)
+        val stream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
+        val need = (instance.perStreamWarmup[stream] as? WarmupSpec.Bars)?.count ?: 0
+        for (k in instance.declaredStreams.values.toSet() + instance.retentionByKey.keys) {
+            val retention = instance.retentionByKey[k] ?: 1
+            hub.register(k, if (k == key) maxOf(retention, need) else retention, owner)
+        }
+        if (need > 0 && hub.seededHistory(key).isEmpty()) {
+            val bars = warmup(key, need)
             if (bars.isNotEmpty()) hub.seed(key, bars)
         }
         instance.bindToHubAs(owner, hub, ctx) { signal ->
@@ -83,7 +87,12 @@ internal class SetMemberInstances(
     private fun passes(
         member: String,
         signal: Signal,
-    ): Boolean = member !in sticky || signal !is Signal.Submit || !opens(signal.request)
+    ): Boolean {
+        if (member !in sticky) return true
+        val (symbol, side) = signal.orderSide() ?: return true
+        val position = ctx.positions.positionFor(symbol)
+        return !opensOrAdds(side, position?.quantity?.signum() ?: 0)
+    }
 
     /** A refused order re-arms the rule that sent it, as a rejected one does, so it fires again when it may. */
     private fun refuse(
@@ -94,12 +103,6 @@ internal class SetMemberInstances(
         val id = "$owner/refused/${++refused}"
         instance.onOrderSubmitted(signal, id)
         instance.onOrderRejected(id)
-    }
-
-    private fun opens(request: OrderRequest): Boolean {
-        val position = ctx.positions.positionFor(request.symbol)
-        val held = position?.quantity?.signum() ?: 0
-        return held == 0 || (held > 0) == (request.side == Side.BUY)
     }
 
     private fun owner(member: String): String = "${ctx.strategyId}/${template.set}/$member"
