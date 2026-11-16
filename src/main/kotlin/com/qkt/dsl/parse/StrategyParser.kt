@@ -2,8 +2,12 @@ package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.ParamDecl
+import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.StrategyAst
+import com.qkt.dsl.ast.StreamDecl
+import com.qkt.dsl.sets.SymbolSetError
+import com.qkt.dsl.sets.SymbolSetExpansion
 
 /**
  * Parses a `STRATEGY` file: the header, then each top-level block in its fixed order (`DEFAULTS`,
@@ -18,6 +22,17 @@ internal class StrategyParser(
     private val defaultsParser: DefaultsParser,
     private val symbolsParser: SymbolsParser,
 ) {
+    private fun expandSets(
+        streams: List<StreamDecl>,
+        rules: List<RuleAst>,
+    ): SymbolSetExpansion.Expanded =
+        try {
+            SymbolSetExpansion.expand(streams, rules, SymbolSetExpansion.PICKED)
+        } catch (e: SymbolSetError) {
+            cursor.errors.add(ParseError(line = e.line, col = 0, message = e.message.orEmpty()))
+            SymbolSetExpansion.Expanded(streams, rules)
+        }
+
     fun parseStrategy(): ParseResult<StrategyAst> {
         var name = "_unparsed"
         var version = 0
@@ -44,7 +59,6 @@ internal class StrategyParser(
             } else {
                 SymbolsBlock(emptyList(), emptyList())
             }
-        val streams = symbolsBlock.streams
         val syncGroups = symbolsBlock.syncGroups
         val baskets = symbolsBlock.baskets
         val series = symbolsBlock.series
@@ -91,7 +105,7 @@ internal class StrategyParser(
                 acc
             }
 
-        val rules =
+        val parsedRules =
             if (cursor.peek().kind == TokenKind.RULES) {
                 cursor.tryParse { ruleParser.parseRules() } ?: emptyList()
             } else {
@@ -99,6 +113,9 @@ internal class StrategyParser(
             }
 
         cursor.requireEof()
+        // Picked symbol sets expand here, like FOR EACH over a bracket list: one stream per member, one rule per
+        // member. Filtered sets wait for a catalog and stay as declared.
+        val (streams, rules) = expandSets(symbolsBlock.streams, parsedRules)
         if (cursor.errors.isNotEmpty()) return ParseResult.Failure(cursor.errors.toList())
         return ParseResult.Success(
             StrategyAst(

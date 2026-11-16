@@ -31,6 +31,26 @@ class WhenThen(
     override fun toString(): String = "WhenThen(cond=$cond, action=$action)"
 }
 
+/**
+ * `FOR EACH <iterVar> IN <set> DO <template>` over a symbol set declared in `SYMBOLS` (no brackets): one
+ * [template] rule per member, instantiated once the set's members are known
+ * ([com.qkt.dsl.sets.SymbolSetExpansion]). A picked list expands in the parser; a filtered set stays a
+ * [ForEachSet] until a catalog resolves it. Like [WhenThen], [line] is provenance only.
+ */
+class ForEachSet(
+    val iterVar: String,
+    val set: String,
+    val template: WhenThen,
+    override val line: Int = 0,
+) : RuleAst {
+    override fun equals(other: Any?): Boolean =
+        other is ForEachSet && other.iterVar == iterVar && other.set == set && other.template == template
+
+    override fun hashCode(): Int = (31 * iterVar.hashCode() + set.hashCode()) * 31 + template.hashCode()
+
+    override fun toString(): String = "ForEachSet(iterVar=$iterVar, set=$set, template=$template)"
+}
+
 sealed interface ActionAst
 
 data class Buy(

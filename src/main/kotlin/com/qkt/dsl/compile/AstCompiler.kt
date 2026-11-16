@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.BASKET_BROKER
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
+import com.qkt.dsl.sets.SymbolSetChecks
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
@@ -34,6 +35,7 @@ class AstCompiler {
         rawAst: StrategyAst,
         overrides: Map<String, String>,
     ): Strategy {
+        SymbolSetChecks.requireExpanded(rawAst) // an unresolved filtered set has no catalog behind it: say so first
         // Hub datasets are expanded into one stream per referenced field before anything else
         // sees the AST, so every later stage handles a hub field exactly like a candle close.
         val expanded = HubFieldExpansion.apply(ParamSubstitution.apply(rawAst, overrides))
