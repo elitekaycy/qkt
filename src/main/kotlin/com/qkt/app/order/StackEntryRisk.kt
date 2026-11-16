@@ -33,7 +33,14 @@ internal class StackEntryRisk(
         val stop = computeChildPrice(stopSpec, parent.side, fillPrice, isStopLoss = true, tick = tick)
         val distance = (fillPrice - stop).abs()
         val target =
-            computeChildPrice(targetSpec, parent.side, fillPrice, isStopLoss = false, tick = tick, slDistance = distance)
+            computeChildPrice(
+                targetSpec,
+                parent.side,
+                fillPrice,
+                isStopLoss = false,
+                tick = tick,
+                slDistance = distance,
+            )
         val risk =
             distance
                 .multiply(quantity, Money.CONTEXT)

@@ -22,7 +22,8 @@ class StackEntryRiskReportTest {
         val result = Backtest(strategies = listOf("stack-risk" to onceStrategy("btcusdt", plan)), ticks = ticks).run()
 
         val entries = result.trades.filter { it.trade.side == Side.BUY }.sortedBy { it.trade.price }
-        assertThat(entries.map { it.trade.price.stripTrailingZeros().toPlainString() }).containsExactly("50000", "50100", "50200")
+        val prices = entries.map { it.trade.price.stripTrailingZeros().toPlainString() }
+        assertThat(prices).containsExactly("50000", "50100", "50200")
         entries.forEach { e ->
             assertThat(e.stopLossPrice).isEqualByComparingTo(e.trade.price - BigDecimal("50"))
             assertThat(e.takeProfitPrice).isEqualByComparingTo(e.trade.price + BigDecimal("300"))
@@ -34,8 +35,8 @@ class StackEntryRiskReportTest {
     fun `a STACK without a bracket reports no levels`() {
         val ticks = listOf("49500", "50000", "50100").mapIndexed { i, p -> tick(p, i + 1L) }
 
-        val result =
-            Backtest(strategies = listOf("stack-bare" to onceStrategy("btcusdt", threeLayerPlan())), ticks = ticks).run()
+        val strategy = onceStrategy("btcusdt", threeLayerPlan())
+        val result = Backtest(strategies = listOf("stack-bare" to strategy), ticks = ticks).run()
 
         val entries = result.trades.filter { it.trade.side == Side.BUY }
         assertThat(entries).isNotEmpty
