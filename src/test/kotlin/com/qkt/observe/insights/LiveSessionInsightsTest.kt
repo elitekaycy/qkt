@@ -11,12 +11,14 @@ import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.PendingStacks
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -192,5 +194,64 @@ class LiveSessionInsightsTest : LiveSessionInsightsFixture() {
 
         assertThat(bodies.toString()).contains("\"strategyId\":\"visible\"")
         assertThat(bodies.toString()).doesNotContain("__recorder")
+    }
+
+    @Test
+    fun `state poller samples per-strategy equity once the session handle exists`() {
+        // The poller's first pass races the end of start(), which publishes the handle the equity sample reads;
+        // a short interval and a feed that stays open until stop() make a pass after the handle certain.
+        val now = Instant.parse("2024-01-15T15:00:00Z")
+        val gate = CountDownLatch(1)
+        val src =
+            object : InMemoryMarketSource() {
+                override fun liveTicks(symbols: List<String>): TickFeed =
+                    object : TickFeed {
+                        override fun next(): Tick? {
+                            gate.await(30, TimeUnit.SECONDS)
+                            return null
+                        }
+
+                        override fun close() = gate.countDown()
+                    }
+            }
+        src.seedLive("X", emptyList())
+        val sink =
+            InsightsSink(
+                url = server.url("/ingest").toString(),
+                token = "secret",
+                instanceId = "qkt-test",
+                batchSize = 100,
+                flushIntervalMs = 50L,
+                queueCapacity = 1000,
+            )
+        val handle =
+            LiveSession(
+                strategies = listOf("roundtrip" to BuyThenSell()),
+                source = src,
+                symbols = listOf("X"),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                insightsSink = sink,
+                insightsEvents = InsightsEventFamily.entries.toSet(),
+                insightsStatePollMs = 50L,
+            ).start()
+
+        val bodies = StringBuilder()
+        try {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline) {
+                server.takeRequest(100, TimeUnit.MILLISECONDS)?.let { bodies.append(it.body.readUtf8()) }
+                if (bodies.contains("\"type\":\"snapshot.equity\"")) break
+            }
+        } finally {
+            handle.stop()
+            gate.countDown()
+            handle.awaitTermination(Duration.ofSeconds(5))
+            sink.close()
+        }
+
+        assertThat(bodies.toString()).contains("\"type\":\"snapshot.equity\"")
+        assertThat(bodies.toString()).contains("\"strategyId\":\"roundtrip\"")
     }
 }
