@@ -117,4 +117,25 @@ class Mt5TradingAccountTest {
         assertThat(open(MT5TradeMode.DEMO.wireValue).verify().type).isEqualTo(AccountType.DEMO)
         assertThat(open(-1).verify().type).isEqualTo(AccountType.UNKNOWN)
     }
+
+    @Test
+    fun `a broker reports the profile's scheduled breaks for a symbol`() {
+        gateway.on("/get_positions", "[]")
+        gateway.on("/orders", "[]")
+        val broker = broker(open(), null)
+        try {
+            val inBreak =
+                java.time.Instant
+                    .parse("2026-09-22T21:58:58Z")
+                    .toEpochMilli()
+            val open =
+                java.time.Instant
+                    .parse("2026-09-22T22:11:00Z")
+                    .toEpochMilli()
+            assertThat(broker.scheduledBreak("EXNESS_S0:XAUUSD", inBreak)).isTrue()
+            assertThat(broker.scheduledBreak("EXNESS_S0:XAUUSD", open)).isFalse()
+        } finally {
+            broker.shutdown()
+        }
+    }
 }
