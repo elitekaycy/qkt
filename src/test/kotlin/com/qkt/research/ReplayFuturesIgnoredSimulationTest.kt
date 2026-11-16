@@ -25,7 +25,7 @@ class ReplayFuturesIgnoredSimulationTest {
     private val books = ReplayBooks(ContinuousFixture().registry, AccountingConfig(), markTimestamp = { clock.time })
 
     private fun warningsFor(config: ExecutionSimulationConfig): List<String> {
-        val logger = LoggerFactory.getLogger("com.qkt.research.ReplayFuturesRoutesKt") as Logger
+        val logger = LoggerFactory.getLogger("com.qkt.research.ReplayFuturesRoutes") as Logger
         val logged = ListAppender<ILoggingEvent>().also { it.start() }
         val level = logger.level
         logger.level = Level.WARN
