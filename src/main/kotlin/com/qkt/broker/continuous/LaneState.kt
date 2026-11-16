@@ -17,7 +17,7 @@ import java.math.BigDecimal
  * One lane's state as it is persisted ([PersistedStreamLane]), read from the lane's own parts whenever
  * it is saved, so the record can never drift from what the lane holds: each strategy's position and stop
  * on the stream, the engine orders, the contract [book], the roll's legs and awaited cancels, the roll
- * in flight, and the closes the venue's settlements left ([settled]). A restart restores the lane from that record ([restore]).
+ * in flight, settlement closes ([settled]) and the shift its positions stand at ([rebase]). A restart restores it ([restore]).
  */
 internal class LaneState(
     private val chainOf: () -> ContinuousChain,
@@ -28,6 +28,7 @@ internal class LaneState(
     private val legs: RollLegs,
     private val rolls: RollExecutor,
     private val settled: LaneSettledCloses,
+    private val rebase: LaneSeriesRebase,
 ) {
     /** The lane as it stands, on contract [contractIndex] (null before its first). */
     fun snapshot(contractIndex: Int?) =
@@ -41,6 +42,7 @@ internal class LaneState(
             cancelling = legs.awaitedCancels.map(::persisted),
             roll = rolls.run?.let(::persisted),
             settledCloses = settled.all,
+            contractShift = rebase.savedShift(contractIndex),
         )
 
     /**
@@ -80,6 +82,7 @@ internal class LaneState(
                 ?.filterIsInstance<CarryStep.Waiting>()
                 ?.map { it.leg.id }
                 .orEmpty()
+        rebase.restore(saved.contract?.let(::index), saved.contractShift, positions)
         return RestoredLane(saved.contract?.let(::index), run, saved.legs.map { it.leg }.filter { it.id !in awaited })
     }
 
