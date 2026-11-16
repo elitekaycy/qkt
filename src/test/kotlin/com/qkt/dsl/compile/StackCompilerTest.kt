@@ -12,13 +12,31 @@ import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
+import com.qkt.dsl.ast.UnOp
+import com.qkt.dsl.ast.UnaryOp
 import com.qkt.execution.At
 import com.qkt.execution.Immediate
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class StackCompilerTest {
+    @Test
+    fun `SPACING zero or negative is refused when compiled`() {
+        for (spacing in listOf(NumLit(BigDecimal.ZERO), UnaryOp(UnOp.NEG, NumLit(BigDecimal("100"))))) {
+            assertThatThrownBy {
+                StackCompiler.compile(
+                    StackSpacing(3, spacing, StackDirection.ABOVE),
+                    outerSizing = SizeQty(NumLit(BigDecimal("0.1"))),
+                    outerBracket = null,
+                    side = Side.BUY,
+                )
+            }.isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("STACK SPACING must be greater than 0")
+        }
+    }
+
     @Test
     fun `SPACING form folds into N layers`() {
         val ast = StackSpacing(3, NumLit(BigDecimal("100")), StackDirection.TRADE_DIRECTION)

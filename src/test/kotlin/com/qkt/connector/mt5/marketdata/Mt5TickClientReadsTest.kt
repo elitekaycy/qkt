@@ -60,6 +60,23 @@ class Mt5TickClientReadsTest {
     }
 
     @Test
+    fun `a tick range reads a null last or flags as the default instead of failing the read`() {
+        gateway.on(
+            "/copy_ticks_range",
+            """{"data":[{"bid":1.0,"ask":1.3,"last":null,"flags":null,"time_msc":1800000000500},""" +
+                """{"bid":1.1,"ask":1.2,"last":1.15,"flags":2,"time_msc":1800000000600}]}""",
+        )
+
+        val ticks = client.fetchRange("EURUSDm", 1_800_000_000_000L, 1_800_000_002_000L, capturedAtMs = 7L)
+
+        assertThat(ticks).hasSize(2)
+        assertThat(ticks[0].last).isEqualByComparingTo("0")
+        assertThat(ticks[0].flags).isZero()
+        assertThat(ticks[1].last).isEqualByComparingTo("1.15")
+        assertThat(ticks[1].flags).isEqualTo(2)
+    }
+
+    @Test
     fun `a tick range fails on an HTTP error or a body that is not a list`() {
         gateway.fail("/copy_ticks_range", 500)
         assertThatThrownBy { client.fetchRange("EURUSDm", 0L, 5_000L, 0L) }.hasMessageContaining("HTTP 500")

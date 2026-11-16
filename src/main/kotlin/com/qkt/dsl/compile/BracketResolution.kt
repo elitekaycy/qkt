@@ -13,9 +13,27 @@ internal data class ResolvedBracket(
     val takeProfit: BigDecimal,
 )
 
+/** What resolving a `BRACKET` at fire time produced. */
+internal sealed interface BracketResolution {
+    /** Both legs priced. */
+    data class Resolved(
+        val bracket: ResolvedBracket,
+    ) : BracketResolution
+
+    /** A leg is still undefined (warm-up): the order is skipped quietly, after a once-only log. */
+    object Undefined : BracketResolution
+
+    /** The bracket cannot protect the order: it is refused, and [reason] travels as a suppressed signal. */
+    data class Refused(
+        val reason: String,
+    ) : BracketResolution
+}
+
 /**
- * Resolves a `BRACKET`'s stop and take-profit against [entry] at fire time. Returns null (after a
- * once-only warm-up log) when either price is still undefined, so the order is skipped.
+ * Resolves a `BRACKET`'s stop and take-profit against [entry] at fire time. A stop that resolves
+ * onto the entry price (or beyond it) leaves no stop distance: there is no risk for `SIZING RISK`
+ * to divide by and a reward-to-risk target would sit on the entry itself, so the order is
+ * [BracketResolution.Refused] with the levels in the reason rather than sent unprotected.
  */
 internal fun resolveBracket(
     compiledSL: CompiledStopLoss?,
@@ -25,24 +43,33 @@ internal fun resolveBracket(
     entry: BigDecimal,
     skipLog: WarmupSkipLog,
     stream: String,
-): ResolvedBracket? {
+): BracketResolution {
     val sl = requireNotNull(compiledSL) { "BRACKET requires STOP LOSS" }
     val tp = requireNotNull(compiledTP) { "BRACKET requires TAKE PROFIT" }
     val slSpec =
         resolveStopLoss(sl, ctx, side, entry)
             ?: run {
                 skipLog.skipped("bracket stop price", ctx, stream)
-                return null
+                return BracketResolution.Undefined
             }
     val stopDistance = stopDistance(entry, slSpec)
+    if (stopDistance.signum() <= 0) return BracketResolution.Refused(zeroStopDistanceReason(entry, stopDistance))
     val takeProfit =
         tp.evaluate(ctx, side, entry, stopDistance = stopDistance)
             ?: run {
                 skipLog.skipped("bracket take-profit price", ctx, stream)
-                return null
+                return BracketResolution.Undefined
             }
-    return ResolvedBracket(slSpec, stopDistance, takeProfit)
+    return BracketResolution.Resolved(ResolvedBracket(slSpec, stopDistance, takeProfit))
 }
+
+/** The reason an order whose bracket stop resolved onto its [entry] is refused. */
+internal fun zeroStopDistanceReason(
+    entry: BigDecimal,
+    stopDistance: BigDecimal,
+): String =
+    "bracket stop distance is ${stopDistance.toPlainString()} at entry ${entry.toPlainString()}: the stop sits on " +
+        "the entry price, so the order has no risk to size against and no reward-to-risk target"
 
 /** Resolves a compiled stop loss against [entry]; null while a dynamic stop's inputs are warming up. */
 internal fun resolveStopLoss(

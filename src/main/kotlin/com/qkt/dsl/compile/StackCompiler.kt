@@ -36,6 +36,11 @@ object StackCompiler {
         val sizing =
             outerSizing
                 ?: error("STACK SPACING form requires outer SIZING on the BUY/SELL action")
+        // A zero spacing stacks every layer on the seed price; a negative one places the layers on the
+        // wrong side of it, as a stop. Neither is a pyramid, so a literal is refused when compiled.
+        numericLiteral(ast.spacing)?.let {
+            require(it.signum() > 0) { "STACK SPACING must be greater than 0, was $it" }
+        }
         val effectiveDirection = resolveDirection(ast.direction, side)
         val layers =
             (1..ast.count).map { i ->

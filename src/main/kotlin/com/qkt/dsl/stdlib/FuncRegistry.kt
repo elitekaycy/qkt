@@ -1,6 +1,7 @@
 package com.qkt.dsl.stdlib
 
 import com.qkt.common.Money
+import com.qkt.derivatives.options.pricing.NormalDistribution
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.exp
@@ -75,6 +76,11 @@ object FuncRegistry {
                         val q = args[0].divide(args[1], 0, Money.ROUNDING)
                         q.multiply(args[1])
                     }
+                },
+            // Standard normal CDF: the probability a standard normal variable is at most x, in [0, 1].
+            "NORM_CDF" to
+                FuncSpec("NORM_CDF", Arity.UNARY) { args ->
+                    BigDecimal(NormalDistribution.cdf(args[0].toDouble())).round(Money.CONTEXT)
                 },
             "FLOOR" to FuncSpec("FLOOR", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.FLOOR) },
             "CEIL" to FuncSpec("CEIL", Arity.UNARY) { args -> args[0].setScale(0, RoundingMode.CEILING) },

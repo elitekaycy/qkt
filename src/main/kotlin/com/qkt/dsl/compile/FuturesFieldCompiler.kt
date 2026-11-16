@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.derivatives.futures.ActiveContracts
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.instrument.SlotSymbol
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.atomic.AtomicReference
@@ -11,7 +12,8 @@ import java.util.concurrent.atomic.AtomicReference
  * Compiles the futures stream fields: `contract` (the followed contract's code, a string), `dte`
  * (days to its expiry) and `days_to_roll` (days to the stream's next roll; a listed contract's is
  * its expiry), as of evaluation time, in days to six decimals. `Undefined` on any stream that is
- * not futures, and once a stream has no contract.
+ * not futures, and once a stream has no contract. On an event slot, `contract` is the code of the contract the slot
+ * followed for its latest ticks ([SlotFields]) and the day counts are Undefined.
  */
 internal object FuturesFieldCompiler {
     /** The fields this compiler owns. */
@@ -23,6 +25,9 @@ internal object FuturesFieldCompiler {
         val resolver = AtomicReference<ActiveContracts?>()
         return CompiledExpr { ctx ->
             val key = ctx.streams[ref.stream] ?: error("Unknown stream alias: ${ref.stream}")
+            if (SlotSymbol.isSlot(key.qktSymbol)) {
+                return@CompiledExpr slotField(ref.field, SlotFields.resolve(ctx, key.qktSymbol))
+            }
             val instruments = ctx.strategyContext.instruments
             val contracts =
                 resolver.get()?.takeIf { it.instruments === instruments }
@@ -37,6 +42,12 @@ internal object FuturesFieldCompiler {
             }
         }
     }
+
+    /** An event slot's `contract`: the followed contract's code (its qkt symbol after the venue); nothing else. */
+    private fun slotField(
+        field: String,
+        contract: String?,
+    ): Value = if (field == "contract" && contract != null) Value.Str(contract.substringAfter(':')) else Value.Undefined
 
     private fun days(ms: Long): BigDecimal = BigDecimal(ms).divide(day, 6, RoundingMode.HALF_EVEN)
 }

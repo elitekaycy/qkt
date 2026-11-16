@@ -611,6 +611,26 @@ Every rate is yours to set: the SEC and FINRA change theirs each year, and broke
 passes on only the two sale fees). Shares are lots times `contractSize`. The costs land in the report's commission
 line.
 
+### Event families (`events:`)
+
+An event family is declared once; its contracts and their terms come from the family's event catalog,
+`contracts/<VENUE>/<FAMILY>.events.json`, written by `qkt data import --kind events`
+([Event contracts](import-data.md#event-contracts)):
+
+```yaml
+events:
+  - root: KALSHI:KXINXU   # VENUE:FAMILY
+    currency: USD
+    tickSize: 0.01        # the price grid, in (0, 1)
+    volumeStep: 1
+    volumeMin: 1
+```
+
+Every key is required and no other is accepted. Each catalogued contract becomes a symbol (`KALSHI:KXINXU_26NOV06H1500_T7425`)
+with a contract size of 1; a contract of a declared family missing from its catalog fails the run naming the import
+that adds it. A contract is alive from its open time until its expiry, which is how a run knows which contracts
+existed at any instant. How event contracts fill and settle: [Backtest model](../concepts/backtest-model.md#event-contract-settlement).
+
 ## Reference
 
 ### Store layout

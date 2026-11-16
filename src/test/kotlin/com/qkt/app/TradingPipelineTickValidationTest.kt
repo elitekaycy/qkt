@@ -9,6 +9,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
 import com.qkt.engine.Engine
+import com.qkt.instrument.EventContracts
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.NullMarketSource
@@ -100,5 +101,28 @@ class TradingPipelineTickValidationTest {
         p.ingest(Tick(option.symbol, Money.of("-1"), 3L))
         p.ingest(Tick("X", BigDecimal.ZERO, 4L))
         assertThat(p.malformedTickCount.get()).isEqualTo(2L)
+    }
+
+    @Test
+    fun `an event contract may print zero, and a price or side above its payout is dropped`() {
+        val symbol = EventContracts.SYMBOL
+        val priceTracker = MarketPriceTracker()
+        val p = pipeline(priceTracker, EventContracts.registry(EventContracts.meta()))
+
+        p.ingest(Tick(symbol, Money.of("0.30"), 1L))
+        p.ingest(Tick(symbol, BigDecimal.ZERO, 2L))
+        assertThat(priceTracker.lastPrice(symbol)).isEqualByComparingTo("0")
+        p.ingest(Tick(symbol, Money.of("1"), 3L, bid = Money.of("0.99"), ask = Money.of("1")))
+        assertThat(priceTracker.lastPrice(symbol)).isEqualByComparingTo("1")
+
+        p.ingest(Tick(symbol, Money.of("1.5"), 4L))
+        p.ingest(Tick(symbol, Money.of("0.95"), 5L, bid = Money.of("1.01")))
+        p.ingest(Tick(symbol, Money.of("0.95"), 6L, ask = Money.of("1.01")))
+        p.ingest(Tick("X", BigDecimal.ZERO, 7L))
+        assertThat(p.malformedTickCount.get()).isEqualTo(4L)
+        assertThat(priceTracker.lastPrice(symbol)).isEqualByComparingTo("1")
+
+        p.ingest(Tick("X", Money.of("1.5"), 8L))
+        assertThat(priceTracker.lastPrice("X")).isEqualByComparingTo("1.5")
     }
 }

@@ -16,6 +16,8 @@ import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.BASKET_BROKER
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.instrument.EventTerms
+import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
@@ -29,7 +31,8 @@ import com.qkt.strategy.Strategy
  * strategies declare gets its own venue broker, e.g. streams on `EXNESS:XAUUSD` and
  * `BYBIT_LINEAR:BTCUSDT` build two brokers behind one fail-closed [CompositeBroker]. Chain streams need no
  * broker, and a fed option root (`OPTIONS:DERIBIT.BTC_USDC`) routes every catalogued contract of the
- * root to its venue's account (`deribit`), as a backtest routes them to its option exchange.
+ * root to its venue's account (`deribit`), as a backtest routes them to its option exchange. An event slot
+ * (`KALSHI:KXINXU@front.p70`) routes every contract of its family the session knows, including ones listed after start.
  */
 internal class SessionBrokers(
     private val strategies: List<Pair<String, Strategy>>,
@@ -118,8 +121,12 @@ internal class SessionBrokers(
                 builtBrokers.add(instance)
                 val roots = fedRoots[label].orEmpty()
                 val catalogued = { s: String -> instrumentRegistry?.lookup(s) != null }
+                val families = listed.mapNotNull { SlotSymbol.parse(it)?.root }.toSet()
+                val familyOf = { s: String -> (instrumentRegistry?.lookup(s)?.derivative as? EventTerms)?.root }
+                val inFamily = { s: String -> families.isNotEmpty() && familyOf(s) in families }
                 val account =
-                    SymbolPattern { s -> s in listed || roots.any { it.covers(s) && catalogued(s) } } to instance
+                    SymbolPattern { s -> s in listed || roots.any { it.covers(s) && catalogued(s) } || inFamily(s) } to
+                        instance
                 if (streams.isEmpty()) return@flatMap listOf(account)
                 val lanes =
                     ContinuousContractBroker(

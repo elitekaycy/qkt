@@ -14,7 +14,7 @@ BUY <stream> SIZING <seed_size>
 ```
 
 - `STACK <n>` — total layers, including the seed (so `STACK 3` = 1 seed + 2 adds)
-- `SPACING <points>` — distance between consecutive layers (price points)
+- `SPACING <points>` — distance between consecutive layers (price points); must be greater than 0, a literal `0` or negative spacing is a compile error
 - `ABOVE|BELOW` — direction: `ABOVE` adds on favorable moves (pyramid-up); `BELOW` adds on adverse moves (average-down)
 - `WITHIN <duration>` — abandon unfilled layers after this duration from seed fill; when omitted,
   qkt applies a 24-hour safety fence

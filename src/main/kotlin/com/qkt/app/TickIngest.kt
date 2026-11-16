@@ -5,7 +5,6 @@ import com.qkt.dsl.compile.ScheduleRunner
 import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.engine.Engine
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Mode
@@ -30,16 +29,17 @@ internal class TickIngest(
     private val scheduleRunner: ScheduleRunner,
     private val mode: Mode,
     /**
-     * Where option contracts are found: an option's price may legally be zero (its settlement print when
-     * it expires worthless, spec E19), so it is asked only about zero prices. Every other symbol keeps
-     * the positive-price floor.
+     * Where option and event contracts are found ([TickPriceBounds]): either may legally print zero, and an
+     * event contract never prints above its payout. Every other symbol keeps the positive-price floor.
      */
-    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    instruments: InstrumentRegistry,
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
-    private val isOption: (String) -> Boolean = { instruments.options()?.optionRoot(it) != null }
+    private val bounds = TickPriceBounds(instruments)
+
+    private val zeroPriceLegal: (String) -> Boolean = bounds::zeroPriceLegal
 
     /** Count of ticks dropped by [ingest]'s validation floor. */
     val malformedTickCount = AtomicLong(0)
@@ -52,7 +52,7 @@ internal class TickIngest(
         // fires engine-held triggers, and poisons indicators for a full window. Drop
         // it, count it, keep the last good price (#379). Identical in backtest and
         // live so the gate itself cannot cause divergence.
-        if (!isMacroObservation && !isValidTick(tick, isOption)) {
+        if (!isMacroObservation && !(isValidTick(tick, zeroPriceLegal) && bounds.withinPayout(tick))) {
             val n = malformedTickCount.incrementAndGet()
             if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
                 log.error(
