@@ -44,7 +44,7 @@ internal class BracketFills(
         when {
             fallbackBracket != null -> ops.dispatch(exits.exitOco(fallbackBracket, e.price, e.quantity))
             attachedBracket != null -> armAttached(e, attachedBracket, pending)
-            else -> pending?.forEach { ops.dispatch(it) }
+            else -> pending?.forEach { ops.dispatch(if (heldForBracket(it)) anchoredAtFill(it, e) else it) }
         }
     }
 
@@ -128,28 +128,26 @@ internal class BracketFills(
             } else {
                 null
             }
-        (pending.orEmpty() + listOfNotNull(heldStop)).forEach { child ->
-            val anchored =
-                when (child) {
-                    is OrderRequest.ArmedTrailingStop ->
-                        child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
-                    is OrderRequest.SteppedStop ->
-                        child.copy(
-                            entryPrice = e.price,
-                            quantity = child.quantity.min(e.quantity),
-                            timestamp = clock.now(),
-                        )
-                    is OrderRequest.TimeTighteningStop ->
-                        child.copy(
-                            entryPrice = e.price,
-                            quantity = child.quantity.min(e.quantity),
-                            timestamp = clock.now(),
-                        )
-                    else -> child
-                }
-            ops.dispatch(anchored)
-        }
+        (pending.orEmpty() + listOfNotNull(heldStop)).forEach { ops.dispatch(anchoredAtFill(it, e)) }
     }
+
+    // An attached bracket with fixed prices holds its managed stop under the entry like any child; only a bracket's own
+    // exits are re-anchored, so another parent's held children go out as they were built.
+    private fun heldForBracket(child: OrderRequest): Boolean =
+        book[child.id]?.parentClientOrderId?.let { book[it]?.request } is OrderRequest.Bracket
+
+    // A managed stop was built at submit on the quote; the fill it protects is its real anchor, in price and time.
+    private fun anchoredAtFill(
+        child: OrderRequest,
+        e: BrokerEvent.OrderFilled,
+    ): OrderRequest =
+        (child as? OrderRequest.ArmedTrailingStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity))
+        } ?: (child as? OrderRequest.SteppedStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity), timestamp = clock.now())
+        } ?: (child as? OrderRequest.TimeTighteningStop)?.let {
+            it.copy(entryPrice = e.price, quantity = it.quantity.min(e.quantity), timestamp = clock.now())
+        } ?: child
 
     // A fill-anchored target never shipped with the entry: if the venue refuses the modify that
     // attaches it, the engine must hold it or the position would have no target at all. A market-
