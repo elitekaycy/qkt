@@ -26,7 +26,7 @@ class BotQueryCommand(
                 "account" -> account(json)
                 "positions" -> positions(json)
                 "orders" -> orders(json)
-                "quote" -> quote(json)
+                "quote" -> botQuote(args, json)
                 "bars" -> bars(json)
                 "history" -> history(json)
                 else -> error("unknown query verb '$verb'")
@@ -145,20 +145,6 @@ class BotQueryCommand(
                     "${it.ticket} ${it.symbol} ${it.type} ${it.lots} @ ${it.price} sl=${it.sl} tp=${it.tp}",
                 )
             }
-        }
-        return ExitCodes.SUCCESS
-    }
-
-    private fun quote(json: Boolean): Int {
-        val symbol = args.requirePositional(0, "BROKER:SYMBOL")
-        val t = venue(symbol) { it.tick(symbol) } ?: error("venue did not return a quote for $symbol")
-        val spread = t.ask.subtract(t.bid)
-        if (json) {
-            println(
-                jsonObj("symbol" to symbol, "bid" to t.bid, "ask" to t.ask, "spread" to spread, "timeMs" to t.timeMs),
-            )
-        } else {
-            println("$symbol bid=${t.bid} ask=${t.ask} spread=${spread.toPlainString()}")
         }
         return ExitCodes.SUCCESS
     }

@@ -19,8 +19,14 @@ internal object SlotPick {
         rule: StrikeRule,
         events: List<FamilyEvent>,
         quote: (String) -> Tick?,
+    ): String? = events.getOrNull(slot.eventOffset)?.let { pickIn(it, rule, quote) }
+
+    /** The contract of [event] that [rule] picks by the quotes [quote] gives, its only contract when it has one. */
+    fun pickIn(
+        event: FamilyEvent,
+        rule: StrikeRule,
+        quote: (String) -> Tick?,
     ): String? {
-        val event = events.getOrNull(slot.eventOffset) ?: return null
         event.contracts.singleOrNull()?.let { return it.symbol }
         val candidates =
             event.contracts.mapNotNull { contract ->

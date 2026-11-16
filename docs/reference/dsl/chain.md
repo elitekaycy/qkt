@@ -118,4 +118,6 @@ mid is needed and a contract lacks a two-sided quote (`implied_mean`), when an a
 (`overround`), when a contract has never quoted (`underround`), when no adjacent pair has both sides
 (`ladder_breaks`), or when the mids never cross 0.5 (`implied_median`). An open-ended tail bucket ("below 70") has no
 midpoint, so `implied_mean` is Undefined on an event that has one. Event streams run in backtests, from the family's
-stored quote ticks.
+stored quote ticks, and live on a gateway account, from the family's quotes (valued after each quote of a contract
+of the family), with no warmup bars. A backtest that also declares option roots checks chain coverage for the option
+streams only.
