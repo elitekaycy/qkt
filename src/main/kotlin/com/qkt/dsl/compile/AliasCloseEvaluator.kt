@@ -19,6 +19,9 @@ internal class AliasCloseEvaluator(
 ) {
     var evaluationObserver: (String, HubKey, Candle, Int) -> Unit = { _, _, _, _ -> }
 
+    /** Rules fire only on closes after this instant; state still updates on earlier ones (a set member's join). */
+    var evaluateAfterMs: Long = Long.MIN_VALUE
+
     // Rules grouped by the aliases whose close evaluates them — fireRulesForAlias runs per bar close,
     // and scanning every rule with a string compare to find the alias's few was per-bar overhead.
     val rulesByAlias: Map<String, List<CompiledRule>> by lazy {
@@ -76,6 +79,7 @@ internal class AliasCloseEvaluator(
         emit: (Signal) -> Unit,
     ): Boolean {
         val aliasRules = rulesByAlias[alias] ?: return false
+        if (candle.endTime <= evaluateAfterMs) return false
         val ec =
             EvalContext(
                 candle = candle,

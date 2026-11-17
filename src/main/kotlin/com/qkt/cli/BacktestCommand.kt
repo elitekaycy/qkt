@@ -52,11 +52,15 @@ class BacktestCommand(
         // comma-list means "sweep this" (resolved in BacktestRunSelection, same errors as before).
         val overrides = resolvedRun.paramOverrides
 
+        var dynamicSets: DynamicSetRuns.Plan? = null
         val ctx =
             try {
                 when (parsedFile) {
-                    is com.qkt.dsl.parse.ParsedFile.StrategyFile ->
-                        BacktestContext.build(effective, resolveSets(parsedFile.ast, effective), fetcherOverride)
+                    is com.qkt.dsl.parse.ParsedFile.StrategyFile -> {
+                        val sets = DynamicSetRuns.forBacktest(parsedFile.ast, effective)
+                        dynamicSets = sets.plan
+                        BacktestContext.build(effective, sets.ast, fetcherOverride)
+                    }
                     is com.qkt.dsl.parse.ParsedFile.PortfolioFile ->
                         BacktestContext.buildPortfolio(
                             effective,
@@ -90,7 +94,8 @@ class BacktestCommand(
             }
 
             return try {
-                val backtest = ctx.backtest(overrides)
+                val strategies = dynamicSets?.let { listOf(ctx.ast.name to it.strategy(overrides)) }
+                val backtest = ctx.backtest(overrides, strategies = strategies)
                 val run = BacktestMetricsWindows.run(backtest, effective, ctx.from, ctx.to)
                 val noTicks =
                     backtest.barFills.noTickBars
@@ -143,25 +148,5 @@ class BacktestCommand(
         } finally {
             restoreLogs()
         }
-    }
-
-    /** Filtered symbol sets become their members from the instruments file as of `--from` ([SymbolSetResolution]). */
-    private fun resolveSets(
-        ast: com.qkt.dsl.ast.StrategyAst,
-        args: Args,
-    ): com.qkt.dsl.ast.StrategyAst {
-        if (ast.streams.none { it.broker == com.qkt.dsl.ast.SET_BROKER }) return ast
-        val from =
-            args.option("from")
-                ?: throw BacktestContext.Companion.SetupError(
-                    "a filtered symbol set is resolved as of --from, which is missing",
-                )
-        val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
-        return SymbolSetResolution.resolve(
-            ast,
-            SymbolSetResolution.FileCatalog(SymbolSetResolution.catalog(args, dataRoot)),
-            BacktestContext.parseInstant(from).toEpochMilli(),
-            args.flag(SymbolSetResolution.SURVIVORSHIP_FLAG),
-        )
     }
 }

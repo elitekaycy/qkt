@@ -12,8 +12,8 @@ object UniverseResolver {
     const val DEFAULT_MAX_MEMBERS: Int = 500
 
     /**
-     * The members of `VENUE:* WHERE [filter] TOP [n] BY [by]` among [catalog], as of [nowMs]; [venue] is the
-     * qkt broker prefix and is matched ignoring case.
+     * The members of `VENUE:* WHERE [filter] TOP [n] BY [by]` among [catalog], as of [nowMs], market fields read from
+     * [facts]; [venue] is the qkt broker prefix and is matched ignoring case.
      */
     fun members(
         catalog: List<InstrumentMeta>,
@@ -23,21 +23,22 @@ object UniverseResolver {
         by: CatalogField,
         descending: Boolean,
         nowMs: Long,
+        facts: MarketFacts = MarketFacts.NONE,
     ): List<InstrumentMeta> {
         require(n > 0) { "TOP must be a positive count: $n" }
         val prefix = "$venue:"
         val passing =
             catalog
                 .filter { it.qktSymbol.regionMatches(0, prefix, 0, prefix.length, ignoreCase = true) }
-                .filter { filter.matches(it, nowMs) }
+                .filter { filter.matches(it, nowMs, facts) }
         val byValue =
             object : Comparator<InstrumentMeta> {
                 override fun compare(
                     a: InstrumentMeta,
                     b: InstrumentMeta,
                 ): Int {
-                    val va = by.read(a, nowMs)
-                    val vb = by.read(b, nowMs)
+                    val va = by.read(a, nowMs, facts)
+                    val vb = by.read(b, nowMs, facts)
                     return when {
                         va == null && vb == null -> 0
                         va == null -> 1

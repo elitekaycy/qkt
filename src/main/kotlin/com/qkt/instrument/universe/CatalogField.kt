@@ -15,6 +15,9 @@ import java.math.RoundingMode
  * `kind` is one of `spot`, `equity`, `future`, `perpetual`, `option` and `event`; `trade_mode` is the lowercase
  * [com.qkt.instrument.TradeMode] name (`full`, `close_only`); `family` and `underlying` come from a derivative's
  * terms; `expiry_at` is epoch milliseconds and `dte` the days from the catalog's as-of instant to that expiry.
+ *
+ * `close`, `volume` and `spread` are [market] fields: figures of the last window that closed at or before the
+ * evaluation instant, read from [MarketFacts] (last price, traded volume, last ask minus bid), never lifetime figures.
  */
 enum class CatalogField(
     val token: String,
@@ -30,12 +33,19 @@ enum class CatalogField(
     UNDERLYING("underlying"),
     EXPIRY_AT("expiry_at"),
     DTE("dte"),
+    CLOSE("close"),
+    VOLUME("volume"),
+    SPREAD("spread"),
     ;
 
-    /** This field of [meta] as of [nowMs], or null when the instrument has no such fact. */
+    /** True for an as-of market figure, which only [MarketFacts] knows; false for a fact of the instrument itself. */
+    val market: Boolean get() = this == CLOSE || this == VOLUME || this == SPREAD
+
+    /** This field of [meta] as of [nowMs], market fields from [facts], or null when there is no such fact. */
     fun read(
         meta: InstrumentMeta,
         nowMs: Long,
+        facts: MarketFacts = MarketFacts.NONE,
     ): CatalogValue? =
         when (this) {
             SYMBOL -> CatalogValue.Str(meta.qktSymbol.substringAfter(':'))
@@ -56,6 +66,7 @@ enum class CatalogField(
                 expiryMs(
                     meta,
                 )?.let { CatalogValue.Num(BigDecimal(it - nowMs).divide(DAY_MS, 6, RoundingMode.HALF_EVEN)) }
+            CLOSE, VOLUME, SPREAD -> facts.read(this, meta.qktSymbol)?.let(CatalogValue::Num)
         }
 
     companion object {
