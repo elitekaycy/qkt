@@ -45,6 +45,9 @@ pip install -r config/coverage-requirements.txt
 scripts/check-diff-coverage.sh origin/dev       # your branch's changed lines
 ```
 
+Tests run in one JVM by default. `-PqktTestForks=3` (or `QKT_TEST_FORKS=3`) runs three test JVMs in parallel, as CI
+does; Kover merges their coverage into the same report. On CI, `QKT_TEST_FORKS: '1'` in `check.yml` falls back to serial.
+
 `scripts/check-diff-coverage.sh` prints each uncovered changed line by file and line number.
 `DIFF_COVERAGE_HTML=out.html` writes a browsable report.
 
