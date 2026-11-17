@@ -96,4 +96,33 @@ internal object DynamicSetFixtures {
             Line("s", "BACKTEST:C", MembershipChange.JOIN, 1, T0 + 4 * MINUTE),
             Line("s", "BACKTEST:A", MembershipChange.RELEASE, null, T0 + 7 * MINUTE),
         )
+
+    /** A set ranked by each contract's traded volume in the last 1m window: no DYNAMIC, market fields always move. */
+    val marketSource: String =
+        source.replace("kind = event TOP 2 BY symbol DESC DYNAMIC", "kind = event AND volume > 0 TOP 1 BY volume")
+
+    /**
+     * Ticks every 10s over [minutes] minutes: A trades 5 a tick until t0+2m then 1, B the reverse, C nothing; A prints
+     * 101 until t0+3m then 99, B 101, C 99. A leads the volume ranking first, B from the window ending t0+3m.
+     */
+    fun marketTape(minutes: Int = 7): List<Tick> =
+        (0 until minutes * 6).flatMap { i ->
+            val ts = T0 + i * 10_000L
+            val early = ts < T0 + 2 * MINUTE
+            val priceA = BigDecimal(if (ts < T0 + 3 * MINUTE) "101" else "99")
+            listOf(
+                Tick("BACKTEST:A", priceA, ts, BigDecimal(if (early) 5 else 1)),
+                Tick("BACKTEST:B", BigDecimal("101"), ts, BigDecimal(if (early) 1 else 5)),
+                Tick("BACKTEST:C", BigDecimal("99"), ts, BigDecimal.ZERO),
+            )
+        }
+
+    /** The journal the market scenario produces: A leads, B overtakes while A holds, A exits and is released. */
+    val expectedMarketJournal =
+        listOf(
+            Line("s", "BACKTEST:A", MembershipChange.JOIN, 1, T0 + MINUTE),
+            Line("s", "BACKTEST:A", MembershipChange.STICK, null, T0 + 3 * MINUTE),
+            Line("s", "BACKTEST:B", MembershipChange.JOIN, 1, T0 + 3 * MINUTE),
+            Line("s", "BACKTEST:A", MembershipChange.RELEASE, null, T0 + 5 * MINUTE),
+        )
 }
