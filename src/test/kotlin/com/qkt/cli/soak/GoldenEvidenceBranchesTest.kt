@@ -122,6 +122,6 @@ class GoldenEvidenceBranchesTest {
             ).joinToString("\n")
         val name = "gateway/ex.jsonl"
         val path = zip(manifest(entries = entries(name to lines)), mapOf(name to lines))
-        assertEquals(6L, inspectGolden(path, "s").unknownOutcomePlacements)
+        assertEquals(7L, inspectGolden(path, "s").unknownOutcomePlacements)
     }
 }
