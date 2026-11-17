@@ -4,6 +4,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.serializer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -41,7 +42,7 @@ class DeribitWireSerializationTest {
 
     private inline fun <reified T> roundTrip(value: T) {
         for (j in jsons) {
-            assertThat(j.decodeFromString<T>(j.encodeToString(value))).isEqualTo(value)
+            assertThat(j.decodeFromString(serializer<T>(), j.encodeToString(serializer<T>(), value))).isEqualTo(value)
         }
     }
 

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.serializer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 
@@ -26,7 +27,7 @@ object WireAsserts {
 
     inline fun <reified T> roundTrips(value: T) {
         for (j in jsons) {
-            assertThat(j.decodeFromString<T>(j.encodeToString(value))).isEqualTo(value)
+            assertThat(j.decodeFromString(serializer<T>(), j.encodeToString(serializer<T>(), value))).isEqualTo(value)
         }
     }
 
