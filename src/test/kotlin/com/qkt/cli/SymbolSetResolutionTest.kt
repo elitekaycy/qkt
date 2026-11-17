@@ -92,6 +92,11 @@ class SymbolSetResolutionTest {
         refuse("BACKTEST:* WHERE kind = spot TOP 5 BY symbol DYNAMIC")
             .hasMessageStartingWith("symbol set 'm' is DYNAMIC: members that join and leave during a run are")
             .hasMessageContaining("backtested only, for now")
+        refuse("BACKTEST:* WHERE kind = spot AND volume > 10 TOP 5 BY symbol")
+            .hasMessage(
+                "symbol set 'm' reads as-of market fields (close, volume, spread): members that join and leave " +
+                    "during a run are backtested only, for now",
+            )
         assertThat(
             SymbolSetResolution.members(
                 "m",
