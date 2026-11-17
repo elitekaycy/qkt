@@ -32,8 +32,8 @@ sealed interface SymbolSetSpec {
 
     /**
      * `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]`: the venue's catalog, filtered and ranked.
-     * Resolved once at start, unless [dynamic]: then re-evaluated at each close of the set's `EVERY` window as of
-     * that close, members joining and leaving during the run (runtime membership plan, step 4).
+     * Resolved once at start, unless it [moves]: then re-evaluated at each close of the set's `EVERY` window as of
+     * that close, members joining and leaving during the run (runtime membership plan, steps 4-5).
      */
     data class Filtered(
         val venue: String,
@@ -46,6 +46,12 @@ sealed interface SymbolSetSpec {
         init {
             require(top > 0) { "TOP must be a positive count: $top" }
         }
+
+        /** True when the set reads an as-of market field (`close`, `volume`, `spread`) to filter or rank. */
+        val readsMarket: Boolean get() = filter.readsMarket || by.market
+
+        /** True when the members change during a run: [dynamic], or reading market fields, which only move. */
+        val moves: Boolean get() = dynamic || readsMarket
 
         override val canonical: String
             get() =

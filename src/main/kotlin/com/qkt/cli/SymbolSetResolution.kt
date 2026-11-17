@@ -55,7 +55,8 @@ internal object SymbolSetResolution {
 
     /**
      * [ast] with every filtered set replaced by its members from [catalog] as of [nowMs]; unchanged without sets. With
-     * [keepDynamic] a `DYNAMIC` set and its loops stay in place for [DynamicSetRuns]; otherwise one is refused.
+     * [keepDynamic] a set whose members move (`DYNAMIC`, or reading market fields) and its loops stay in place for
+     * [DynamicSetRuns]; otherwise one is refused.
      */
     fun resolve(
         ast: StrategyAst,
@@ -73,7 +74,7 @@ internal object SymbolSetResolution {
                     spec: SymbolSetSpec,
                 ): List<String>? {
                     val filtered = spec as SymbolSetSpec.Filtered
-                    if (keepDynamic && filtered.dynamic) return null
+                    if (keepDynamic && filtered.moves) return null
                     val members = members(alias, filtered, catalog, nowMs, survivorshipAccepted)
                     note("symbol set '$alias': ${members.size} member(s) resolved at start: ${members.joinToString()}")
                     return members
@@ -91,10 +92,11 @@ internal object SymbolSetResolution {
         nowMs: Long,
         survivorshipAccepted: Boolean,
     ): List<String> {
-        if (spec.dynamic) {
+        if (spec.moves) {
+            val why = if (spec.dynamic) "is DYNAMIC" else "reads as-of market fields (close, volume, spread)"
+            val fix = if (spec.dynamic) "; drop DYNAMIC to resolve its members once, at start" else ""
             throw BacktestContext.Companion.SetupError(
-                "symbol set '$alias' is DYNAMIC: members that join and leave during a run are backtested only, " +
-                    "for now; drop DYNAMIC to resolve its members once, at start",
+                "symbol set '$alias' $why: members that join and leave during a run are backtested only, for now$fix",
             )
         }
         val venue = rows(alias, spec, catalog, survivorshipAccepted)
