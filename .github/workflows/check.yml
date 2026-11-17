@@ -39,6 +39,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # A hung test otherwise holds the runner for GitHub's 6-hour default; the full serial job takes under 30 minutes.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Check commit authors
