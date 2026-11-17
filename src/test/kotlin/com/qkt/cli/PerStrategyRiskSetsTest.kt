@@ -81,6 +81,26 @@ class PerStrategyRiskSetsTest {
     }
 
     @Test
+    fun `a set whose membership moves is valid before it has member streams, and its caps read the supplier`() {
+        var now = setOf("GW:XAUUSD")
+        val risk = PerStrategyRisk(sets = mapOf("m" to SetCaps(maxOpenPositions = 2)))
+        val limits = risk.toLimits(dynamicSets = mapOf("m" to { now }))
+
+        val caps = limits.sets.getValue("m")
+        assertThat(caps.members).isEmpty()
+        assertThat(caps.current()).containsExactly("GW:XAUUSD")
+        now = setOf("GW:XAGUSD", "GW:XAUUSD")
+        assertThat(caps.current()).containsExactlyInAnyOrder("GW:XAGUSD", "GW:XAUUSD")
+        // streams that already exist stay as the set at start; the supplier still decides what is counted
+        val declared = risk.toLimits(mapOf("m" to setOf("GW:XAUUSD")), mapOf("m" to { now })).sets.getValue("m")
+        assertThat(declared.members).containsExactly("GW:XAUUSD")
+        assertThat(declared.current()).containsExactlyInAnyOrder("GW:XAGUSD", "GW:XAUUSD")
+        // a set that is neither declared nor moving is still refused by name
+        assertThatThrownBy { risk.toLimits(dynamicSets = mapOf("other" to { now })) }
+            .hasMessage("sets.m: the strategy declares no symbol set 'm'")
+    }
+
+    @Test
     fun `a backtest reads set members from the parsed strategy`() {
         val ast =
             (

@@ -40,6 +40,20 @@ class LiveRiskLimitsTest {
     }
 
     @Test
+    fun `a cap on a set whose membership moves binds to its supplier, with no member stream declared`() {
+        var now = setOf("ALPACA:AAPL")
+        val risk = PerStrategyRisk(sets = mapOf("uni" to SetCaps(maxOpenPositions = 1)))
+
+        val limits = liveRiskLimits("rotation", risk, emptyList(), dynamicSets = mapOf("uni" to { now }))!!
+
+        assertThat(limits.sets.getValue("uni").current()).containsExactly("ALPACA:AAPL")
+        now = setOf("ALPACA:MSFT")
+        assertThat(limits.sets.getValue("uni").current()).containsExactly("ALPACA:MSFT")
+        assertThatThrownBy { liveRiskLimits("rotation", risk, emptyList(), dynamicSets = mapOf("other" to { now })) }
+            .hasMessage("risk.per_strategy.rotation.sets.uni: the strategy declares no symbol set 'uni'")
+    }
+
+    @Test
     fun `a cap on a set the strategy does not declare refuses the start by name`() {
         val risk = PerStrategyRisk(sets = mapOf("fx" to SetCaps(maxOpenPositions = 1)))
 

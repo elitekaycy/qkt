@@ -43,9 +43,14 @@ data class PerStrategyRisk(
 ) {
     /**
      * Convert CLI configuration into the runtime-neutral replay limits model. [setMembers] gives each declared
-     * symbol set's member symbols; a cap on a set the strategy does not declare is refused by name.
+     * symbol set's member symbols; a cap on a set the strategy does not declare is refused by name. A set whose
+     * membership moves is in [dynamicSets], by alias, with the supplier of its members now: its cap counts those, and
+     * is valid before any member stream exists.
      */
-    fun toLimits(setMembers: Map<String, Set<String>> = emptyMap()): StrategyRiskLimits =
+    fun toLimits(
+        setMembers: Map<String, Set<String>> = emptyMap(),
+        dynamicSets: Map<String, () -> Set<String>> = emptyMap(),
+    ): StrategyRiskLimits =
         StrategyRiskLimits(
             maxDailyLoss = maxDailyLoss,
             maxPositionSize = maxPositionSize,
@@ -59,10 +64,14 @@ data class PerStrategyRisk(
             lossStreakHaltScope = lossStreakHaltScope,
             sets =
                 sets.mapValues { (alias, caps) ->
+                    val active = dynamicSets[alias]
                     val members =
-                        setMembers[alias]
-                            ?: error("sets.$alias: the strategy declares no symbol set '$alias'")
-                    SetRiskLimits(members, caps.maxOpenPositions, caps.maxPositionSize)
+                        when {
+                            alias in setMembers -> setMembers.getValue(alias)
+                            active != null -> emptySet()
+                            else -> error("sets.$alias: the strategy declares no symbol set '$alias'")
+                        }
+                    SetRiskLimits(members, caps.maxOpenPositions, caps.maxPositionSize, active)
                 },
         )
 
