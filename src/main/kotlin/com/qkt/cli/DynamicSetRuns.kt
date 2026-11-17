@@ -72,12 +72,16 @@ internal object DynamicSetRuns {
                     "a filtered symbol set is resolved as of --from, which is missing",
                 )
         val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
-        val catalog = SymbolSetResolution.FileCatalog(SymbolSetResolution.catalog(args, dataRoot))
+        val listed = SymbolSetResolution.catalog(args, dataRoot)
+        val catalog = SymbolSetResolution.FileCatalog(listed)
         val fromMs = BacktestContext.parseInstant(from).toEpochMilli()
         val accepted = args.flag(SymbolSetResolution.SURVIVORSHIP_FLAG)
         val resolved = SymbolSetResolution.resolve(ast, catalog, fromMs, accepted, keepDynamic = true)
         val toMs = args.option("to")?.let { BacktestContext.parseInstant(it).toEpochMilli() } ?: fromMs
-        val plan = plan(resolved, catalog, fromMs, toMs, accepted) ?: return Sets(resolved, null)
+        // Moving sets also see the event catalogs, point in time: a contract is a row from its listing to its expiry.
+        val events = EventCatalogRows.of(args, dataRoot)
+        val moving = SymbolSetResolution.FileCatalog((listed + events).distinctBy { it.qktSymbol })
+        val plan = plan(resolved, moving, fromMs, toMs, accepted) ?: return Sets(resolved, null)
         return Sets(plan.ast, plan)
     }
 
