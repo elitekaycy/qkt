@@ -144,6 +144,14 @@ internal class CompiledStrategy(
         scheduleFirer.bind(runner, ctx, nowMs, emit)
     }
 
+    /**
+     * Fire rules only on closes after [closeMs]: a symbol-set member that joined at that close starts evaluating at
+     * the next one, while the close itself still updates its indicators.
+     */
+    fun evaluateAfter(closeMs: Long) {
+        evaluator.evaluateAfterMs = closeMs
+    }
+
     override fun bindToHub(
         hub: CandleHub,
         ctx: StrategyContext,

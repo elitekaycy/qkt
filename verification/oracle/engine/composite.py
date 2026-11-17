@@ -156,8 +156,9 @@ def triggered(o: Pending, tick) -> bool:
 
 def work_pending(st, p) -> None:
     """Resting entries in placement order, then each live STACK's next layer (stack.md:179: "Layers in the list
-    trigger in order"). Two OCO_ENTRY legs reached on one print: "the leg with the closer trigger to the candle's
-    open fills first" (actions.md:277) and the other is cancelled (actions.md:246)."""
+    trigger in order"). Two OCO_ENTRY legs reached on one print: the leg whose trigger is nearer the price the move
+    started from fills first, the previous tick's price on ticks and the bar's open on the synthetic path, legs at the
+    same distance in the order they are written (actions.md:277-283); the other is cancelled (actions.md:246)."""
     winners = _oco_winners(st, p)
     for o in st.pending:
         if not o.live:
@@ -178,7 +179,7 @@ def _oco_winners(st, p) -> dict:
     for o in st.pending:
         if o.live and o.group is not None and o.kind != "TRAIL" and triggered(o, p.tick):
             hits.setdefault(o.group, []).append(o)
-    return {g: min(os, key=lambda o: abs(o.level - p.bar_open)) for g, os in hits.items()}
+    return {g: min(os, key=lambda o: abs(o.level - p.ref)) for g, os in hits.items()}  # min keeps the first tie
 
 
 def _try_fill(st, p, o: Pending) -> bool:

@@ -82,6 +82,7 @@ class Print:
     gap_open: bool = False
     bar_start: Optional[int] = None
     bar_open: Optional[Decimal] = None
+    ref: Optional[Decimal] = None  # where the move to this print started (actions.md:277-283): prior tick / bar open
 
 
 @dataclass
@@ -290,6 +291,7 @@ def replay_ticks(scenario: Scenario) -> State:
     """Rules close a bar on the first tick at or after the bar's end and act on that tick."""
     st = State(scenario, scenario.instrument, scenario.starting_balance)
     bar: Optional[Bar] = None
+    prev: Optional[Tick] = None
     for t in scenario.ticks:
         if bar is not None and t.ts >= bar.end:
             st.fire(bar, Print(t.ts, t))
@@ -299,7 +301,8 @@ def replay_ticks(scenario: Scenario) -> State:
             bar = Bar(start, start + scenario.timeframe_ms, t.mid, t.mid, t.mid, t.mid)
         else:
             bar.update(t.mid)
-        st.work(Print(t.ts, t, bar_open=bar.open))
+        st.work(Print(t.ts, t, bar_open=bar.open, ref=prev.mid if prev is not None else None))
+        prev = t
     return st
 
 
@@ -311,7 +314,9 @@ def replay_synthetic(scenario: Scenario) -> State:
     prev: Optional[Bar] = None
     for bar in bars_of(scenario):
         tick = Tick(bar.start, bar.open, bar.open)
-        open_print = Print(bar.start, tick, synthetic=True, gap_open=True, bar_start=bar.start, bar_open=bar.open)
+        open_print = Print(
+            bar.start, tick, synthetic=True, gap_open=True, bar_start=bar.start, bar_open=bar.open, ref=bar.open
+        )
         if prev is not None:
             st.fire(prev, open_print)
         st.work(open_print)
@@ -321,7 +326,8 @@ def replay_synthetic(scenario: Scenario) -> State:
         quarter = (bar.end - bar.start) // 4
         times = [bar.start + quarter, bar.start + 2 * quarter, bar.end - 1]  # backtest-model.md:97-101
         for ts, price in zip(times, extremes + [bar.close]):
-            st.work(Print(ts, Tick(ts, price, price), synthetic=True, bar_start=bar.start, bar_open=bar.open))
+            tick = Tick(ts, price, price)
+            st.work(Print(ts, tick, synthetic=True, bar_start=bar.start, bar_open=bar.open, ref=bar.open))
         prev = bar
     return st
 

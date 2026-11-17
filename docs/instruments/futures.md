@@ -70,7 +70,8 @@ panama series that would otherwise fall below zero (crude across 2020). A fetch 
 every roll it can from the stored bars, which can move the series a session's open positions were
 booked in: the next start, or a running session at its next live roll measurement, books that move on
 each open position as a cost (`cost:series rebased ...`, quantity x multiplier x the contract's shift
-change), so their P&L stays the contract legs'. Working orders stay at the contract prices they rest at
+change), so their P&L stays the contract legs'. The move is booked once: the lane is saved at the new
+shift before the cost goes out, so a restart after it books nothing again. Working orders stay at the contract prices they rest at
 on the venue; their levels move the same amount in the series. Live, a
 continuous stream trades on a `type: gateway` account (parity rows A53-A57). A strategy whose
 roll failed is stopped on the stream: every order is refused, even after a restart, until a

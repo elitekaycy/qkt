@@ -37,9 +37,20 @@ tasks.test {
             showStandardStreams = true
         }
     }
+    // Parallel test JVMs: -PqktTestForks=<n> or QKT_TEST_FORKS=<n> (CI sets 3); 1 (serial) by default. Each fork runs
+    // its classes one at a time in its own JVM, so JVM-global state never crosses forks; ForkIsolation gives each
+    // fork its own runs directory under qkt.runs.home. Kover merges every fork's coverage into one report.
+    maxParallelForks =
+        providers
+            .gradleProperty("qktTestForks")
+            .orElse(providers.environmentVariable("QKT_TEST_FORKS"))
+            .map(String::toInt)
+            .getOrElse(1)
+            .coerceAtLeast(1)
     // The CLI logs to stderr, which test reports keep; tests log to stdout so suites stay within their log budget.
     systemProperty("QKT_CONSOLE_TARGET", "System.out")
-    // Backtest bundles default under ~/.qkt/runs; redirect them into the build dir in tests.
+    // Backtest bundles default under ~/.qkt/runs; redirect them into the build dir in tests (one subdirectory per fork,
+    // set by com.qkt.testing.ForkIsolation).
     systemProperty(
         "qkt.runs.home",
         layout.buildDirectory

@@ -101,6 +101,7 @@ internal class StrategyBinder(
                 candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
             }
             audit.publishEvaluations(strategyId, strategy)
+            (strategy as? com.qkt.dsl.sets.DynamicSetHost)?.journalTo(bus::publish)
             strategy.bindToHub(candleHub, ctx, emit)
             exitHookManager.bind(strategyId, strategy, emit)
             strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)

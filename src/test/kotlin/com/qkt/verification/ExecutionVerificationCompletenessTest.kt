@@ -165,7 +165,7 @@ class ExecutionVerificationCompletenessTest {
                             "stack-at-expired stack-at-recoil exit-after-plain exit-after-off-tick " +
                             "exit-after-bracket-timer exit-after-bracket-first exit-after-pending " +
                             "exit-after-stack-at trailing-by trailing-pct armed-trailing-hwm armed-trailing-pre-arm " +
-                            "armed-trailing-inception oco-entry-gap oco-entry-dual-breach two-market " +
+                            "armed-trailing-inception oco-entry-gap oco-entry-tie oco-entry-dual-breach two-market " +
                             "market-and-limit"
                     ).split(' ').toSet(),
                 "collision" to

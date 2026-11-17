@@ -6,6 +6,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okio.BufferedSource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -75,21 +76,51 @@ class LogsRouteParamsTest : DaemonRouteFixture() {
     @Test
     fun `follow streams lines appended after the tail`() {
         val file = writeLog("gone", "before")
-        val p = plane(registry(stateDir), stateDir)
-        val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.SECONDS).build()
-        val call =
-            client.newCall(
-                Request.Builder().url("http://127.0.0.1:${p.boundPort}/logs/gone?follow=true").build(),
-            )
 
-        call.execute().use { resp ->
-            val source = resp.body!!.source()
+        follow("/logs/gone?follow=true") { source ->
             assertThat(source.readUtf8LineStrict()).isEqualTo("before")
             Files.writeString(file, "after\n", StandardOpenOption.APPEND)
-            var line = source.readUtf8LineStrict()
-            while (line.isEmpty()) line = source.readUtf8LineStrict()
-            assertThat(line).isEqualTo("after")
+            assertThat(nextLineOtherThan(source, "")).isEqualTo("after")
+        }
+    }
+
+    @Test
+    fun `follow sends a line appended while the tail is still being written`() {
+        // 20 MB of tail is more than loopback socket buffers hold, so the server is still writing the tail when
+        // the line is appended; the follow must start from the bytes the tail read, not the size after it.
+        val wide = "x".repeat(1023)
+        val file = writeLog("gone", *Array(20_000) { wide })
+
+        follow("/logs/gone?lines=20000&follow=true") { source ->
+            assertThat(source.readUtf8LineStrict()).isEqualTo(wide)
+            Files.writeString(file, "after\n", StandardOpenOption.APPEND)
+            assertThat(nextLineOtherThan(source, wide)).isEqualTo("after")
+        }
+    }
+
+    private fun follow(
+        path: String,
+        read: (BufferedSource) -> Unit,
+    ) {
+        val p = plane(registry(stateDir), stateDir)
+        val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.SECONDS).build()
+        val call = client.newCall(Request.Builder().url("http://127.0.0.1:${p.boundPort}$path").build())
+        call.execute().use { resp ->
+            read(resp.body!!.source())
             call.cancel()
         }
+    }
+
+    /** The next line that is neither a keepalive nor [skip]; keepalives arrive every 500 ms, so bound the wait. */
+    private fun nextLineOtherThan(
+        source: BufferedSource,
+        skip: String,
+    ): String {
+        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        while (System.nanoTime() < end) {
+            val line = source.readUtf8LineStrict()
+            if (line.isNotEmpty() && line != skip) return line
+        }
+        return "<no new line within 15 s>"
     }
 }

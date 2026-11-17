@@ -1,6 +1,10 @@
 package com.qkt.risk
 
 import com.qkt.common.FixedClock
+import com.qkt.common.Money
+import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -27,6 +31,69 @@ class SetRiskLimitsTest {
             )
         }.hasMessage("SetCaps.maxPositionSize must be > 0: -2")
     }
+
+    @Test
+    fun `a set whose membership moves reads its members from the supplier, and may start with none`() {
+        var now = setOf("ALPACA:AAPL")
+        val moving = SetRiskLimits(emptySet(), 1, active = { now })
+
+        assertThat(moving.current()).containsExactly("ALPACA:AAPL")
+        now = setOf("ALPACA:MSFT", "ALPACA:NVDA")
+        assertThat(moving.current()).containsExactlyInAnyOrder("ALPACA:MSFT", "ALPACA:NVDA")
+        assertThat(SetRiskLimits(members, 1, active = { now }).members).isEqualTo(members)
+        assertThat(SetRiskLimits(members, 1).current()).isEqualTo(members)
+    }
+
+    @Test
+    fun `a cap built from a moving set follows its members at each order, sticky-held ones included`() {
+        var now = setOf("ALPACA:AAPL")
+        val rules =
+            StrategyRiskRuleFactory.build(
+                strategyIds = listOf("rotation"),
+                limitsByStrategy =
+                    mapOf(
+                        "rotation" to
+                            StrategyRiskLimits(
+                                sets =
+                                    mapOf(
+                                        "moving" to
+                                            SetRiskLimits(now, maxPositionSize = BigDecimal("3"), active = { now }),
+                                    ),
+                            ),
+                    ),
+                strategyPositions = StrategyPositionTracker(),
+                pacerLedger = PacerLedger(),
+                clock = FixedClock(0L),
+                totalDdBasis = DrawdownBasis.TRAILING,
+                startingBalance = BigDecimal("10000"),
+                startingBalances = emptyMap(),
+            )
+        val global = StrategyPositionTracker().account
+        val big = order("ALPACA:NVDA", Money.of("5"))
+        val rule = rules.riskRules.single()
+
+        // NVDA is not in the set yet: untouched
+        assertThat(rule.evaluate(big, global)).isEqualTo(Decision.Approve)
+        // it joins, so its size is capped from the next order
+        now = now + "ALPACA:NVDA"
+        assertThat(rule.evaluate(big, global)).isInstanceOf(Decision.Reject::class.java)
+        // it drops out of the active set (flat, released): no longer capped
+        now = setOf("ALPACA:AAPL")
+        assertThat(rule.evaluate(big, global)).isEqualTo(Decision.Approve)
+    }
+
+    private fun order(
+        symbol: String,
+        qty: BigDecimal,
+    ) = OrderRequest.Market(
+        id = "ORD-0",
+        symbol = symbol,
+        side = Side.BUY,
+        quantity = qty,
+        timeInForce = TimeInForce.GTC,
+        timestamp = 1000L,
+        strategyId = "rotation",
+    )
 
     @Test
     fun `the factory builds one rule per set cap and none for an empty cap`() {

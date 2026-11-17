@@ -73,7 +73,8 @@ class PaperBroker(
     // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
     // Shareable because the broker is single-threaded and fill callbacks never re-enter onTick.
     private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
-    private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
+    private val deadlines = PaperDeadlines(bus, clock)
+    private val sequence = TriggerSequence(fillAtTriggerPrice)
 
     init {
         bus.subscribe<TickEvent> { e -> onTick(e.tick) }
@@ -93,6 +94,7 @@ class PaperBroker(
         )
 
     override fun submit(request: OrderRequest): SubmitAck {
+        if (request !is OrderRequest.Market) sequence.admit(request)
         val expiring =
             if (request.timeInForce == TimeInForce.DAY && request.expiresAt == null) {
                 request.withDayExpiry(calendar, clock.now())
@@ -173,6 +175,7 @@ class PaperBroker(
         request: OrderRequest,
         reason: String,
     ): SubmitAck {
+        sequence.forget(request.id)
         bus.publish(
             BrokerEvent.OrderRejected(
                 clientOrderId = request.id,
@@ -193,6 +196,7 @@ class PaperBroker(
     override fun cancel(orderId: String) {
         val match = working.firstOrNull { it.id == orderId }
         val removed = working.removeAll { it.id == orderId }
+        sequence.forget(orderId)
         if (removed) {
             bus.publish(
                 BrokerEvent.OrderCancelled(
@@ -208,8 +212,9 @@ class PaperBroker(
 
     fun onTick(tick: Tick) {
         val previous = lastTickBySymbol.put(tick.symbol, tick)
+        sequence.observe(tick, previous)
         if (working.isEmpty()) return
-        expireDeadlines(tick)
+        deadlines.expire(working, tick) { sequence.forget(it.id) }
         if (working.isEmpty()) return
         // A synthesized bar moves continuously Open->Low/High->Close, so a level between the previous print and
         // this one traded; a bar Close (the only synthetic tick with volume) to the next Open is a gap.
@@ -221,35 +226,14 @@ class PaperBroker(
         }
         // A venue fills nothing out of session: a touched order keeps resting for the first in-session price.
         if (toFillScratch.isNotEmpty() && !session(tick.symbol, tick.timestamp)) return
+        sequence.order(toFillScratch, tick, previous)
         for (i in toFillScratch.indices) {
             val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue
+            sequence.forget(wo.id)
             fillFromTrigger(wo, tick, from)
-        }
-    }
-
-    private fun expireDeadlines(tick: Tick) {
-        gtdExpiredScratch.clear()
-        for (i in working.indices) {
-            val request = working[i]
-            if (request.symbol != tick.symbol) continue
-            val expiresAt = request.expiresAt ?: continue
-            if (tick.timestamp >= expiresAt) gtdExpiredScratch.add(request)
-        }
-        for (i in gtdExpiredScratch.indices) {
-            val request = gtdExpiredScratch[i]
-            if (!working.remove(request)) continue
-            bus.publish(
-                BrokerEvent.OrderCancelled(
-                    clientOrderId = request.id,
-                    brokerOrderId = request.id,
-                    reason = "${request.timeInForce} expired",
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
         }
     }
 

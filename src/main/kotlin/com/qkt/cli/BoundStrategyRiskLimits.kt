@@ -22,20 +22,24 @@ internal fun backtestStrategyRiskLimits(
  * A live [strategy]'s `risk.per_strategy` entry [risk] as the limits its session enforces, symbol-set caps bound to
  * the members its [streams] declare exactly as a backtest binds them: a cap naming a set the strategy does not declare
  * (or any set, for one that declares none, such as a `qkt bot session` identity) refuses the start by name rather
- * than guarding nothing. Null when the strategy has no entry.
+ * than guarding nothing. Null when the strategy has no entry. A set whose membership moves during the run is in
+ * [dynamicSets], by alias, with the supplier of its active members (sticky-held ones included): its caps count those at
+ * each order check, and are valid before any member stream exists (#1714 step 9).
  */
 internal fun liveRiskLimits(
     strategy: String,
     risk: PerStrategyRisk?,
     streams: List<StreamDecl>,
-): StrategyRiskLimits? = risk?.let { bound(strategy, it, SetMemberAlias.membersOf(streams)) }
+    dynamicSets: Map<String, () -> Set<String>> = emptyMap(),
+): StrategyRiskLimits? = risk?.let { bound(strategy, it, SetMemberAlias.membersOf(streams), dynamicSets) }
 
 private fun bound(
     strategy: String,
     limits: PerStrategyRisk,
     members: Map<String, Set<String>>,
+    dynamicSets: Map<String, () -> Set<String>> = emptyMap(),
 ): StrategyRiskLimits =
-    runCatching { limits.toLimits(members) }.getOrElse { e ->
+    runCatching { limits.toLimits(members, dynamicSets) }.getOrElse { e ->
         if (e !is IllegalStateException) throw e
         error("risk.per_strategy.$strategy.${e.message}")
     }
