@@ -120,17 +120,30 @@ internal object BacktestSetup {
                 val macroStore = MacroSeriesStore(Paths.get(dataRoot))
                 val fredFetcher = FredSeriesFetcher(macroStore)
                 val policyRateFetcher = PolicyRateSeriesFetcher(macroStore)
-                val macroFrom = provisionFrom.minusDays(90)
-                for (s in macroStreams) {
-                    if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
-                        val policySeries = PolicyRateSeries.fromId(s.symbol)
-                        if (policySeries == null) {
-                            fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
-                        } else {
-                            policyRateFetcher.fetch(policySeries, macroFrom, provisionTo)
-                        }
-                    }
-                }
+                provisionMacro(
+                    macroStreams.map { it.symbol },
+                    macroStore,
+                    provisionFrom.minusDays(90),
+                    provisionTo,
+                    fetchFred = fredFetcher::fetch,
+                    fetchPolicy = policyRateFetcher::fetch,
+                )
             }
         }
+
+    /** Fetches each of [series] the [store] does not already bracket over `[from, to]`, policy rates by their own source. */
+    internal fun provisionMacro(
+        series: List<String>,
+        store: MacroSeriesStore,
+        from: LocalDate,
+        to: LocalDate,
+        fetchFred: (String, LocalDate, LocalDate) -> Unit,
+        fetchPolicy: (PolicyRateSeries, LocalDate, LocalDate) -> Unit,
+    ) {
+        for (id in series) {
+            if (store.hasRange(id, from, to)) continue
+            val policySeries = PolicyRateSeries.fromId(id)
+            if (policySeries == null) fetchFred(id, from, to) else fetchPolicy(policySeries, from, to)
+        }
+    }
 }

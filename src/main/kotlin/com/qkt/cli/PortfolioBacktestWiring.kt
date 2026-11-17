@@ -9,7 +9,6 @@ import com.qkt.risk.book.Allocation
 import com.qkt.risk.book.AllocationMethod
 import com.qkt.risk.book.BookRiskConfig
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 
 /**
@@ -58,15 +57,13 @@ internal class PortfolioBacktestWiring(
             val allocate = compiled.ast.allocate ?: return base
             declaredCapital ?: return base
             val config = base ?: BookRiskConfig()
-            val rebalanceBars =
-                allocate.rebalanceEveryDurationMs?.let { durationMs ->
-                    candleWindow?.let { window ->
-                        BigDecimal(durationMs).divide(BigDecimal(window.durationMs), 0, RoundingMode.CEILING).toInt()
-                    } ?: 0
-                } ?: 0
             return config.copy(
                 capital = config.capital ?: declaredCapital,
-                allocation = Allocation(method = AllocationMethod.REGIME_WEIGHTED, rebalanceEveryBars = rebalanceBars),
+                allocation =
+                    Allocation(
+                        method = AllocationMethod.REGIME_WEIGHTED,
+                        rebalanceEveryBars = rebalanceBars(allocate.rebalanceEveryDurationMs, candleWindow),
+                    ),
             )
         }
     }

@@ -194,7 +194,7 @@ internal class BotReplayCommand(
 
     private companion object {
         val FLAGS = setOf("no-fetch", "bars", "tick-fills")
-        val OVERRIDES =
-            listOf("from", "to", "data-root", "config", "broker", "execution-latency", "instruments") + FLAGS
+        val VALUED = listOf("from", "to", "data-root", "config", "broker", "execution-latency", "instruments")
+        val OVERRIDES = VALUED + FLAGS
     }
 }

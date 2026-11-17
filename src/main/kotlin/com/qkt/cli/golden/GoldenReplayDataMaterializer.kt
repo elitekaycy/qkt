@@ -1,10 +1,9 @@
 package com.qkt.cli.golden
 
+import com.qkt.cli.moveAtomically
 import com.qkt.common.Clock
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
 /** Counts reported after a golden bundle is materialized into replay stores. */
 internal data class GoldenReplayDataSummary(
@@ -35,11 +34,7 @@ internal class GoldenReplayDataMaterializer(
             stores.writeTickStore(temp, capture.ticks)
             stores.writeBarStores(temp, replayCandles)
             GoldenReplayManifestWriter(bundle, clock).write(temp, capture, replayCandles)
-            try {
-                Files.move(temp, absolute, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temp, absolute)
-            }
+            moveAtomically(temp, absolute)
             return GoldenReplayDataSummary(
                 liveTicks = capture.ticks.count { !it.warmup }.toLong(),
                 warmupTicks = capture.ticks.count { it.warmup }.toLong(),

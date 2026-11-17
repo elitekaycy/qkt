@@ -4,6 +4,7 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
 import com.sun.net.httpserver.HttpExchange
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 
 /**
@@ -44,6 +45,8 @@ internal fun handleLogs(
     ex.responseHeaders.add("Cache-Control", "no-cache")
     ex.sendResponseHeaders(200, 0)
     val out = ex.responseBody
+    // Taken before the tail is read, so a line written while the tail is sent is streamed to a follower, not skipped.
+    val startSize = Files.size(logFile)
     val all = Files.readAllLines(logFile)
     val filtered =
         if (since != null) {
@@ -57,44 +60,7 @@ internal fun handleLogs(
             out.write((line + "\n").toByteArray(Charsets.UTF_8))
         }
         out.flush()
-        if (follow) {
-            var lastSize = Files.size(logFile)
-            while (true) {
-                Thread.sleep(500)
-                val sz = Files.size(logFile)
-                if (sz < lastSize) {
-                    // file truncated; reset
-                    lastSize = 0
-                }
-                if (sz == lastSize) {
-                    runCatching {
-                        out.write("\n".toByteArray(Charsets.UTF_8))
-                        out.flush()
-                    }.onFailure { return }
-                    continue
-                }
-                Files
-                    .newInputStream(logFile)
-                    .use { input ->
-                        // skip() may skip fewer bytes than asked; loop so we don't re-send
-                        // already-streamed log bytes to the follower.
-                        var toSkip = lastSize
-                        while (toSkip > 0) {
-                            val skipped = input.skip(toSkip)
-                            if (skipped <= 0) break
-                            toSkip -= skipped
-                        }
-                        val bytes = input.readBytes()
-                        try {
-                            out.write(bytes)
-                            out.flush()
-                        } catch (_: java.io.IOException) {
-                            return
-                        }
-                    }
-                lastSize = sz
-            }
-        }
+        if (follow) followLog(logFile, out, startSize)
     } catch (_: java.io.IOException) {
         // client disconnected
     } finally {
@@ -107,4 +73,53 @@ private fun parseTimestamp(line: String): Instant? {
     val first = line.substringBefore(' ', missingDelimiterValue = "")
     if (first.isBlank()) return null
     return runCatching { Instant.parse(first.replace(',', '.')) }.getOrNull()
+}
+
+/**
+ * Streams what [logFile] grows by to [out] until the reader goes away: a blank line when nothing was added, so a
+ * dead connection is noticed, and a restart from the top when the file shrinks. It follows from [startSize], the size
+ * the caller saw before it sent the tail; [pause] is the wait between looks.
+ */
+internal fun followLog(
+    logFile: Path,
+    out: java.io.OutputStream,
+    startSize: Long = Files.size(logFile),
+    pause: () -> Unit = { Thread.sleep(500) },
+) {
+    var lastSize = startSize
+    while (true) {
+        pause()
+        val sz = Files.size(logFile)
+        if (sz < lastSize) {
+            // file truncated; reset
+            lastSize = 0
+        }
+        if (sz == lastSize) {
+            runCatching {
+                out.write("\n".toByteArray(Charsets.UTF_8))
+                out.flush()
+            }.onFailure { return }
+            continue
+        }
+        Files
+            .newInputStream(logFile)
+            .use { input ->
+                // skip() may skip fewer bytes than asked; loop so we don't re-send
+                // already-streamed log bytes to the follower.
+                var toSkip = lastSize
+                while (toSkip > 0) {
+                    val skipped = input.skip(toSkip)
+                    if (skipped <= 0) break
+                    toSkip -= skipped
+                }
+                val bytes = input.readBytes()
+                try {
+                    out.write(bytes)
+                    out.flush()
+                } catch (_: java.io.IOException) {
+                    return
+                }
+            }
+        lastSize = sz
+    }
 }

@@ -1,6 +1,7 @@
 package com.qkt.cli.fetch
 
 import com.qkt.cli.ExitCodes
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.instrument.OptionCatalog
 import com.qkt.instrument.OptionRoot
@@ -21,9 +22,7 @@ internal object ChainLiveFetch {
     fun run(
         target: String,
         dataRoot: Path,
-        take: (OptionRoot, OptionCatalog) -> DeribitBookSnapshot.Taken = { root, catalog ->
-            DeribitBookSnapshot(DeribitClient()).take(root, catalog)
-        },
+        take: (OptionRoot, OptionCatalog) -> DeribitBookSnapshot.Taken = ::deribitBook,
     ): Int {
         val (root, catalog) = declaredOptionChain(target, dataRoot) ?: return ExitCodes.USER_ERROR
         val taken =
@@ -62,3 +61,9 @@ internal object ChainLiveFetch {
         return ExitCodes.USER_ERROR
     }
 }
+
+@ExcludeFromCoverage("snapshots Deribit's live option book over the network; only a networked run reaches it")
+private fun deribitBook(
+    root: OptionRoot,
+    catalog: OptionCatalog,
+): DeribitBookSnapshot.Taken = DeribitBookSnapshot(DeribitClient()).take(root, catalog)

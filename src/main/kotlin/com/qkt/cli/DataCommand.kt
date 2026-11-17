@@ -6,7 +6,7 @@ import com.qkt.cli.data.dataCompare
 import com.qkt.cli.data.dataConvert
 import com.qkt.cli.data.dataImport
 import com.qkt.cli.data.dataPresets
-import com.qkt.cli.data.dataSample
+import com.qkt.cli.data.dataSampleFromBinance
 import com.qkt.cli.data.dataSnapshot
 import com.qkt.cli.data.dataVerify
 
@@ -20,6 +20,8 @@ import com.qkt.cli.data.dataVerify
  */
 class DataCommand(
     private val args: Args,
+    /** Test seam: `qkt data sample`, which downloads from Binance. */
+    private val sample: (Args) -> Int = ::dataSampleFromBinance,
 ) {
     /** Execute the requested data action and return a process exit code. */
     fun run(): Int =
@@ -31,7 +33,7 @@ class DataCommand(
             "import" -> dataImport(args)
             "compare" -> dataCompare(args)
             "presets" -> dataPresets(args)
-            "sample" -> dataSample(args)
+            "sample" -> sample(args)
             "bars" -> dataBars(args)
             else -> {
                 System.err.println(

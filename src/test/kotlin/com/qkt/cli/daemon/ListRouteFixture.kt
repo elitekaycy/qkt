@@ -27,6 +27,7 @@ abstract class ListRouteFixture {
     protected fun stubFactory(
         stateDir: StateDir,
         streamStops: List<com.qkt.broker.StreamStop> = emptyList(),
+        streamBrokers: Map<String, String> = emptyMap(),
         childMeta: (String) -> StrategyHandle.ChildMeta? = { null },
     ): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _, _ ->
@@ -51,6 +52,8 @@ abstract class ListRouteFixture {
                     override fun flatten() = Unit
 
                     override fun streamStops() = streamStops
+
+                    override fun streamBrokers(): Map<String, String> = streamBrokers
                 }
             val server =
                 ObservabilityServer(

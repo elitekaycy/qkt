@@ -22,6 +22,7 @@ import java.time.format.DateTimeFormatter
 class ExperimentCommand(
     private val args: Args,
     private val fetcherOverride: DataFetcher? = null,
+    private val userDirs: UserDirs = UserDirs(),
 ) {
     /** Run the plan's train sweep, validation re-rank and single test pass, then record the experiment. */
     fun run(): Int {
@@ -119,7 +120,7 @@ class ExperimentCommand(
 
         val registryDir =
             args.option("registry-dir")?.let(Path::of)
-                ?: UserDirs().stateHome().resolve("experiments")
+                ?: userDirs.stateHome().resolve("experiments")
         val persisted =
             ExperimentRegistry(registryDir)
                 .write(
@@ -161,7 +162,7 @@ class ExperimentCommand(
         val stamp = rawStamp.replace(":", "").replace(".", "")
         val registryDir =
             args.option("registry-dir")?.let(Path::of)
-                ?: UserDirs().stateHome().resolve("experiments")
+                ?: userDirs.stateHome().resolve("experiments")
         return registryDir.resolve("runs").resolve(safeName).resolve(stamp)
     }
 

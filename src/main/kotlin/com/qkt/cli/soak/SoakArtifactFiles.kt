@@ -1,8 +1,8 @@
 package com.qkt.cli.soak
 
+import com.qkt.cli.moveAtomically
 import com.qkt.common.OwnerOnly
 import java.io.InputStream
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -35,11 +35,7 @@ internal fun writeAtomic(
             StandardOpenOption.DSYNC,
         )
         makeOwnerOnly(temporary)
-        try {
-            Files.move(temporary, output, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING)
-        }
+        moveAtomically(temporary, output, StandardCopyOption.REPLACE_EXISTING)
     } finally {
         Files.deleteIfExists(temporary)
     }
