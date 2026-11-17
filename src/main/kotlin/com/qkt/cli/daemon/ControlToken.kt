@@ -75,7 +75,9 @@ data class ControlToken(
             enforceOwnerOnly(path)
         }
 
-        @ExcludeFromCoverage("taken only on a file system without POSIX permission attributes (such as Windows); the Linux coverage run cannot reach it")
+        @ExcludeFromCoverage(
+            "taken only on a file system without POSIX permission attributes (such as Windows); the Linux coverage run cannot reach it",
+        )
         private fun writeWithoutPosixAttributes(
             path: java.nio.file.Path,
             token: String,
