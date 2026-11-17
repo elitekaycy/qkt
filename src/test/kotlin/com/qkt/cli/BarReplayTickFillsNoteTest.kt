@@ -1,6 +1,5 @@
 package com.qkt.cli
 
-import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.ast.StreamDecl
@@ -20,13 +19,14 @@ class BarReplayTickFillsNoteTest : BarsReplayFixture() {
         args: Args,
         data: Path,
         config: ExecutionSimulationConfig,
+        streams: List<StreamDecl> = listOf(stream),
     ) = BacktestBarReplay.resolveBarReplay(
         args,
         data.toString(),
         from,
         to,
         listOf(stream.qktSymbol),
-        listOf(stream),
+        streams,
         TimeWindow.parse("15m"),
         config,
     )
@@ -46,7 +46,7 @@ class BarReplayTickFillsNoteTest : BarsReplayFixture() {
     }
 
     @Test
-    fun `bars with execution latency fall back to bar fills and say so`(
+    fun `bars over mixed timeframes fall back to bar fills and say so`(
         @TempDir data: Path,
     ) {
         seedTicks(data, 1)
@@ -70,20 +70,19 @@ class BarReplayTickFillsNoteTest : BarsReplayFixture() {
             ).run()
         assertThat(built).isEqualTo(ExitCodes.SUCCESS)
 
+        val mixed = listOf(stream, StreamDecl("slow", "BACKTEST", "XAUUSD", "1h"))
+
+        // The note is printed before the finer coverage checks, which this fixture does not satisfy for 1h.
         val run =
             captureCliRun {
-                val config =
-                    resolve(
-                        Args(arrayOf("backtest", "s.qkt", "--bars")),
-                        data,
-                        ExecutionSimulationConfig(preset = ExecutionPreset.MT5_BASIC, latencyMs = 100),
-                    )
-                if (config.tickFills) 1 else 0
+                runCatching {
+                    resolve(Args(arrayOf("backtest", "s.qkt", "--bars")), data, ExecutionSimulationConfig(), mixed)
+                }
+                0
             }
 
-        assertThat(run.code).withFailMessage(run.err).isZero()
         assertThat(
             run.err,
-        ).contains("qkt: note: tick-resolved fills are off for this run: execution latency or order spacing")
+        ).contains("qkt: note: tick-resolved fills are off for this run: mixed-timeframe strategies are not supported")
     }
 }

@@ -61,7 +61,7 @@ class PortfolioDeployFailureRoutesTest : DaemonRouteFixture() {
             Files.writeString(
                 it,
                 "PORTFOLIO book VERSION 1 $capital\nSYMBOLS\n    x = BACKTEST:X EVERY 1m\n" +
-                    "IMPORT 'child.qkt' AS child\nRULES\n    RUN child WEIGHT 1\n",
+                    "IMPORT 'child.qkt' AS child\nRULES\n    RUN child\n",
             )
         }
     }

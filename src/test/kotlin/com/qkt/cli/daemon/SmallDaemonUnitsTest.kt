@@ -20,9 +20,11 @@ class SmallDaemonUnitsTest : ListRouteFixture() {
         val userDirs = UserDirs(osName = "linux", env = emptyMap(), home = tmp)
 
         assertThat(
-            StateDir.resolve("/srv/qkt", mapOf("QKT_STATE_DIR" to "/env"), userDirs).root,
-        ).isEqualTo(Path.of("/srv/qkt"))
-        assertThat(StateDir.resolve(null, mapOf("QKT_STATE_DIR" to "/env"), userDirs).root).isEqualTo(Path.of("/env"))
+            StateDir.resolve("$tmp/arg", mapOf("QKT_STATE_DIR" to "$tmp/env"), userDirs).root,
+        ).isEqualTo(tmp.resolve("arg"))
+        assertThat(
+            StateDir.resolve(null, mapOf("QKT_STATE_DIR" to "$tmp/env"), userDirs).root,
+        ).isEqualTo(tmp.resolve("env"))
         assertThat(StateDir.resolve(null, emptyMap(), userDirs).root).isEqualTo(userDirs.stateHome())
     }
 
