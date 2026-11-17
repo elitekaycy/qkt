@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import kotlin.test.assertEquals
+import com.qkt.cli.shim.assertEquals
 import kotlinx.serialization.json.Json
 
 /** The Json configurations the generated serializers branch on. */

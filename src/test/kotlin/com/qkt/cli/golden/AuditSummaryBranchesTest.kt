@@ -1,14 +1,14 @@
 package com.qkt.cli.golden
 
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
+import com.qkt.cli.shim.assertTrue
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPOutputStream
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.writeText
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 class AuditSummaryBranchesTest {
     private val dir: Path = createTempDirectory("audit")

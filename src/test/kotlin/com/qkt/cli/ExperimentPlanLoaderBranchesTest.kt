@@ -1,14 +1,14 @@
 package com.qkt.cli
 
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
+import com.qkt.cli.shim.assertNull
+import com.qkt.cli.shim.assertTrue
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.createTempDirectory
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class ExperimentPlanLoaderBranchesTest {
     private val splits =

@@ -1,14 +1,14 @@
 package com.qkt.cli.soak
 
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.io.path.createTempDirectory
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 class GoldenEvidenceBranchesTest {
     private val dir: Path = createTempDirectory("golden")

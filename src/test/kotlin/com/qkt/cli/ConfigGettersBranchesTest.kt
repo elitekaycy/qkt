@@ -1,15 +1,15 @@
 package com.qkt.cli
 
 import com.qkt.app.LiveEquityBasis
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
+import com.qkt.cli.shim.assertNull
+import com.qkt.cli.shim.assertTrue
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import java.math.BigDecimal
 import java.nio.file.Path
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class ConfigGettersBranchesTest {
     private fun risk(vararg pairs: Pair<String, String>) = Config(risk = mapOf(*pairs))

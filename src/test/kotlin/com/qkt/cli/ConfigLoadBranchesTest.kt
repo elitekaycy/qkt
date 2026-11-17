@@ -1,15 +1,15 @@
 package com.qkt.cli
 
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
+import com.qkt.cli.shim.assertNotNull
+import com.qkt.cli.shim.assertNull
+import com.qkt.cli.shim.assertTrue
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createTempDirectory
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class ConfigLoadBranchesTest {
     private val dir: Path = createTempDirectory("cfg")

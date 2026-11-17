@@ -1,11 +1,11 @@
 package com.qkt.cli.observe
 
 import com.qkt.cli.assertRoundTrips
+import com.qkt.cli.shim.Test
+import com.qkt.cli.shim.assertEquals
+import com.qkt.cli.shim.assertFailsWith
+import com.qkt.cli.shim.assertTrue
 import java.math.BigDecimal
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
