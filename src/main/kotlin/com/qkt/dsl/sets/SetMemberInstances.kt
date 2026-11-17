@@ -39,16 +39,25 @@ internal class SetMemberInstances(
     /** The members with a running instance, in the order they joined. */
     val members: Set<String> get() = instances.keys
 
+    /** The running instances, in the order their members joined. */
+    val compiled: Collection<CompiledStrategy> get() = instances.values
+
     /** Whether [member] is sticky: held while out of the ranking. */
     fun isSticky(member: String): Boolean = member in sticky
 
-    /** Applies every change of [step], in its order. */
-    fun apply(step: MembershipStep) {
+    /**
+     * Applies every change of [step], in its order. [closeMs] is the window close the step is as of: a member that
+     * joins there fires its rules from the next close on, whenever the close itself reaches the hub.
+     */
+    fun apply(
+        step: MembershipStep,
+        closeMs: Long = Long.MIN_VALUE,
+    ) {
         for (change in step.changes) {
             when (change.change) {
-                MembershipChange.JOIN -> join(change.member)
+                MembershipChange.JOIN -> join(change.member, closeMs)
                 MembershipChange.RESTORE -> {
-                    join(change.member)
+                    join(change.member, closeMs)
                     if (change.rank == null) sticky += change.member
                 }
                 MembershipChange.LEAVE, MembershipChange.RELEASE -> leave(change.member)
@@ -58,8 +67,12 @@ internal class SetMemberInstances(
         }
     }
 
-    private fun join(member: String) {
+    private fun join(
+        member: String,
+        closeMs: Long,
+    ) {
         val instance = template.compile(member)
+        instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
         val stream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
