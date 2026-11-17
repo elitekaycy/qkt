@@ -274,7 +274,13 @@ BUY gold SIZING 0.2 ORDER_TYPE = STOP AT gold.close + 50 TIF GTD NOW + 10m
 
 ### Common gotchas
 
-- **Same-bar dual breach.** If a single candle's high and low cross both stop prices, the tiebreak is broker-dependent. In backtest, the leg with the closer trigger to the candle's open fills first.
+- **Same-bar dual breach.** Live, the venue decides which leg fills when one move reaches both. In a backtest
+  (`paper` and `mt5-sim`), when one price reaches both legs together, the leg whose trigger is nearer the price
+  the move started from fills first and the other is cancelled: on a tick replay that is the previous tick's
+  price (a gap crosses the nearer level first); on a bar replayed without ticks it is the bar's open. Legs at the
+  same distance fill in the order they are written. A bar whose low and high each reach one leg on separate
+  prints fills them in replay order instead (open, then the low and high, the open position's adverse extreme
+  first): the first leg its prints reach fills.
 - **Broker capability.** Netting venues (`type: gateway` accounts such as Bybit and Deribit) do not support pending-pair OCO natively; MT5 brokers (Phase 17 + 26b) do. As of Phase 26b, MT5 translates the pending family natively (BUY_STOP, SELL_STOP, BUY_LIMIT, SELL_LIMIT, BUY_STOP_LIMIT, SELL_STOP_LIMIT, server-side trailing). Async fill-event lifecycle (cancel-on-fill across MT5 tickets) lands in Phase 26c — until then, pending placements succeed live but qkt-side fill events for pending shapes arrive lazily via the position poller.
 - **Both legs executing.** When qkt holds the two legs together (the venue has no native OCO), a sibling cancel can lose the race and both legs execute. The leg that executes second is closed by its position ticket and a `CRITICAL OCO invariant violated` alert is raised. A leg that filled only in part counts as executed: a leg filling after its sibling filled in part is closed whole, and a leg that filled in part after its sibling executed is closed for what it filled once the venue cancels its remainder.
 - **A refused cancel of the other leg.** Once one leg executes, qkt cancels the other. A venue that refuses that cancel (MT5 reports `OrderCancelFailed`; the order is still live) gets it again on the live heartbeat with backoff until it confirms, and after three unconfirmed attempts a `CRITICAL cancellation remains unconfirmed` alert is raised.

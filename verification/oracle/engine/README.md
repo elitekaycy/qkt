@@ -107,7 +107,7 @@ disagreed until their fixes:
 
 ## Tranche B: composite orders
 
-`cases_b.py` adds 41 scenarios for OTO (`ON_FILL`), STACK, STACK_AT, EXIT AFTER, trailing entries and armed trailing
+`cases_b.py` adds 42 scenarios for OTO (`ON_FILL`), STACK, STACK_AT, EXIT AFTER, trailing entries and armed trailing
 stops, OCO_ENTRY, collisions of composite orders on one tick, and two rules firing on one bar. `composite.py` holds
 their rules; `engine.py` now tracks every filled entry as its own leg. The tranche-A expectations are unchanged by
 the rewrite (`gen.py --check` passes on them byte for byte). Line numbers at origin/dev `5cf2db50f`.
@@ -151,8 +151,9 @@ The scenarios are built so the reading below does not change their fills; each i
   reversal both PCT bases trip on the same tick.
 - **QB7 Armed trailing extreme.** `bracket.md:165` "running favorable extreme since fill" does not name the quote.
   The oracle uses the mark (mid, as MFE in `stack-at.md:93-94`); every trigger tick is through the level on either.
-- **QB8 OCO_ENTRY tie-break on ticks.** `actions.md:277` states it for a candle. On ticks the oracle takes the open
-  of the bar the gap tick opens. qkt follows neither rule on either path (#1748, below).
+- **QB8 OCO_ENTRY tie-break on ticks** (answered, #1748). `actions.md:277-283` now states the reference for both
+  paths: the previous tick's price on ticks, the bar's open on the synthetic path; equal distances fall back to the
+  order the legs are written.
 - **QB9 OCO_ENTRY dual breach on the synthetic path.** `actions.md:277` (closer to the open fills first) and
   `backtest-data.md:25-27` (a flat bar replays its low before its high) disagree when the open is nearer the high.
   The scenario has the open nearer the low, where both pick the same leg.
@@ -163,13 +164,12 @@ The scenarios are built so the reading below does not change their fills; each i
 
 ### Tranche B results
 
-38 of the 41 scenarios agree with qkt on every fill. Two are held `@Disabled` in `ExecutionVerificationKnownBugsTest`,
-asserting the documented behaviour, and one class of report columns is held for the STACK scenarios:
+All 42 scenarios agree with qkt on every fill. One class of report columns is held for the STACK scenarios:
 
-- **#1748** `oco-entry-gap-through-both-legs-ticks-paper` and `oco-entry-gap-closer-leg-listed-first-bars-synthetic-paper`:
-  when one price reaches both OCO_ENTRY legs, qkt fills the leg listed last in the block, not "the leg with the closer
-  trigger to the candle's open" (`actions.md:277`). `oco-entry-gap-through-both-legs-bars-synthetic-paper` agrees
-  only because its closer leg is listed last. The fix needs a decision on the rule (see the issue).
+- **#1748 (fixed)**: when one price reached both OCO_ENTRY legs, qkt filled the leg written last. It now fills the
+  leg nearer the price the move started from (`actions.md:277-283`): `oco-entry-gap-through-both-legs-ticks-paper`,
+  `oco-entry-gap-closer-leg-listed-first-bars-synthetic-paper` and the tie case
+  `oco-entry-gap-equal-distance-listing-order-ticks-paper` run in the main set.
 - **#1747** every STACK scenario: the fills, prices and realised P&L agree, but `trades.csv` leaves
   `stopLossPrice`, `takeProfitPrice` and `riskUsd` empty on STACK entry rows, although each layer carries the
   bracket (`backtest-model.md:263`, `stack.md:119-135`). The main set checks these scenarios without the entry levels;

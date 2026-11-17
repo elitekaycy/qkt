@@ -1,0 +1,35 @@
+{
+  "name": "oco-entry-gap-equal-distance-listing-order-ticks-paper",
+  "proves": "two legs at the same distance from the previous tick: the one written first fills, the other is cancelled",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880920000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.80",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT",
+      "stopLoss": "97.80",
+      "takeProfit": "99.80"
+    },
+    {
+      "ts": 1704880950000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.81",
+      "realized": "0.101",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.101",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": [
+    "actions.md:277-283: both triggers sit 0.50 from the previous tick (mid 100.20), so the leg written first fills."
+  ]
+}
