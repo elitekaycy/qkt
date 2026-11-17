@@ -550,8 +550,9 @@ RULES
   (`DESC` is the default; ties and instruments missing the field sort by symbol, the latter last) and declares the
   top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when the run starts**, and do
   not change during it. Ending the spec with `DYNAMIC` (`... TOP 20 BY volume DYNAMIC EVERY 1m`) asks for members
-  that join and leave during the run, re-evaluated at each close of the set's `EVERY` window; runs refuse it until
-  that lands (runtime membership plan, step 4). Where the instruments come from is the only
+  that join and leave during the run, re-evaluated at each close of the set's `EVERY` window from the rows listed
+  then (see [members that join and leave](#members-that-join-and-leave)); it runs in backtests, and live sessions
+  refuse it for now. Where the instruments come from is the only
   difference between a backtest and a live run; both rank them with the same code, so the same instruments give the
   same members. See [where membership comes from](#where-a-filtered-sets-members-come-from).
 - **Union.** `majors = fx + crypto` names the members of sets declared above it, each keeping its own venue; the
@@ -587,6 +588,31 @@ caps in the config refer to ([config schema](../config-schema.md#risk)).
   `/symbol_info` read at start, so a broker listing thousands of symbols takes a moment to deploy.
 - **What the run states.** Each set's members are printed at start (`symbol set 'm': 3 member(s) resolved at start:
   ...`), in the backtest's output and the daemon's log alike.
+
+### Members that join and leave
+
+A set ending in `DYNAMIC` is re-evaluated at each close of its `EVERY` window, epoch aligned: the catalog rows listed
+at that close (an event contract once it opens, any contract until it expires) are filtered, ranked and cut to
+`TOP n` again, and the members change by these rules.
+
+| Change | When | What happens |
+|---|---|---|
+| join | ranked now, not a member before | the member's rules start; they first fire at the **next** close, never the one it joined at |
+| leave | no longer ranked, flat, no working entry order | its rules and indicator state are dropped; a rejoin warms up afresh |
+| stick | no longer ranked, but holds a position or a working entry order | its rules keep running, but an order that opens or adds is refused; reducing and closing orders pass |
+| release | a stuck member is now flat | dropped at that close |
+| stay | a stuck member is ranked again | a normal member again, without a new warmup |
+
+- **Warmup.** A joining member reads the history the run already holds for its stream: a backtest declares every
+  member some close of the run picks (printed as `symbol set 'm': DYNAMIC over 4 candidate(s): ...`) and keeps each
+  one's last bars, as many as the member's indicators or `WARMUP` need, so a member that joins late is warm at once.
+- **Backtest and live alike.** Membership steps at the first tick at or past each close, before that tick reaches the
+  rules, in both modes, and reads only the catalog and the positions held; so a backtest and a live session over the
+  same catalog and ticks join, stick and release the same members at the same closes (`DynamicSetParityTest`).
+- **The journal.** Each change is published as a `SetMembershipChanged` event (set, member, change, rank, window
+  close), which the engine audit journal records.
+- **Limits, for now.** Live sessions refuse `DYNAMIC`. A dynamic set cannot be part of a union, and cross-member
+  functions (`RANK_OF(expr, set)`, `SUM_OF`, ...) over it are refused.
 
 ### The filter vocabulary
 
