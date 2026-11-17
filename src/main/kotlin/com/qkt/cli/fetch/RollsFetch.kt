@@ -68,10 +68,11 @@ internal object RollsFetch {
         instruments: Path?,
         timeframe: TimeWindow = TimeWindow.parse(DEFAULT_TIMEFRAME),
         nowMs: Long = SystemClock().now(),
+        remeasure: Boolean = false,
         fetchDay: (contract: String, day: LocalDate) -> Unit,
     ): Int =
         try {
-            build(target, dataRoot, instruments, timeframe, nowMs, fetchDay)
+            build(target, dataRoot, instruments, timeframe, nowMs, remeasure, fetchDay)
         } catch (e: IOException) {
             failed(target, e)
         } catch (e: IllegalStateException) {
@@ -102,6 +103,7 @@ internal object RollsFetch {
         instruments: Path?,
         timeframe: TimeWindow,
         nowMs: Long,
+        remeasure: Boolean,
         fetchDay: (String, LocalDate) -> Unit,
     ): Int {
         require(timeframe.durationMs <= DAY_MS) {
@@ -131,7 +133,7 @@ internal object RollsFetch {
             }
         }
         val known = RollHistoryStore(dataRoot).read(target)?.takeIf { it.policy == policy.key }
-        val history = RollHistoryBuilder(timeframe.durationMs, nowMs, known, bars).build(root, catalog)
+        val history = RollHistoryBuilder(timeframe.durationMs, nowMs, known, remeasure, bars).build(root, catalog)
         RollHistoryStore(dataRoot).write(history)
         report(target, schedule, passed, history, RollHistoryStore(dataRoot).path(target))
         return ExitCodes.SUCCESS
