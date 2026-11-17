@@ -24,6 +24,7 @@ class RollHistoryBuilder(
     private val barMs: Long = 60_000L,
     private val asOfMs: Long = Long.MAX_VALUE,
     private val known: RollHistory? = null,
+    private val remeasure: Boolean = false,
     private val bars: (contract: String, day: LocalDate) -> List<Candle>,
 ) {
     /** The history of [root] over [catalog] for [selectors]. */
