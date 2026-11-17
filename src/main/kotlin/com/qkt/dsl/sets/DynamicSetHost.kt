@@ -9,6 +9,7 @@ import com.qkt.dsl.compile.ExitRetry
 import com.qkt.dsl.compile.HubKey
 import com.qkt.events.Event
 import com.qkt.events.SetMembershipChanged
+import com.qkt.instrument.universe.MarketFacts
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.PerStreamWarmable
@@ -53,10 +54,18 @@ internal class DynamicSetHost(
     private val candidates: Map<HubKey, SetMemberTemplate.StreamNeeds> =
         sets
             .flatMap { set ->
-                val keys = outer.declaredStreams.filterKeys { SetMemberAlias.setOf(it) == set.template.set }.values
+                val keys = keysOf(set)
                 val needs = keys.firstOrNull()?.let { set.template.streamNeeds(it.symbol) }
                 keys.mapNotNull { key -> needs?.let { key to it } }
             }.toMap()
+
+    /** The watched tier of each set that reads market fields: its candidates' records per window. */
+    private val watched: Map<HostedSet, WatchedWindows> =
+        sets
+            .filter { it.membership.readsMarket }
+            .associateWith { set ->
+                WatchedWindows(set.membership.windowMs, keysOf(set).mapTo(HashSet()) { it.qktSymbol })
+            }
 
     override val retentionByKey: Map<HubKey, Int> =
         outer.retentionByKey +
@@ -89,14 +98,11 @@ internal class DynamicSetHost(
     ) {
         outer.onTick(tick, ctx, emit)
         for ((set, instances) in running) {
-            val evaluation = set.membership.at(tick.timestamp) { held(set.venue, instances, ctx) } ?: continue
-            instances.apply(evaluation.step, evaluation.closeMs)
-            val changes = SetMembershipChanged.of(ctx.strategyId, set.template.set, evaluation.closeMs, evaluation.step)
-            for (change in changes) {
-                val event = change.copy(member = "${set.venue}:${change.member}")
-                publish(event)
-                journal(event)
-            }
+            val watch = watched[set]
+            set.membership
+                .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }) { held(set.venue, instances, ctx) }
+                ?.let { apply(set, instances, it, ctx) }
+            watch?.onTick(tick)
         }
         for ((_, instances) in running) instances.compiled.forEach { it.onTick(tick, ctx, emit) }
     }
@@ -122,6 +128,24 @@ internal class DynamicSetHost(
     ) = all().forEach { it.onPositionStateChanged(symbol, nowHeld, atMs) }
 
     override fun clearRuleEdges() = all().forEach { it.clearRuleEdges() }
+
+    /** Applies [evaluation] to [instances] and journals each change under the member's qkt symbol. */
+    private fun apply(
+        set: HostedSet,
+        instances: SetMemberInstances,
+        evaluation: DynamicSetMembership.Evaluation,
+        ctx: StrategyContext,
+    ) {
+        instances.apply(evaluation.step, evaluation.closeMs)
+        for (change in SetMembershipChanged.of(ctx.strategyId, set.template.set, evaluation.closeMs, evaluation.step)) {
+            val event = change.copy(member = "${set.venue}:${change.member}")
+            publish(event)
+            journal(event)
+        }
+    }
+
+    private fun keysOf(set: HostedSet): Collection<HubKey> =
+        outer.declaredStreams.filterKeys { SetMemberAlias.setOf(it) == set.template.set }.values
 
     /** The strategy's own rules first, then every running member instance. */
     private fun all(): Sequence<CompiledStrategy> =
