@@ -44,7 +44,10 @@ internal fun handleLogs(
     ex.responseHeaders.add("Cache-Control", "no-cache")
     ex.sendResponseHeaders(200, 0)
     val out = ex.responseBody
-    val all = Files.readAllLines(logFile)
+    // One read serves the tail and the follow's start offset, so a line appended while the tail is still being
+    // written goes out with the follow instead of being counted as already sent.
+    val read = Files.readAllBytes(logFile)
+    val all = read.inputStream().bufferedReader(Charsets.UTF_8).readLines()
     val filtered =
         if (since != null) {
             all.filter { line -> parseTimestamp(line)?.isAfter(since.minusSeconds(1)) ?: true }
@@ -58,7 +61,7 @@ internal fun handleLogs(
         }
         out.flush()
         if (follow) {
-            var lastSize = Files.size(logFile)
+            var lastSize = read.size.toLong()
             while (true) {
                 Thread.sleep(500)
                 val sz = Files.size(logFile)
