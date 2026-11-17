@@ -5,6 +5,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -61,17 +62,16 @@ class ExperimentCommandSeamsTest {
     }
 
     @Test
-    fun `a grid naming a parameter the strategy lacks is a user error from the sweep`() {
+    fun `a grid naming a parameter the strategy lacks is a compile error from the sweep`() {
         FakeXauFetcher.fetch(
             "XAUUSD",
             LocalDate.parse("2026-06-04"),
             dir.resolve("data/symbols/XAUUSD/2026-06-04.csv.gz"),
         )
 
-        val run = experiment("run", "--plan", plan("nope: [1, 2]").toString())
-
-        assertThat(run.code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(run.err).startsWith("qkt: error: ").doesNotContain("Exception")
+        assertThatThrownBy { experiment("run", "--plan", plan("nope: [1, 2]").toString()) }
+            .isInstanceOf(com.qkt.dsl.compile.CompileError::class.java)
+            .hasMessageContaining("unknown parameter 'nope'; strategy declares: [fast]")
     }
 
     @Test

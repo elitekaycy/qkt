@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.ast.StreamDecl
@@ -75,7 +76,7 @@ class BarReplayTickFillsNoteTest : BarsReplayFixture() {
                     resolve(
                         Args(arrayOf("backtest", "s.qkt", "--bars")),
                         data,
-                        ExecutionSimulationConfig(latencyMs = 100),
+                        ExecutionSimulationConfig(preset = ExecutionPreset.MT5_BASIC, latencyMs = 100),
                     )
                 if (config.tickFills) 1 else 0
             }

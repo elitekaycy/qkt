@@ -54,7 +54,7 @@ class PortfolioChildServerTest {
         Files.writeString(
             book,
             "PORTFOLIO cond_book VERSION 1\nSYMBOLS\n    x = BACKTEST:X EVERY 1m\nIMPORT 'child.qkt' AS child\n" +
-                "RULES\n    WHEN x.close > 0 RUN child WEIGHT 1.0\n",
+                "RULES\n    WHEN x.close > 0 RUN child\n",
         )
         val requested = CopyOnWriteArrayList<List<String>>()
         val deployer =

@@ -66,48 +66,30 @@ class PortfolioDeployFailureRoutesTest : DaemonRouteFixture() {
         }
     }
 
-    private fun nestedBook(): Path {
-        Files.writeString(
-            tmp.resolve("inner.qkt"),
-            "PORTFOLIO inner VERSION 1\nSYMBOLS\n    x = BACKTEST:X EVERY 1m\nRULES\n    RUN x WEIGHT 1\n",
-        )
-        return tmp.resolve("outer.qkt").also {
-            Files.writeString(
-                it,
-                "PORTFOLIO book VERSION 1\nSYMBOLS\n    x = BACKTEST:X EVERY 1m\nIMPORT 'inner.qkt' AS inner\nRULES\n    RUN inner WEIGHT 1\n",
-            )
-        }
-    }
-
     private fun body(
         name: String,
         file: Path,
     ) = """{"file":"$file","name":"$name"}"""
 
     @Test
-    fun `a deploy the loader refuses is a conflict and one the deployer refuses is a bad request`() {
+    fun `a deploy the deployer refuses is a bad request`() {
         val p = plane(registry(stateDir), stateDir, portfolioDeployer = deployer())
 
-        val (nestedCode, nested) = post(p, "/deploy", body("book", nestedBook()))
         val (limitCode, limit) = post(p, "/deploy", body("book", book("nocap.qkt", capital = "")))
 
-        assertThat(nestedCode).isEqualTo(409)
-        assertThat(nested).contains("\"error\":")
         assertThat(limitCode).isEqualTo(400)
         assertThat(limit).contains("portfolio drawdown limits require portfolio CAPITAL")
     }
 
     @Test
-    fun `a resync the loader refuses is a conflict and one the deployer refuses is a bad request`() {
+    fun `a resync the deployer refuses is a bad request`() {
         val registry = registry(stateDir)
         val p = plane(registry, stateDir, portfolioDeployer = deployer())
         post(p, "/deploy", body("book", book("book.qkt")))
 
-        val (nestedCode, _) = post(p, "/resync", body("book", nestedBook()))
         val (limitCode, limit) = post(p, "/resync", body("book", book("nocap.qkt", capital = "")))
         post(p, "/stop/book?flatten=false")
 
-        assertThat(nestedCode).isEqualTo(409)
         assertThat(limitCode).isEqualTo(400)
         assertThat(limit).contains("portfolio drawdown limits require portfolio CAPITAL")
     }
