@@ -526,7 +526,7 @@ member without naming them twice. Three forms, all in the stream position of `SY
 ```qkt
 SYMBOLS
     <set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [WARMUP <n> BARS]      -- picked
-    <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- filtered
+    <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC] EVERY <timeframe>   -- filtered
     <union> = <set> + <set> [+ <set> ...]                                                 -- union
 ```
 
@@ -548,10 +548,12 @@ RULES
 - **Filtered universe.** `ALPACA:* WHERE category = "us_equity" AND contract_size >= 1 TOP 50 BY contract_size`
   takes every instrument the venue's catalog lists, keeps those passing the filter, ranks them by one field
   (`DESC` is the default; ties and instruments missing the field sort by symbol, the latter last) and declares the
-  top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when a backtest starts**, from
-  the instruments file's `instruments:` list as of `--from`; they do not change during the run. A set over equities is
-  refused unless the backtest passes `--survivorship-accepted`, because a flat instruments file has no listing
-  history. Live and daemon runs do not resolve filtered sets yet; a picked list runs everywhere.
+  top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when the run starts**, and do
+  not change during it. Ending the spec with `DYNAMIC` (`... TOP 20 BY volume DYNAMIC EVERY 1m`) asks for members
+  that join and leave during the run, re-evaluated at each close of the set's `EVERY` window; runs refuse it until
+  that lands (runtime membership plan, step 4). Where the instruments come from is the only
+  difference between a backtest and a live run; both rank them with the same code, so the same instruments give the
+  same members. See [where membership comes from](#where-a-filtered-sets-members-come-from).
 - **Union.** `majors = fx + crypto` names the members of sets declared above it, each keeping its own venue; the
   operands must share `EVERY`, and a symbol in two operands counts once. A union has no `EVERY` of its own.
 - **`FOR EACH m IN <set> DO <rule>`** runs the rule once per member; `m` substitutes textually, as the bracket form
@@ -561,12 +563,37 @@ RULES
 Each member's stream alias is `<set>.<symbol>` (`fx.EURUSD`), which reports and `risk.per_strategy.<name>.sets`
 caps in the config refer to ([config schema](../config-schema.md#risk)).
 
+### Where a filtered set's members come from
+
+| Run | Catalog | As of |
+|---|---|---|
+| `qkt backtest` | the instruments file's `instruments:` list (`--instruments`, else `instruments.yaml` under the data root) | `--from` |
+| live (`qkt deploy`, `qkt daemon`, `qkt bot session`) on a `type: gateway` account | the gateway's `GET /v1/instruments` listing | session start |
+| live on an MT5 account | the mt5-gateway's `GET /symbols`, then `/symbol_info/<name>` per symbol | session start |
+
+- **The venue is the account.** `GW:* WHERE ...` reads the listing of the account named `gw` in `brokers:`. A venue
+  no account serves, or a connector that cannot list its instruments, is refused at deploy naming it; a picked list
+  (`GW:{A, B}`) needs no listing and runs on any account.
+- **Backtest equities.** A set over equities from the instruments file is refused unless the backtest passes
+  `--survivorship-accepted`, because a flat file has no listing history. A live listing is the venue's today, so a
+  live run needs no flag.
+- **Gateway listings.** Spot, equity and event instruments are rows, with the same fields `qkt instruments pull`
+  writes; a listed equity reads `kind = equity`. Futures and options are left out (a listing carries no exchange
+  terms for them; their contract catalogs do), and a set that comes out empty says how many it left out. When the
+  filter pins `kind = spot`, `equity` or `event` (alone or under `AND`), qkt reads the listing through the gateway's
+  `kind` filter instead of the whole list; the filter still decides membership.
+- **MT5 listings.** Only symbols this account trades are rows: a name the account's suffix and aliases do not map
+  back to itself is skipped, and a symbol the gateway reports no info for is left out. Each row costs one
+  `/symbol_info` read at start, so a broker listing thousands of symbols takes a moment to deploy.
+- **What the run states.** Each set's members are printed at start (`symbol set 'm': 3 member(s) resolved at start:
+  ...`), in the backtest's output and the daemon's log alike.
+
 ### The filter vocabulary
 
 A filter is a boolean expression over the instrument metadata every venue already publishes: comparisons
 (`=`, `!=`, `<`, `<=`, `>`, `>=`), `IN (a, b)`, `GLOB "pattern"` (the `*` glob calendar rules use), `AND`, `OR`,
 `NOT` and parentheses. Numbers compare numerically, words ignoring case; a field the instrument lacks compares
-false. `WHERE`, `TOP`, `GLOB`, `ASC` and `DESC` are words with meaning only inside a set declaration.
+false. `WHERE`, `TOP`, `GLOB`, `ASC`, `DESC` and `DYNAMIC` are words with meaning only inside a set declaration.
 
 | Field | Value |
 |---|---|

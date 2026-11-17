@@ -29,6 +29,14 @@ class CompletionProviderTest {
     }
 
     @Test
+    fun `expression position offers the cross-member set functions, each once`() {
+        val labels = CompletionProvider.complete("WHEN ", 0, 5, null).map { it.label }
+        assertThat(labels).contains("rank_of", "sum_of", "avg_of", "max_of", "min_of", "count_of")
+        assertThat(labels.filter { it == "rank_of" }).hasSize(1)
+        assertThat(labels).doesNotContain("SUM_OF", "RANK_OF")
+    }
+
+    @Test
     fun `expression position offers section and operator keywords in upper case`() {
         val labels = CompletionProvider.complete("WHEN ", 0, 5, null).map { it.label }
         assertThat(labels).contains("STRATEGY", "RULES", "CROSSES")

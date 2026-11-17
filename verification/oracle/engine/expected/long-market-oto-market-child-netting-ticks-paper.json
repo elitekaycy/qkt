@@ -1,0 +1,40 @@
+{
+  "name": "long-market-oto-market-child-netting-ticks-paper",
+  "proves": "a market ON_FILL child fills with its parent on the parent's fill tick; CLOSE flattens both as one netted position",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.05",
+      "price": "100.50",
+      "realized": "0.00",
+      "reason": "entry",
+      "orderType": "MARKET"
+    },
+    {
+      "ts": 1704880920000,
+      "side": "SELL",
+      "qty": "0.15",
+      "price": "101.20",
+      "realized": "0.1050",
+      "reason": "close",
+      "orderType": "CLOSE"
+    }
+  ],
+  "realized": "0.1050",
+  "commission": "0.00",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

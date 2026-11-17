@@ -21,7 +21,7 @@ internal fun intrabarFillFor(
     symbol: String,
     low: BigDecimal,
     high: BigDecimal,
-    maxHalfSpread: BigDecimal = BigDecimal.ZERO,
+    maxHalfSpread: BigDecimal,
 ): IntrabarFill {
     // Time-based exits (GTD expiry, TimeExit, stack deadline) fire on time, not price, so a
     // fill/cancel can land on a tick the new-extreme filter would skip. Conservatively bail to a

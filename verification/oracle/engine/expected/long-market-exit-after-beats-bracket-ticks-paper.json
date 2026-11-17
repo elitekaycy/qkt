@@ -1,0 +1,33 @@
+{
+  "name": "long-market-exit-after-beats-bracket-ticks-paper",
+  "proves": "the timer fires before the bracket: the bracket is cancelled, so the later dip through the old stop sends nothing",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "99.50",
+      "takeProfit": "102.50"
+    },
+    {
+      "ts": 1704880920000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.90",
+      "realized": "0.040",
+      "reason": "close",
+      "orderType": "MARKET"
+    }
+  ],
+  "realized": "0.040",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

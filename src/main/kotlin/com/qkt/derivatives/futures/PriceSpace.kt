@@ -15,7 +15,8 @@ import java.math.RoundingMode
  */
 class PriceSpace(
     private val adjustment: PriceAdjustment,
-    private val shift: BigDecimal,
+    /** The contract's offset (panama) or factor (ratio) in the series. */
+    val shift: BigDecimal,
     private val tickSize: BigDecimal,
 ) {
     init {

@@ -189,4 +189,18 @@ class MT5PartialCloseAckTest {
         broker.poller.tick()
         assertThat(events.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
     }
+
+    @Test
+    fun `a close the venue keeps filling in small parts ends after its attempts are spent`() {
+        repeat(3) { n ->
+            closeReplies.add(done(10010, deal = 401L + n, lots = "0.01", price = "1.1050", left = "0.0${9 - n}"))
+        }
+
+        close("0.10")
+        awaitEnded()
+
+        assertThat(closeBodies).hasSize(3)
+        val ended = events.filterIsInstance<BrokerEvent.OrderCancelled>().single()
+        assertThat(ended.reason).contains("only part of the close")
+    }
 }

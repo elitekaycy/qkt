@@ -27,6 +27,9 @@ enum class SetFunction(
         /** Marks a lowered call; `.` cannot appear in a function name a strategy writes. */
         const val LOWERED_SUFFIX: String = ".SET"
 
+        /** The names of the set functions as a strategy writes them (upper case), for the editor surface. */
+        val names: List<String> = entries.map { it.name }
+
         /** The set function spelled [name] (any case), or null when [name] is not one. */
         fun named(name: String): SetFunction? = entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
 

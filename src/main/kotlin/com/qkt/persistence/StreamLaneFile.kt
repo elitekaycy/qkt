@@ -53,6 +53,7 @@ private data class StreamLaneDto(
     val cancelling: List<StreamOrderDto>,
     val roll: StreamRollDto?,
     val settledCloses: List<SettledCloseDto> = emptyList(),
+    val contractShift: String? = null,
 ) {
     fun toDomain() =
         PersistedStreamLane(
@@ -73,6 +74,7 @@ private data class StreamLaneDto(
             cancelling.map { it.toDomain() },
             roll?.toDomain(),
             settledCloses.map { it.toDomain() },
+            contractShift?.let(::BigDecimal),
         )
 
     companion object {
@@ -96,6 +98,7 @@ private data class StreamLaneDto(
                 l.cancelling.map(StreamOrderDto::of),
                 l.roll?.let(StreamRollDto::of),
                 l.settledCloses.map(SettledCloseDto::of),
+                l.contractShift?.toPlainString(),
             )
     }
 }

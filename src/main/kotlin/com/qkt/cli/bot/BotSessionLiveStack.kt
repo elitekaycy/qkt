@@ -75,6 +75,7 @@ internal class LiveSessionStack(
                     insightsSharedDeals =
                         com.qkt.observe.insights
                             .SharedDealFetch(),
+                    symbolSets = com.qkt.cli.LiveSetCatalog(accounts::byName),
                 )
         } catch (e: Exception) {
             close()

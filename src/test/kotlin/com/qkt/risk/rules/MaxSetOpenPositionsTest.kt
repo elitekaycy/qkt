@@ -88,6 +88,27 @@ class MaxSetOpenPositionsTest {
     }
 
     @Test
+    fun `a set whose members move is capped on whoever is a member at each check`() {
+        var members = setOf("ALPACA:AAPL", "ALPACA:MSFT")
+        val moving = MaxSetOpenPositions("rotation", "stocks", { members }, 1, strategyPositions)
+        fill("ALPACA:AAPL")
+        assertThat(moving.evaluate(order("ALPACA:MSFT"), global)).isInstanceOf(Decision.Reject::class.java)
+        // NVDA joins: the cap now guards it too
+        members = members + "ALPACA:NVDA"
+        assertThat(moving.evaluate(order("ALPACA:NVDA"), global)).isInstanceOf(Decision.Reject::class.java)
+        // AAPL leaves the set while still held: it no longer counts toward the set's cap
+        members = setOf("ALPACA:MSFT", "ALPACA:NVDA")
+        assertThat(moving.evaluate(order("ALPACA:MSFT"), global)).isEqualTo(Decision.Approve)
+        // a member that has left is no longer capped at all
+        members = setOf("ALPACA:NVDA")
+        fill("ALPACA:NVDA")
+        assertThat(moving.evaluate(order("ALPACA:MSFT"), global)).isEqualTo(Decision.Approve)
+        // an emptied set caps nothing, and construction with a supplier does not need a member yet
+        members = emptySet()
+        assertThat(moving.evaluate(order("ALPACA:NVDA"), global)).isEqualTo(Decision.Approve)
+    }
+
+    @Test
     fun `construction validates its arguments`() {
         assertThatThrownBy {
             MaxSetOpenPositions("", "s", stocks, 1, strategyPositions)
@@ -95,6 +116,9 @@ class MaxSetOpenPositionsTest {
         assertThatThrownBy {
             MaxSetOpenPositions("r", "s", emptySet(), 1, strategyPositions)
         }.hasMessage("set 's' has no members")
+        assertThatThrownBy {
+            MaxSetOpenPositions("", "s", { stocks }, 1, strategyPositions)
+        }.hasMessage("strategyId must be non-blank")
         assertThatThrownBy {
             MaxSetOpenPositions(
                 "r",

@@ -2,7 +2,6 @@ package com.qkt.app
 
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerPositionTicket
-import com.qkt.broker.VenueOrderCancel
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
@@ -27,6 +26,8 @@ internal class VerifiedFlatten(
     private val engineFlatten: () -> Unit,
     private val pollMs: Long = LiveSession.FLATTEN_VERIFY_POLL_MS,
 ) {
+    private val sweep = RestingOrderSweep(broker, attribution, deployedIds)
+
     fun run(timeout: Duration): FlattenResult {
         val strategyId =
             deployedIds.firstOrNull() ?: return FlattenResult(false, detail = "session has no strategy owner")
@@ -57,7 +58,7 @@ internal class VerifiedFlatten(
         val deadline = System.nanoTime() + timeout.toNanos()
         var remaining = initialTickets
         while (true) {
-            val resting = cancelRestingOrders(strategyId)
+            val resting = sweep.cancelRestingOrders(strategyId)
             val current =
                 runCatching { positionsOf(strategyId) }
                     .getOrElse { return FlattenResult(false, remaining, "broker verification failed: ${it.message}") }
@@ -81,20 +82,6 @@ internal class VerifiedFlatten(
     fun venueTickets(): List<String> {
         val strategyId = deployedIds.firstOrNull() ?: return emptyList()
         return if (broker.supportsPositionTickets) positionsOf(strategyId).first.map { it.ticket } else emptyList()
-    }
-
-    /** The venue-side half of any flatten: cancel, by ticket, every resting order the venue attributes to the strategy. */
-    fun sweepRestingOrders(): List<String> = deployedIds.firstOrNull()?.let(::cancelRestingOrders).orEmpty()
-
-    /** Cancels the strategy's resting orders by venue ticket; returns the tickets still at the venue before this pass. */
-    private fun cancelRestingOrders(strategyId: String): List<String> {
-        val owned =
-            runCatching { broker.pendingOrders() }
-                .getOrDefault(emptyList())
-                .filter { attribution.fromComment(it.clientOrderId ?: it.comment, deployedIds) == strategyId }
-        val venue = broker as? VenueOrderCancel
-        owned.forEach { order -> runCatching { venue?.cancelVenueOrder(order.ticket) } }
-        return owned.map { it.ticket }
     }
 
     private fun positionsOf(strategyId: String): Pair<List<BrokerPositionTicket>, List<String>> {

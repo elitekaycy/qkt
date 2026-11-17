@@ -1,0 +1,139 @@
+{
+  "name": "long-market-armed-trailing-stop-trails-hwm-ticks-paper",
+  "proves": "STOP LOSS TRAILING 0.50 AFTER MFE >= 0.80 arms at 101.30, trails the 101.70 high to 101.20, stops on the reversal",
+  "dimensions": {
+    "feature": "armed-trailing",
+    "shape": "armed-trailing-hwm",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.89",
+      "100.91"
+    ],
+    [
+      90,
+      "101.29",
+      "101.31"
+    ],
+    [
+      105,
+      "101.69",
+      "101.71"
+    ],
+    [
+      120,
+      "101.49",
+      "101.51"
+    ],
+    [
+      135,
+      "101.09",
+      "101.11"
+    ],
+    [
+      150,
+      "100.89",
+      "100.91"
+    ],
+    [
+      165,
+      "100.79",
+      "100.81"
+    ],
+    [
+      180,
+      "100.69",
+      "100.71"
+    ],
+    [
+      195,
+      "100.69",
+      "100.71"
+    ],
+    [
+      210,
+      "100.69",
+      "100.71"
+    ],
+    [
+      225,
+      "100.69",
+      "100.71"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "trail": "0.50",
+            "afterMfe": "0.80"
+          },
+          "target": {
+            "by": "3.00"
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "The reversal tick is through the trailed level on every reading of the extreme (mid or bid) (README QB7)."
+  ]
+}

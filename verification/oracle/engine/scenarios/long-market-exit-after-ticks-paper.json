@@ -1,0 +1,128 @@
+{
+  "name": "long-market-exit-after-ticks-paper",
+  "proves": "EXIT AFTER 2m closes the leg at market on the tick at fill + 120 s",
+  "dimensions": {
+    "feature": "exit-after",
+    "shape": "exit-after-plain",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.69",
+      "100.71"
+    ],
+    [
+      90,
+      "100.89",
+      "100.91"
+    ],
+    [
+      105,
+      "100.99",
+      "101.01"
+    ],
+    [
+      120,
+      "101.09",
+      "101.11"
+    ],
+    [
+      135,
+      "101.19",
+      "101.21"
+    ],
+    [
+      150,
+      "101.29",
+      "101.31"
+    ],
+    [
+      165,
+      "101.39",
+      "101.41"
+    ],
+    [
+      180,
+      "101.49",
+      "101.51"
+    ],
+    [
+      195,
+      "101.59",
+      "101.61"
+    ],
+    [
+      210,
+      "101.69",
+      "101.71"
+    ],
+    [
+      225,
+      "101.79",
+      "101.81"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exitAfterSec": 120
+      }
+    }
+  ],
+  "notes": []
+}

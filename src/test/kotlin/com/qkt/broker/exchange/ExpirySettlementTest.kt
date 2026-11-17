@@ -1,9 +1,16 @@
 package com.qkt.broker.exchange
 
+import com.qkt.bus.EventBus
+import com.qkt.common.FixedClock
+import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
+import com.qkt.instrument.NoopInstrumentRegistry
+import com.qkt.marketdata.MarketPriceTracker
+import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class ExpirySettlementTest {
@@ -110,5 +117,27 @@ class ExpirySettlementTest {
             listOf(f.sep, Side.SELL, "0.010", "63000.5", true),
             listOf(f.dec, Side.BUY, "0.020", "64100", false),
         )
+    }
+
+    @Test
+    fun `a held contract with neither a delivery price nor a last price cannot be settled`() {
+        val clock = FixedClock(f.decExpiry)
+        val settlement =
+            ExpirySettlement(
+                EventBus(clock, MonotonicSequenceGenerator()),
+                clock,
+                MarketPriceTracker(),
+                NoopInstrumentRegistry,
+                SettlementLog(),
+            )
+        settlement.track(f.dec, f.decExpiry)
+        settlement.onFill(
+            BrokerEvent.OrderFilled("in", "in", f.dec, Side.BUY, BigDecimal("64000"), BigDecimal("0.01"), "s"),
+        )
+
+        assertThatThrownBy { settlement.settleDue(f.decExpiry) {} }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("cannot settle ${f.dec}")
+            .hasMessageContaining("no delivery price and no last price")
     }
 }

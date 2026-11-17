@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.TickResolvedParityFixtures
+import com.qkt.cli.SymbolSetResolution.FileCatalog
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
@@ -56,14 +57,17 @@ class SymbolSetResolutionTest {
     fun `resolve replaces a filtered set by its members and notes them, leaving a set-free strategy alone`() {
         val notes = mutableListOf<String>()
         val ast = parse(strategy("BACKTEST:* WHERE category = Metals TOP 5 BY contract_size ASC"))
-        val resolved = SymbolSetResolution.resolve(ast, catalog(), 0L, survivorshipAccepted = true, note = notes::add)
+        val resolved =
+            SymbolSetResolution.resolve(ast, FileCatalog(catalog()), 0L, survivorshipAccepted = true, note = notes::add)
         assertThat(resolved.streams.map { it.qktSymbol }).containsExactly("BACKTEST:XAUUSD", "BACKTEST:XAGUSD")
         assertThat(
             resolved.rules.map { ((it as WhenThen).action as Buy).stream },
         ).containsExactly("m.XAUUSD", "m.XAGUSD")
         assertThat(notes).containsExactly("symbol set 'm': 2 member(s) resolved at start: XAUUSD, XAGUSD")
         val plain = parse(strategy("BACKTEST:{XAUUSD}"))
-        assertThat(SymbolSetResolution.resolve(plain, emptyList(), 0L, survivorshipAccepted = false)).isSameAs(plain)
+        assertThat(
+            SymbolSetResolution.resolve(plain, FileCatalog(emptyList()), 0L, survivorshipAccepted = false),
+        ).isSameAs(plain)
     }
 
     @Test
@@ -71,7 +75,7 @@ class SymbolSetResolutionTest {
         fun refuse(
             text: String,
             accepted: Boolean = true,
-        ) = assertThatThrownBy { SymbolSetResolution.members("m", spec(text), catalog(), 0L, accepted) }
+        ) = assertThatThrownBy { SymbolSetResolution.members("m", spec(text), FileCatalog(catalog()), 0L, accepted) }
             .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
         refuse(
             "BACKTEST:* WHERE kind = spot TOP 501 BY symbol",
@@ -85,11 +89,13 @@ class SymbolSetResolutionTest {
             ).hasMessageContaining("--survivorship-accepted")
         refuse("BACKTEST:* WHERE category = Crypto TOP 5 BY symbol")
             .hasMessage("symbol set 'm': no BACKTEST instrument passes category = \"Crypto\"")
+        refuse("BACKTEST:* WHERE kind = spot TOP 5 BY symbol DYNAMIC")
+            .hasMessageStartingWith("symbol set 'm' is DYNAMIC: members that join and leave during a run")
         assertThat(
             SymbolSetResolution.members(
                 "m",
                 spec("backtest:* WHERE kind = equity TOP 1 BY symbol"),
-                catalog(),
+                FileCatalog(catalog()),
                 0L,
                 true,
             ),
@@ -99,7 +105,7 @@ class SymbolSetResolutionTest {
             SymbolSetResolution.members(
                 "m",
                 spec("BACKTEST:* WHERE category = Forex TOP 1 BY symbol"),
-                fxOnly,
+                FileCatalog(fxOnly),
                 0L,
                 false,
             ),

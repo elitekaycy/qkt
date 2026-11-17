@@ -1,0 +1,142 @@
+{
+  "name": "long-market-stack-above-layer-slipped-ticks-mt5",
+  "proves": "mt5-sim pyramid: the rung hangs off the slipped seed fill (101.03) and the layer stop fills at ask plus slip",
+  "dimensions": {
+    "feature": "stack",
+    "shape": "stack-above",
+    "side": "long",
+    "broker": "mt5-sim",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "spread+slippage",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2,
+    "slippagePoints": 2
+  },
+  "broker": "mt5-sim",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.79",
+      "100.81"
+    ],
+    [
+      90,
+      "101.02",
+      "101.04"
+    ],
+    [
+      105,
+      "101.19",
+      "101.21"
+    ],
+    [
+      120,
+      "100.89",
+      "100.91"
+    ],
+    [
+      135,
+      "100.06",
+      "100.08"
+    ],
+    [
+      150,
+      "99.79",
+      "99.81"
+    ],
+    [
+      165,
+      "99.53",
+      "99.55"
+    ],
+    [
+      180,
+      "99.39",
+      "99.41"
+    ],
+    [
+      195,
+      "99.39",
+      "99.41"
+    ],
+    [
+      210,
+      "99.39",
+      "99.41"
+    ],
+    [
+      225,
+      "99.44",
+      "99.46"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        },
+        "stack": {
+          "n": 2,
+          "spacing": "0.50",
+          "dir": "ABOVE"
+        }
+      }
+    }
+  ],
+  "notes": []
+}

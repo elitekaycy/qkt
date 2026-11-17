@@ -19,7 +19,7 @@ enum class TakeProfitFill(
             when (raw.trim().lowercase()) {
                 "print", "touch" -> PRINT
                 "level" -> LEVEL
-                else -> error("unknown take-profit fill mode '$raw' (valid: print, level)")
+                else -> error("unknown take-profit fill mode '$raw' (valid: ${entries.joinToString(", ") { it.id }})")
             }
     }
 }

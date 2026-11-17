@@ -12,6 +12,7 @@ import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
 import com.qkt.dsl.parse.Parser
+import com.qkt.dsl.sets.SymbolSetChecks
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -126,6 +127,7 @@ object PortfolioLoader {
                     // never fire.
                     val compiled =
                         try {
+                            SymbolSetChecks.portfolioChildRefusal(effectiveAst)?.let { throw CompileError(it) }
                             AstCompiler().compile(effectiveAst) as DslCompiledStrategy
                         } catch (e: CompileError) {
                             // The child's position means nothing in the portfolio file; name the

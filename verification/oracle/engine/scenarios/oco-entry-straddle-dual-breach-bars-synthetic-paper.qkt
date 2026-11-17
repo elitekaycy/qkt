@@ -1,0 +1,10 @@
+STRATEGY oco_entry_straddle_dual_breach_bars_synthetic_paper VERSION 1
+-- a bar through both straddle stops fills the closer SELL leg at its level, cancels the BUY, then stops the short
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50
+    THEN OCO_ENTRY {
+        BUY syn SIZING 0.1 ORDER_TYPE = STOP AT 101.00 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 },
+        SELL syn SIZING 0.1 ORDER_TYPE = STOP AT 99.80 BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 1.00 }
+    }

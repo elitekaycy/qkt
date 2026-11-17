@@ -1,0 +1,12 @@
+{
+  "name": "long-stop-oto-parent-never-fills-child-dropped-ticks-paper",
+  "proves": "a STOP parent that never triggers places none of its ON_FILL children",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [],
+  "realized": "0",
+  "commission": "0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

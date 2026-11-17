@@ -1,0 +1,137 @@
+{
+  "name": "long-market-exit-after-beats-bracket-ticks-paper",
+  "proves": "the timer fires before the bracket: the bracket is cancelled, so the later dip through the old stop sends nothing",
+  "dimensions": {
+    "feature": "exit-after",
+    "shape": "exit-after-bracket-timer",
+    "side": "long",
+    "broker": "paper",
+    "fills": "ticks",
+    "mode": "hedging",
+    "costs": "none",
+    "collision": "none"
+  },
+  "t0": "2024-01-10T10:00:00Z",
+  "timeframeSec": 60,
+  "symbol": "SYN",
+  "instrument": {
+    "contractSize": "1",
+    "volumeStep": "0.01",
+    "volumeMin": "0.01",
+    "pointSize": "0.01",
+    "digits": 2
+  },
+  "broker": "paper",
+  "fillMode": "ticks",
+  "positionMode": "hedging",
+  "startingBalance": "10000",
+  "ticks": [
+    [
+      0,
+      "99.99",
+      "100.01"
+    ],
+    [
+      15,
+      "100.09",
+      "100.11"
+    ],
+    [
+      30,
+      "99.89",
+      "99.91"
+    ],
+    [
+      45,
+      "100.49",
+      "100.51"
+    ],
+    [
+      60,
+      "100.49",
+      "100.51"
+    ],
+    [
+      75,
+      "100.59",
+      "100.61"
+    ],
+    [
+      90,
+      "100.69",
+      "100.71"
+    ],
+    [
+      105,
+      "100.79",
+      "100.81"
+    ],
+    [
+      120,
+      "100.89",
+      "100.91"
+    ],
+    [
+      135,
+      "100.39",
+      "100.41"
+    ],
+    [
+      150,
+      "99.39",
+      "99.41"
+    ],
+    [
+      165,
+      "99.29",
+      "99.31"
+    ],
+    [
+      180,
+      "99.19",
+      "99.21"
+    ],
+    [
+      195,
+      "99.19",
+      "99.21"
+    ],
+    [
+      210,
+      "99.19",
+      "99.21"
+    ],
+    [
+      225,
+      "99.19",
+      "99.21"
+    ]
+  ],
+  "actions": [
+    {
+      "when": {
+        "barClose": "100.50",
+        "position": "flat"
+      },
+      "do": {
+        "kind": "entry",
+        "side": "BUY",
+        "sizing": {
+          "form": "fixed",
+          "value": "0.1"
+        },
+        "exit": {
+          "kind": "bracket",
+          "stop": {
+            "by": "1.00"
+          },
+          "target": {
+            "by": "2.00"
+          }
+        },
+        "exitAfterSec": 60
+      }
+    }
+  ],
+  "notes": []
+}

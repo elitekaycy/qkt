@@ -1,0 +1,73 @@
+{
+  "name": "short-market-stack-below-pyramid-down-targets-ticks-paper",
+  "proves": "a SELL STACK BELOW adds as price falls (sell stops at 100.00, 99.50); each layer takes its own target",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.50",
+      "takeProfit": "99.00"
+    },
+    {
+      "ts": 1704880890000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.00",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP",
+      "stopLoss": "101.00",
+      "takeProfit": "98.50"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "99.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "STOP",
+      "stopLoss": "100.50",
+      "takeProfit": "98.00"
+    },
+    {
+      "ts": 1704880965000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.99",
+      "realized": "0.151",
+      "reason": "target",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704880995000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "98.49",
+      "realized": "0.151",
+      "reason": "target",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704881025000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "97.99",
+      "realized": "0.151",
+      "reason": "target",
+      "orderType": "LIMIT"
+    }
+  ],
+  "realized": "0.453",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

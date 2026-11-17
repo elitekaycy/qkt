@@ -175,4 +175,36 @@ class OrderManagerAttachedBracketCloseRestoreFillTest {
         assertThat(om.activeEntryOrderCount("alpha", "X")).isZero()
         assertThat(om.activeOrders()).isEmpty()
     }
+
+    @Test
+    fun `restored attached entry whose ticket the ledger never booked stays an open entry order`() {
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val fake = FakeBroker(bus, clock, attachCaps)
+        val broker =
+            BookedRecoveryBroker(fake, bus, clock, deferAccepted = false) { id ->
+                if (id ==
+                    "e1"
+                ) {
+                    "tkt-9"
+                } else {
+                    null
+                }
+            }
+        val persistor = NoopStatePersistor()
+        persistor.savePendingOrders("alpha", mapOf("b1" to persistedAttachedBracket()))
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                persistor = persistor,
+                bookedVenueTickets = { setOf("tkt-1") },
+            )
+
+        om.restore(listOf("alpha"))
+
+        assertThat(om.activeEntryOrderCount("alpha", "X")).isEqualTo(1)
+    }
 }

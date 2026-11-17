@@ -3,6 +3,12 @@ package com.qkt.app
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
+import com.qkt.instrument.ContractCatalog
+import com.qkt.instrument.FuturesDirectory
+import com.qkt.instrument.FuturesRoot
+import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.RollHistory
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.persistence.NoopStatePersistor
 import org.assertj.core.api.Assertions.assertThat
@@ -28,5 +34,30 @@ class ContinuousWiringPlainTest {
         assertThatThrownBy { wiring.bindLane(EventBus(clock, MonotonicSequenceGenerator())) }
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessage("a lane bus was bound before the session's mailbox existed")
+    }
+
+    @Test
+    fun `a continuous stream whose roll histories are not on disk is refused at wiring`() {
+        val directory =
+            object : FuturesDirectory {
+                override fun root(rootId: String): FuturesRoot? = null
+
+                override fun catalog(rootId: String): ContractCatalog? = null
+
+                override fun history(rootId: String): RollHistory? = null
+
+                override fun rootOfContinuous(symbol: String): String? = "X:GC".takeIf { symbol.endsWith("@front") }
+            }
+        val registry =
+            object : InstrumentRegistry {
+                override fun lookup(qktSymbol: String): InstrumentMeta? = null
+
+                override fun futures(): FuturesDirectory = directory
+            }
+
+        assertThatThrownBy {
+            ContinuousWiring(listOf("X:GC@front"), registry, NullMarketSource, clock, NoopStatePersistor(), "gold")
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("need their roll histories on disk")
     }
 }

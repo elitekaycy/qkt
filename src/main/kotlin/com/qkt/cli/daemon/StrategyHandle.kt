@@ -7,8 +7,6 @@ import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
-import com.qkt.dsl.parse.Dsl
-import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
@@ -165,6 +163,8 @@ class StrategyHandle(
             com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
         /** States what each strategy runs on, on `strategy.started`; null states nothing. */
         internal val effectiveConfig: com.qkt.cli.EffectiveConfigFacts? = null,
+        /** The venue listings a filtered symbol set resolves its members from at start; null refuses such sets. */
+        internal val symbolSets: com.qkt.dsl.sets.SetCatalog? = null,
     ) : Factory {
         override fun create(
             name: String,
@@ -176,14 +176,8 @@ class StrategyHandle(
             ) {
                 "starting_balance must be > 0 when max_drawdown_pct or max_daily_drawdown_pct is configured"
             }
-            val ast =
-                when (val parsed = Dsl.parseFile(file)) {
-                    is ParseResult.Success -> parsed.value
-                    is ParseResult.Failure -> {
-                        val msg = parsed.errors.joinToString("\n") { e -> "${e.line}:${e.col} — ${e.message}" }
-                        error("parse failure for $file:\n$msg")
-                    }
-                }
+            val startMs = System.currentTimeMillis()
+            val ast = liveStrategyAst(file, symbolSets, startMs, persistor)
             val strategy = AstCompiler().compile(ast)
             val symbols = ast.streams.map { it.qktSymbol }.distinct()
             val candleWindow: TimeWindow? =
@@ -195,7 +189,6 @@ class StrategyHandle(
 
             val ring = EventRing(capacity = ringSize)
             val fillCount = AtomicLong(0)
-            val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
 
             val perStrategyOverride = perStrategyRisk[ast.name]

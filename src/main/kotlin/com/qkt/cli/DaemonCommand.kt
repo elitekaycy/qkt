@@ -25,6 +25,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailySummaryScheduler
 import com.qkt.notify.NotificationEvent
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.SharedDealFetch
 import com.qkt.persistence.StatePersistor
 import java.nio.file.Files
 import java.nio.file.Path
@@ -197,9 +198,7 @@ class DaemonCommand(
                         }
                     },
                 ).also { it.start() }
-        val insightsSharedDeals =
-            com.qkt.observe.insights
-                .SharedDealFetch()
+        val insightsSharedDeals = SharedDealFetch()
         val brokerFactories = accountBoot.waitlist.gate(accounts.orderEntry())
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
@@ -229,6 +228,7 @@ class DaemonCommand(
                     insightsDeployedIds = deployedIds,
                     insightsSharedDeals = insightsSharedDeals,
                     daemonRisk = daemonRisk,
+                    symbolSets = LiveSetCatalog(accounts::byName),
                 ),
             )
         registryRef.set(registry)

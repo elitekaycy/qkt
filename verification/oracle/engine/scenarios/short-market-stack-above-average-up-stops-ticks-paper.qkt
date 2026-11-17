@@ -1,0 +1,7 @@
+STRATEGY short_market_stack_above_average_up_stops_ticks_paper VERSION 1
+-- a SELL STACK ABOVE averages up with a sell limit at 101.00; seed and layer stop out on their own levels
+SYMBOLS
+    syn = BACKTEST:SYN EVERY 1m
+RULES
+    WHEN syn.close = 100.50 AND POSITION.syn = 0
+    THEN SELL syn SIZING 0.1 STACK 2 SPACING 0.50 ABOVE BRACKET { STOP_LOSS BY 1.00, TAKE_PROFIT BY 2.00 }

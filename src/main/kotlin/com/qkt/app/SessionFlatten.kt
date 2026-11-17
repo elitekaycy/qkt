@@ -45,13 +45,7 @@ internal class SessionFlatten(
         interrupted = false
         try {
             val gap = doFlatten()
-            VerifiedFlatten(
-                broker,
-                ticketAttribution,
-                clock,
-                strategies.map { it.first },
-                {},
-            ).sweepRestingOrders()
+            RestingOrderSweep(broker, ticketAttribution, strategies.map { it.first }).sweep()
             return gap
         } finally {
             // The interrupt was meant for the loop (a stop running out of patience), not this flatten.

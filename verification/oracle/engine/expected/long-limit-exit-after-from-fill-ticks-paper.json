@@ -1,0 +1,31 @@
+{
+  "name": "long-limit-exit-after-from-fill-ticks-paper",
+  "proves": "a LIMIT entry filling 45 s after placement closes 1m after its fill, not 1m after the signal",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880905000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "99.99",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "LIMIT"
+    },
+    {
+      "ts": 1704880965000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.40",
+      "realized": "0.041",
+      "reason": "close",
+      "orderType": "MARKET"
+    }
+  ],
+  "realized": "0.041",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

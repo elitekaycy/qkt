@@ -1,0 +1,33 @@
+{
+  "name": "short-market-armed-trailing-stop-pre-arm-hit-ticks-paper",
+  "proves": "a SELL armed trailing stop that never arms stops out at its pre-arm level entry + 0.60",
+  "oracle": "verification/oracle/engine (Decimal reference engine written from docs/concepts/backtest-model.md, docs/reference/dsl/{actions,bracket,sizing}.md)",
+  "timestampGranularity": "tick",
+  "trades": [
+    {
+      "ts": 1704880860000,
+      "side": "SELL",
+      "qty": "0.1",
+      "price": "100.50",
+      "realized": "0.0",
+      "reason": "entry",
+      "orderType": "MARKET",
+      "stopLoss": "101.10",
+      "takeProfit": "97.50"
+    },
+    {
+      "ts": 1704880935000,
+      "side": "BUY",
+      "qty": "0.1",
+      "price": "101.09",
+      "realized": "-0.059",
+      "reason": "stop",
+      "orderType": "STOP"
+    }
+  ],
+  "realized": "-0.059",
+  "commission": "0.0",
+  "rejections": 0,
+  "openAtEnd": false,
+  "notes": []
+}

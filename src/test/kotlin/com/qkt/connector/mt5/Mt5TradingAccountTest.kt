@@ -11,6 +11,7 @@ import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.CopyOnWriteArrayList
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
@@ -112,9 +113,59 @@ class Mt5TradingAccountTest {
     }
 
     @Test
+    fun `the instrument catalog is every listed symbol this account trades, read from its symbol info`() {
+        gateway.on("/symbols", """{"total":4,"symbols":["EURUSDm","USDJPY","XAUUSDm","XPTUSDm"]}""")
+        gateway.on(
+            "/symbol_info/XAUUSDm",
+            """{"digits":2,"point":0.01,"volume_min":0.01,"volume_step":0.01,"trade_contract_size":100,""" +
+                """"path":"Metals\\XAUUSDm"}""",
+        )
+        gateway.on(
+            "/symbol_info/EURUSDm",
+            """{"digits":5,"point":0.00001,"volume_min":0.01,"volume_step":0.01,"trade_contract_size":100000,""" +
+                """"path":"Forex\\EURUSDm"}""",
+        )
+        val catalog = requireNotNull(open().instrumentCatalog("spot"))
+
+        // USDJPY has no account suffix, so this account does not trade it; XPTUSDm reports no info.
+        assertThat(catalog.rows.map { it.qktSymbol }).containsExactly("EXNESS_S0:EURUSD", "EXNESS_S0:XAUUSD")
+        assertThat(catalog.rows.map { it.contractSize.toPlainString() }).containsExactly("100000", "100")
+        assertThat(catalog.omitted).isNull()
+        assertThat(gateway.calls("/symbol_info/USDJPYm")).isEmpty()
+    }
+
+    @Test
+    fun `a gateway that cannot list its symbols is refused, naming the account`() {
+        val account = open()
+        assertThatThrownBy { account.instrumentCatalog(null) }
+            .hasMessageContaining("brokers.exness_s0: the mt5 gateway did not list its symbols (GET /symbols)")
+    }
+
+    @Test
     fun `contest and unreported trade modes map to their account types`() {
         assertThat(open(MT5TradeMode.CONTEST.wireValue).verify().type).isEqualTo(AccountType.CONTEST)
         assertThat(open(MT5TradeMode.DEMO.wireValue).verify().type).isEqualTo(AccountType.DEMO)
         assertThat(open(-1).verify().type).isEqualTo(AccountType.UNKNOWN)
+    }
+
+    @Test
+    fun `a broker reports the profile's scheduled breaks for a symbol`() {
+        gateway.on("/get_positions", "[]")
+        gateway.on("/orders", "[]")
+        val broker = broker(open(), null)
+        try {
+            val inBreak =
+                java.time.Instant
+                    .parse("2026-09-22T21:58:58Z")
+                    .toEpochMilli()
+            val open =
+                java.time.Instant
+                    .parse("2026-09-22T22:11:00Z")
+                    .toEpochMilli()
+            assertThat(broker.scheduledBreak("EXNESS_S0:XAUUSD", inBreak)).isTrue()
+            assertThat(broker.scheduledBreak("EXNESS_S0:XAUUSD", open)).isFalse()
+        } finally {
+            broker.shutdown()
+        }
     }
 }

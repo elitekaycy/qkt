@@ -27,7 +27,7 @@ internal class DeclarationParser(
     }
 
     /** Parses one `PARAM name = literal`; [declared] are the names already taken by earlier lines. */
-    fun parseParams(declared: Set<String> = emptySet()): List<ParamDecl> {
+    fun parseParams(declared: Set<String>): List<ParamDecl> {
         val out = mutableListOf<ParamDecl>()
         cursor.expect(TokenKind.PARAM, "expected PARAM")
         val nameTok = cursor.expect(TokenKind.IDENT, "expected param name")
