@@ -67,7 +67,7 @@ internal class StreamLane(
             hearsOldContract = rollQuoteTaps != null,
         )
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
-    private val rebase = LaneSeriesRebase(chainOf, bus, positions, orders, store == null) { spaces.clear() }
+    private val rebase = LaneSeriesRebase(chainOf, bus, positions, orders, store == null, ::save) { spaces.clear() }
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled, rebase)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val collared = rollPriceBand != null

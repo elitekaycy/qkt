@@ -79,6 +79,12 @@ class LaneSeriesRebaseTest {
     private fun costs(fixture: ScriptedLaneFixture) =
         mutableListOf<CostIncurred>().also { list -> fixture.bus.subscribe<CostIncurred> { list += it } }
 
+    /** The shift [fixture]'s lane had saved when the engine heard of each booking. */
+    private fun savedAtBooking(fixture: ScriptedLaneFixture) =
+        mutableListOf<BigDecimal?>().also { list ->
+            fixture.bus.subscribe<CostIncurred> { list += fixture.saved().contractShift }
+        }
+
     private fun exitPrice(fixture: ScriptedLaneFixture): BigDecimal {
         fixture.last("tp", fixture.sep, Side.SELL, "0.010", "63100")
         return fixture.engine
@@ -113,6 +119,40 @@ class LaneSeriesRebaseTest {
         val exit = exitPrice(f)
         assertThat(exit).isEqualByComparingTo("63103")
         assertNetsTheContractLegs(exit, booked)
+    }
+
+    @Test
+    fun `a running session saves the move before booking it, so a restart before any venue call books nothing`() {
+        holdWithOrders()
+        val shifts = savedAtBooking(f)
+
+        f.chains.useHistory(rebuilt.root, rebuilt)
+        f.tick("63013")
+
+        assertThat(shifts).hasSize(1)
+        assertThat(shifts.single()).isEqualByComparingTo("3")
+        val g = f.restart(rolls = rebuilt)
+        val none = costs(g)
+        val held = working.map { ManagedOrder(it.id, it, OrderState.WORKING, createdAt = 0L, lastUpdatedAt = 0L) }
+        g.broker.recoverPendingOrders(held, emptySet())
+        g.broker.watchBookedLegs { emptyList() }
+        g.tick("63014")
+        assertThat(none).isEmpty()
+        val placed = f.venue.sent.filter { it.id in working.map(OrderRequest::id) }
+        assertThat(g.venue.recovered.map { it.request }).containsExactlyInAnyOrderElementsOf(placed)
+        assertThat(exitPrice(g)).isEqualByComparingTo("63103")
+    }
+
+    @Test
+    fun `a restart saves the move before booking it`() {
+        holdWithOrders()
+        val g = f.restart(rolls = rebuilt)
+        val shifts = savedAtBooking(g)
+
+        g.broker.watchBookedLegs { emptyList() }
+
+        assertThat(shifts).hasSize(1)
+        assertThat(shifts.single()).isEqualByComparingTo("3")
     }
 
     @Test
