@@ -53,13 +53,18 @@ internal object SymbolSetResolution {
         return YamlInstrumentRegistry.load(path).all()
     }
 
-    /** [ast] with every filtered set replaced by its members from [catalog] as of [nowMs]; unchanged without sets. */
+    /**
+     * [ast] with every filtered set replaced by its members from [catalog] as of [nowMs]; unchanged without sets. With
+     * [keepDynamic] a set whose members move (`DYNAMIC`, or reading market fields) and its loops stay in place for
+     * [DynamicSetRuns]; otherwise one is refused.
+     */
     fun resolve(
         ast: StrategyAst,
         catalog: SetCatalog,
         nowMs: Long,
         survivorshipAccepted: Boolean,
         note: (String) -> Unit = { System.err.println("qkt: note: $it") },
+        keepDynamic: Boolean = false,
     ): StrategyAst {
         if (ast.streams.none { it.broker == SET_BROKER }) return ast
         val resolver =
@@ -67,8 +72,10 @@ internal object SymbolSetResolution {
                 override fun members(
                     alias: String,
                     spec: SymbolSetSpec,
-                ): List<String> {
-                    val members = members(alias, spec as SymbolSetSpec.Filtered, catalog, nowMs, survivorshipAccepted)
+                ): List<String>? {
+                    val filtered = spec as SymbolSetSpec.Filtered
+                    if (keepDynamic && filtered.moves) return null
+                    val members = members(alias, filtered, catalog, nowMs, survivorshipAccepted)
                     note("symbol set '$alias': ${members.size} member(s) resolved at start: ${members.joinToString()}")
                     return members
                 }
@@ -85,12 +92,31 @@ internal object SymbolSetResolution {
         nowMs: Long,
         survivorshipAccepted: Boolean,
     ): List<String> {
-        if (spec.dynamic) {
+        if (spec.moves) {
+            val why = if (spec.dynamic) "is DYNAMIC" else "reads as-of market fields (close, volume, spread)"
+            val fix = if (spec.dynamic) "; drop DYNAMIC to resolve its members once, at start" else ""
             throw BacktestContext.Companion.SetupError(
-                "symbol set '$alias' is DYNAMIC: members that join and leave during a run are not wired into runs " +
-                    "yet; drop DYNAMIC to resolve its members once, at start",
+                "symbol set '$alias' $why: members that join and leave during a run are backtested only, for now$fix",
             )
         }
+        val venue = rows(alias, spec, catalog, survivorshipAccepted)
+        val members =
+            UniverseResolver.members(venue.rows, spec.venue, spec.filter, spec.top, spec.by, spec.descending, nowMs)
+        if (members.isEmpty()) {
+            throw BacktestContext.Companion.SetupError(
+                "symbol set '$alias': no ${spec.venue} instrument passes ${spec.filter.canonical}${omitted(venue)}",
+            )
+        }
+        return members.map { it.qktSymbol.substringAfter(':') }
+    }
+
+    /** The catalog rows of [spec]'s venue a set ranks, or why it cannot run: over the member cap, none, survivors. */
+    fun rows(
+        alias: String,
+        spec: SymbolSetSpec.Filtered,
+        catalog: SetCatalog,
+        survivorshipAccepted: Boolean,
+    ): VenueCatalog {
         if (spec.top > UniverseResolver.DEFAULT_MAX_MEMBERS) {
             throw BacktestContext.Companion.SetupError(
                 "symbol set '$alias': TOP ${spec.top} is above the member cap of " +
@@ -98,10 +124,9 @@ internal object SymbolSetResolution {
             )
         }
         val venue = catalog.venue(alias, spec)
-        val omitted = venue.omitted?.let { " ($it)" }.orEmpty()
         if (venue.rows.isEmpty()) {
             throw BacktestContext.Companion.SetupError(
-                "symbol set '$alias': ${catalog.source} lists no ${spec.venue}: symbol$omitted",
+                "symbol set '$alias': ${catalog.source} lists no ${spec.venue}: symbol${omitted(venue)}",
             )
         }
         if (catalog.survivorsOnly && !survivorshipAccepted && venue.rows.any { CatalogField.kindOf(it) == "equity" }) {
@@ -111,13 +136,9 @@ internal object SymbolSetResolution {
                     "to run anyway (the run notes it)",
             )
         }
-        val members =
-            UniverseResolver.members(venue.rows, spec.venue, spec.filter, spec.top, spec.by, spec.descending, nowMs)
-        if (members.isEmpty()) {
-            throw BacktestContext.Companion.SetupError(
-                "symbol set '$alias': no ${spec.venue} instrument passes ${spec.filter.canonical}$omitted",
-            )
-        }
-        return members.map { it.qktSymbol.substringAfter(':') }
+        return venue
     }
+
+    /** What [venue]'s listing left out, as a parenthesised note, or nothing. */
+    fun omitted(venue: VenueCatalog): String = venue.omitted?.let { " ($it)" }.orEmpty()
 }
