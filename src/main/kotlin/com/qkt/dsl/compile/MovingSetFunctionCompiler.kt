@@ -11,8 +11,8 @@ import com.qkt.dsl.sets.SetFunction
  * Compiles a cross-member function over a set whose members move, in its moving form
  * ([SetFunction.moving]: the expression, the member's alias, the call's site). The member's own value of the
  * expression is posted to the set's [CrossSections] at every close of its stream, warmup replay included, by riding
- * the aggregate update pass that runs before any rule; the call then reduces the cross-section of the set's current
- * members as of the close it evaluates at, with the set semantics of [SetFunctionCompiler].
+ * the aggregate update pass that runs before any rule; the call then reduces the set's current members' latest values
+ * when its rule runs, with the set semantics of [SetFunctionCompiler]: what a fixed set's call reads from the hub.
  */
 internal object MovingSetFunctionCompiler {
     fun compile(
@@ -30,7 +30,7 @@ internal object MovingSetFunctionCompiler {
         val post = CompiledExpr { ctx -> own.evaluate(ctx).also { sections.post(site, member, it) } }
         exprs.aggregates.add(AggregateBinding(post, SinceTPast(1), AggregateState.sinceT(AggFn.SUM, 1), member))
         return CompiledExpr { ctx ->
-            val section = sections.read(site, ctx.nowMs())
+            val section = sections.read(site)
             SetFunctionCompiler.reduce(fn, section.posted[member] ?: Value.Undefined, section.values)
         }
     }

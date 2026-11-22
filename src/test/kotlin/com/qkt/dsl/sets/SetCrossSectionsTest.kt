@@ -12,19 +12,19 @@ class SetCrossSectionsTest {
     private fun n(v: Int) = Value.Num(BigDecimal(v))
 
     @Test
-    fun `a close reads the current members' values once, a member with none reading Undefined`() {
+    fun `a read gives the current members' latest values, a member with none reading Undefined`() {
         sections.post(0, "s.A", n(1))
         sections.post(0, "s.X", n(9))
-        val first = sections.read(0, 60_000L)
+        val first = sections.read(0)
         assertThat(first.values).containsExactly(n(1), Value.Undefined)
         assertThat(first.posted).containsEntry("s.X", n(9))
 
         sections.post(0, "s.B", n(2))
-        assertThat(sections.read(0, 60_000L)).isSameAs(first)
-        assertThat(first.values).containsExactly(n(1), Value.Undefined)
+        sections.post(0, "s.A", n(3))
+        assertThat(sections.read(0).values).containsExactly(n(3), n(2))
         members += "s.X"
-        assertThat(sections.read(0, 120_000L).values).containsExactly(n(1), n(2), n(9))
-        assertThat(sections.read(1, 120_000L).values).containsOnly(Value.Undefined)
+        assertThat(sections.read(0).values).containsExactly(n(3), n(2), n(9))
+        assertThat(sections.read(1).values).containsOnly(Value.Undefined)
     }
 
     @Test
@@ -33,7 +33,7 @@ class SetCrossSectionsTest {
         sections.post(1, "s.A", n(5))
         sections.post(1, "s.B", n(6))
         sections.forget("s.A")
-        assertThat(sections.read(0, 60_000L).posted).isEmpty()
-        assertThat(sections.read(1, 60_000L).values).containsExactly(Value.Undefined, n(6))
+        assertThat(sections.read(0).posted).isEmpty()
+        assertThat(sections.read(1).values).containsExactly(Value.Undefined, n(6))
     }
 }

@@ -188,12 +188,15 @@ Over a [moving set](streams.md#members-that-join-and-leave) (`DYNAMIC`, or one r
 functions read the set's **current members**, the ones ranked at the latest close, so the cross-section follows the
 membership: a member counts from the close it joins at and stops counting when it leaves.
 
-- **Each member's value is taken as its own bar closes**, before any rule runs, and every member reading the
-  function at one close sees the same cross-section: it is taken once, at the first read of that close, from the
-  values the members have at that moment. Nothing from a later bar is ever in it.
-- **A member that just joined** counts with the value its history gives (the run keeps every candidate's bars, so
-  it is usually warm at once); with no bar yet, or still warming up, it has no value and is left out, exactly as
-  above. Its own rules first fire at the next close, as for any joining member.
+- **The same reads as a fixed set.** Each member's value is taken as its own bar closes, before its rules run, and
+  a rule reads the current members' latest values at the moment it runs, exactly what a fixed set's rule reads.
+  Members whose bars close at the same instant are processed one after another, so a member read before its own bar
+  for that close has arrived counts with its previous bar's value, for a fixed set and a moving one alike. A moving
+  set whose members never change trades exactly like the same set fixed (`MovingSetFixedParityTest`), so switching
+  `{A, B, C}` to a filter that keeps picking them changes nothing.
+- **A member that just joined** counts from the close it joins at, with the value its history gives (the run keeps
+  every candidate's bars, so it is usually warm at once); with no bar yet, or still warming up, it has no value and
+  is left out, exactly as above. Its own rules first fire at the next close, as for any joining member.
 - **A sticky member** (it left the ranking but still holds) is not a member, so it never counts. Its own rules still
   read the cross-section of the current members, and `RANK_OF` ranks its value among theirs.
 - A member that leaves is forgotten: a rejoin counts from its fresh instance's values.
