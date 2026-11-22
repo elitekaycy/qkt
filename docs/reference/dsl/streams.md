@@ -657,6 +657,10 @@ at that close (an event contract once it opens, any contract until it expires) a
   the session stops with the reason, exactly as it does when its main feed gives up, so a held member never sits on
   stale data unnoticed. A set that ranks on market fields watches every symbol of its venue the session receives, so
   a contract subscribed later is ranked on what it has traded since. Strike neighbours follow the same listing.
+- **Caps, journal and scans live.** A set cap (`risk.per_strategy.<name>.sets.<set>`) counts the set's active members
+  at order time, sticky-held ones included, so a member leaving the ranking never escapes it. Each membership change is
+  recorded in the engine audit journal. `qkt bot universe "<spec>" --at <instant>` lists a moving set's members at an
+  instant from the same membership code.
 - **Restarts.** Membership is recomputed at start, never read back: a session that starts holding members of a set
   reports each ranked member as `RESTORE` with its rank and each held one outside the ranking as `RESTORE` without a
   rank (sticky: it only reduces until flat), then steps as usual. A member's order ids continue past those the restart

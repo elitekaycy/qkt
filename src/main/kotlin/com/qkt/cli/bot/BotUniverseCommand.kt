@@ -3,6 +3,7 @@ package com.qkt.cli.bot
 import com.qkt.cli.Args
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.CliDataRoot
+import com.qkt.cli.EventCatalogRows
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.SymbolSetResolution
 import com.qkt.common.SystemClock
@@ -13,10 +14,11 @@ import com.qkt.instrument.universe.CatalogValue
 import java.nio.file.Path
 
 /**
- * `qkt bot universe "<set spec>" [--instruments <yaml>] [--as-of <date>] [--json]`: the members a symbol set
- * resolves to, from the same parser and resolver a strategy's `SYMBOLS` uses, so an agent's scan and the
+ * `qkt bot universe "<set spec>" [--instruments <yaml>] [--as-of <date>] [--at <instant>] [--json]`: the members a
+ * symbol set resolves to, from the same parser and resolver a strategy's `SYMBOLS` uses, so an agent's scan and the
  * strategy's members agree (design §3.10). The catalog is the instruments file a backtest would read; `--as-of`
- * dates `dte` (default: now). A picked list is checked against the catalog, name by name.
+ * dates `dte` (default: now). A set whose members move lists its members at `--at` ([BotUniverseAt]), the event
+ * catalogs included. A picked list is checked against the catalog, name by name.
  */
 class BotUniverseCommand(
     private val args: Args,
@@ -37,7 +39,8 @@ class BotUniverseCommand(
         val spec = SymbolSetSpec.parse(text)
         val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
         val catalog = SymbolSetResolution.catalog(args, dataRoot)
-        val nowMs = args.option("as-of")?.let { BacktestContext.parseInstant(it).toEpochMilli() } ?: SystemClock().now()
+        val asOf = args.option("at") ?: args.option("as-of")
+        val nowMs = asOf?.let { BacktestContext.parseInstant(it).toEpochMilli() } ?: SystemClock().now()
         val members: List<InstrumentMeta> =
             when (spec) {
                 is SymbolSetSpec.Union ->
@@ -47,18 +50,14 @@ class BotUniverseCommand(
                         catalog.firstOrNull { it.qktSymbol.equals("${spec.venue}:$name", ignoreCase = true) }
                             ?: error("'${spec.venue}:$name' is not in the instruments file")
                     }
-                is SymbolSetSpec.Filtered -> {
-                    SymbolSetResolution
-                        .members(
-                            "universe",
-                            spec,
-                            SymbolSetResolution.FileCatalog(catalog),
-                            nowMs,
-                            survivorshipAccepted = true,
-                        ).map { name ->
-                            catalog.first { it.qktSymbol.equals("${spec.venue}:$name", ignoreCase = true) }
-                        }
-                }
+                is SymbolSetSpec.Filtered ->
+                    if (spec.moves) {
+                        BotUniverseAt.members(spec, catalog + EventCatalogRows.of(args, dataRoot), nowMs)
+                    } else {
+                        SymbolSetResolution
+                            .members("universe", spec, SymbolSetResolution.FileCatalog(catalog), nowMs, true)
+                            .map { name -> catalog.first { it.qktSymbol.equals("${spec.venue}:$name", true) } }
+                    }
             }
         if (json) {
             val head = jsonObj("ok" to true, "spec" to spec.canonical, "asOf" to nowMs, "count" to members.size)

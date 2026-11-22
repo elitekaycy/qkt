@@ -145,6 +145,10 @@ Lists the members a [symbol set](dsl/streams.md#symbol-sets-exnesseurusd-xauusd-
 same parser and resolver a strategy's `SYMBOLS` uses, so an agent's scan and the strategy's members agree. The
 catalog is the instruments file a backtest reads (`--instruments`, else `instruments.yaml` under the data root);
 `--as-of` dates `dte` (default: now). A picked list is checked name by name; a union is refused (resolve each set).
+A set whose members move (`DYNAMIC`, an event ladder `KALSHI:KXINXU@front.* WHERE ...`) lists its members at `--at
+<instant>` (default: now), with the event catalogs: the same point-in-time membership a backtest and a live session
+step. A set ranked on market fields, and a slot universe, are refused (only a running session can rank the first; the
+second names slots, not contracts).
 JSON: `{ok,spec,asOf,count,members:[{qktSymbol,symbol,kind,category,currency,contract_size,tick_size,trade_mode,family,underlying,expiry_at,dte}]}`,
 a field the instrument lacks being `null`.
 

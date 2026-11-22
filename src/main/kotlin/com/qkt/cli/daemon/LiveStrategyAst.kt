@@ -3,6 +3,7 @@ package com.qkt.cli.daemon
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.DynamicSetRuns
 import com.qkt.cli.SymbolSetResolution
+import com.qkt.cli.liveRiskLimits
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.dsl.ast.SET_BROKER
@@ -45,6 +46,22 @@ internal fun liveStrategy(
     host.sourceDecorator = { source -> liveSetSource(host, catalog, source) }
     return sets.ast to host
 }
+
+/**
+ * Each moving set of [strategy] by alias, with the supplier of its active members now (sticky-held ones included), so
+ * a live set cap counts exactly the members that may hold ([com.qkt.cli.liveRiskLimits]); none for any other strategy.
+ */
+internal fun setCaps(strategy: Strategy): Map<String, () -> Set<String>> =
+    (strategy as? DynamicSetHost)?.hosted.orEmpty().associate { set ->
+        set.template.set to { set.membership.activeSymbols }
+    }
+
+/** [ast]'s live risk limits from [risk], its moving sets' caps counting their active members ([setCaps]). */
+internal fun liveLimits(
+    ast: StrategyAst,
+    risk: com.qkt.cli.PerStrategyRisk?,
+    strategy: Strategy,
+): com.qkt.risk.StrategyRiskLimits? = liveRiskLimits(ast.name, risk, ast.streams, setCaps(strategy))
 
 /** How often a live session reads its moving sets' listings again. */
 internal const val LIVE_SET_POLL_MS: Long = 5L * 60 * 1000
