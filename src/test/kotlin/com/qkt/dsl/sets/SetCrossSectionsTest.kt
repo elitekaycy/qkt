@@ -36,4 +36,17 @@ class SetCrossSectionsTest {
         assertThat(sections.read(0).posted).isEmpty()
         assertThat(sections.read(1).values).containsExactly(Value.Undefined, n(6))
     }
+
+    @Test
+    fun `a strike neighbour reads the named member's value, Undefined without one or before it posts`() {
+        val ladder =
+            SetCrossSections({ member, step, _ -> "s.B".takeIf { member == "s.A" && step == 1 } }) { members }
+        assertThat(ladder.neighbour(0, "s.A", 1, 0L)).isEqualTo(Value.Undefined)
+        ladder.post(0, "s.A", n(1))
+        assertThat(ladder.neighbour(0, "s.A", 1, 0L)).isEqualTo(Value.Undefined)
+        ladder.post(0, "s.B", n(2))
+        assertThat(ladder.neighbour(0, "s.A", 1, 0L)).isEqualTo(n(2))
+        assertThat(ladder.neighbour(0, "s.A", -1, 0L)).isEqualTo(Value.Undefined)
+        assertThat(sections.neighbour(0, "s.A", 1, 0L)).isEqualTo(Value.Undefined)
+    }
 }

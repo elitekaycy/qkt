@@ -136,12 +136,20 @@ class DynamicSetParityTest {
         // A (100) has no strike above listed until B (200, at 2) joins, and buys B's 2 then; B buys C's 4 once C
         // (300) lists at 4; C sells B's 2 from its first close. A has no strike below, and B's (A at 1) is too low.
         val minute = { ts: Long -> ((ts - DynamicSetFixtures.T0) / 60_000L).toInt() }
-        assertThat(backtest.trades.map { listOf(it.symbol, it.side, it.quantity.toBigDecimal().toInt(), minute(it.timestamp)) })
-            .containsExactly(
-                listOf("BACKTEST:A", "BUY", 2, 2),
-                listOf("BACKTEST:B", "BUY", 4, 4),
-                listOf("BACKTEST:C", "SELL", 2, 5),
-            )
+        assertThat(
+            backtest.trades.map {
+                listOf(
+                    it.symbol,
+                    it.side,
+                    it.quantity.toBigDecimal().toInt(),
+                    minute(it.timestamp),
+                )
+            },
+        ).containsExactly(
+            listOf("BACKTEST:A", "BUY", 2, 2),
+            listOf("BACKTEST:B", "BUY", 4, 4),
+            listOf("BACKTEST:C", "SELL", 2, 5),
+        )
     }
 
     private fun both(

@@ -88,7 +88,8 @@ internal class DynamicSetHost(
         emit: (Signal) -> Unit,
     ) {
         outer.bindToHub(hub, ctx, emit)
-        running = sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, warmup) }
+        running =
+            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, StrikeLadder(it.membership.rows), warmup) }
     }
 
     override fun onTick(

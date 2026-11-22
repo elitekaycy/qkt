@@ -2,6 +2,7 @@ package com.qkt.lsp
 
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.sets.SetFunction
+import com.qkt.dsl.sets.StrikeNeighbour
 import com.qkt.dsl.stdlib.Constants
 import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
@@ -20,12 +21,12 @@ object QktVocabulary {
     /**
      * Scalar functions plus the call-shaped names the parser recognizes itself: the clock
      * predicates (`calendar_window`, ...), the rolling shorthands (`avg`, `count`, `mean`, `sum`) and the
-     * cross-member functions over a symbol set (`sum_of`, `count_of`, ...).
+     * cross-member functions over a symbol set (`sum_of`, `count_of`, `next_strike`, ...).
      */
     val functions: List<String> =
         (
             FuncRegistry.names() + DslVocabulary.clockPredicates + DslVocabulary.rollingShorthands +
-                SetFunction.names
+                SetFunction.names + StrikeNeighbour.names
         ).map { it.lowercase() }
             .distinct()
             .sorted()

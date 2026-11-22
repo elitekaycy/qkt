@@ -203,6 +203,37 @@ membership: a member counts from the close it joins at and stops counting when i
 - In a loop over a moving set, a cross-member function ranges over that set only. Live sessions refuse moving sets
   for now.
 
+### Strike neighbours
+
+Over a moving set of event contracts, `NEXT_STRIKE(expr)` and `PREV_STRIKE(expr)` read a ladder neighbour: `expr`
+with the loop variable bound to the contract of the same event one strike up or down, at its latest value.
+
+<!-- qkt-doc: skip a filtered set compiles only against a catalog (a backtest's instruments file) -->
+```qkt
+STRATEGY ladder_gaps VERSION 1
+SYMBOLS
+    k = KALSHI:KXINXU@front.* WHERE kind = event TOP 40 BY symbol ASC EVERY 1m
+RULES
+    FOR EACH m IN k DO
+      WHEN m.close - NEXT_STRIKE(m.close) < 0 AND POSITION.m = 0
+      THEN BUY m SIZING 1
+```
+
+- **The ladder** is the event's contracts listed at the read (opened, not expired), ordered by `floor_strike` (none
+  lowest), then `cap_strike` (none highest): "below 73" sits under "73 to 74", which sits under "74 or above". A
+  strike not listed yet, or already expired, is not on it, so the neighbour is the next listed strike.
+- **No neighbour reads null**: at the top of the ladder (`NEXT_STRIKE`) or the bottom (`PREV_STRIKE`), when the
+  neighbour is not an active member of the set (a sticky member counts, one out of `TOP n` does not), when it has no
+  value yet, for a contract with neither strike (a custom question), and for a member that is no event contract
+  (a slot universe's slot, a spot instrument).
+- **Ties.** Contracts with the same strikes as `m` are not its neighbours; when several share the neighbour's
+  strikes, the first by symbol is the one read.
+- The value is read like a cross-member function's: the neighbour posts it as its bar closes, and `m`'s rule reads
+  the latest one when it runs.
+- One expression, using the loop variable, not nested in another cross-member function (nor one in it).
+- Over a fixed set, or outside `FOR EACH`, these functions are refused: the ladder comes from the catalog rows a
+  moving set ranks. Live sessions refuse moving sets for now.
+
 ## Limitations
 
 - **Stream list is static.** `FOR EACH s IN [btc, eth, sol] DO` — the streams are listed inline. A symbol set

@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.sets.SetFunction
+import com.qkt.dsl.sets.StrikeNeighbour
 import com.qkt.dsl.stdlib.FuncRegistry
 
 /**
@@ -19,12 +20,16 @@ internal object FuncCallCompiler {
         val setFunction = SetFunction.lowered(call.name)
         if (setFunction != null) return SetFunctionCompiler.compile(setFunction, call, ruleAlias, exprs)
         SetFunction.moving(call.name)?.let { return MovingSetFunctionCompiler.compile(it, call, exprs) }
+        StrikeNeighbour.moving(call.name)?.let { return MovingSetFunctionCompiler.compile(it, call, exprs) }
         require(FuncRegistry.has(call.name)) {
-            if (SetFunction.named(call.name) == null) {
-                "Unknown function: ${call.name}"
-            } else {
-                "${call.name}(expr, set) is a cross-member function: use it inside FOR EACH <m> IN <set>, naming a " +
-                    "symbol set declared in SYMBOLS as its last argument and the loop variable in expr"
+            when {
+                SetFunction.named(call.name) != null ->
+                    "${call.name}(expr, set) is a cross-member function: use it inside FOR EACH <m> IN <set>, naming " +
+                        "a symbol set declared in SYMBOLS as its last argument and the loop variable in expr"
+                StrikeNeighbour.named(call.name) != null ->
+                    "${call.name}(expr) reads a neighbouring strike of the same event: use it inside FOR EACH <m> IN " +
+                        "<set> over event contracts whose members move (DYNAMIC), with the loop variable in expr"
+                else -> "Unknown function: ${call.name}"
             }
         }
         val args = call.args.map { exprs.compile(it, ruleAlias) }
