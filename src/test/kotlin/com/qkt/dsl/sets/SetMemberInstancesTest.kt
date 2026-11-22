@@ -50,6 +50,7 @@ class SetMemberInstancesTest {
     private val hub = CandleHub()
     private val signals = mutableListOf<Signal>()
     private val warmups = mutableListOf<Pair<HubKey, Int>>()
+    private val warmupEnds = mutableListOf<Long>()
     private var warmupEnabled = true
     private val membership = SetMembership()
     private val instances =
@@ -58,9 +59,10 @@ class SetMemberInstancesTest {
             hub,
             testStrategyContext(strategyId = "movers", positions = positions),
             { signals += it },
-        ) { k, n ->
+        ) { k, n, endMs ->
             warmups += k to n
-            if (warmupEnabled) flat(n, k.qktSymbol) else emptyList()
+            warmupEnds += endMs
+            if (warmupEnabled) flat(n, k.qktSymbol).filter { it.endTime <= endMs } else emptyList()
         }
 
     private fun flat(
@@ -161,5 +163,23 @@ class SetMemberInstancesTest {
         assertThat(sides()).containsExactly(Side.BUY)
         step()
         assertThat(hub.keys()).contains(key)
+    }
+
+    @Test
+    fun `a member the hub holds too little history for reads only the older bars it lacks`() {
+        hub.register(key, 50, "someone-else")
+        hub.seed(key, flat(1))
+        step("AAA")
+        assertThat(warmups.single().second).isGreaterThanOrEqualTo(2)
+        assertThat(warmupEnds.single()).isEqualTo(t0 - minute)
+        assertThat(hub.seededHistory(key).first().endTime).isLessThan(t0 - minute + 1)
+        bar("BACKTEST:AAA", 0, "5")
+        assertThat(sides()).containsExactly(Side.BUY)
+    }
+
+    @Test
+    fun `a member with no history reads bars ending before the bar of the close it joined at`() {
+        instances.apply(membership.step(listOf("AAA"), emptySet()), t0 + minute)
+        assertThat(warmupEnds.single()).isEqualTo(t0)
     }
 }
