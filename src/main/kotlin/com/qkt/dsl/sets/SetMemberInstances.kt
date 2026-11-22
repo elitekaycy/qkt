@@ -17,9 +17,10 @@ import com.qkt.strategy.WarmupStream
  * of [com.qkt.instrument.universe.SetMembership]. Members are the venue's bare symbols.
  *
  * - A member that joins (or is restored) gets its own compiled instance ([SetMemberTemplate]), registered on [hub]
- *   under its own owner id so it can be dropped alone. Its stream is warmed with the closed bars its warmup asks for,
- *   read from [warmup] (key, bar count) when the hub holds none, then replayed through its indicators exactly as a
- *   declared stream's warmup is. It evaluates from the next close on, never at the close it joined.
+ *   under its own owner id so it can be dropped alone. Its stream is warmed with the closed bars its warmup asks for:
+ *   what the hub holds, and when that is short the older bars [warmup] (key, bar count, latest bar end) reads, then
+ *   replayed through its indicators exactly as a declared stream's warmup is. It evaluates from the next close on,
+ *   never at the close it joined.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
  * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out;
@@ -33,7 +34,7 @@ internal class SetMemberInstances(
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
     private val ladder: StrikeLadder = StrikeLadder(emptyList()),
-    private val warmup: (HubKey, Int) -> List<Candle>,
+    private val warmup: (HubKey, Int, Long) -> List<Candle>,
 ) {
     private val instances = LinkedHashMap<String, CompiledStrategy>()
     private val sticky = HashSet<String>()
@@ -101,8 +102,9 @@ internal class SetMemberInstances(
             val retention = instance.retentionByKey[k] ?: 1
             hub.register(k, if (k == key) maxOf(retention, need) else retention, owner)
         }
-        if (need > 0 && hub.seededHistory(key).isEmpty()) {
-            val bars = warmup(key, need)
+        val held = hub.seededHistory(key)
+        if (need > held.size) {
+            val bars = warmup(key, need - held.size, warmupEndMs(held, key, closeMs))
             if (bars.isNotEmpty()) hub.seed(key, bars)
         }
         instance.bindToHubAs(owner, hub, ctx) { signal ->
@@ -110,6 +112,19 @@ internal class SetMemberInstances(
         }
         instances[member] = instance
     }
+
+    /**
+     * The latest bar end a joiner's warmup may read: the start of the oldest bar the hub holds for the stream, so
+     * fetched history only ever goes in front of it; with none held, the start of the join close's own bar, which
+     * reaches the hub as it closes (backtest and live alike, whichever comes first).
+     */
+    private fun warmupEndMs(
+        held: List<Candle>,
+        key: HubKey,
+        closeMs: Long,
+    ): Long =
+        held.firstOrNull()?.startTime
+            ?: if (closeMs == Long.MIN_VALUE) Long.MAX_VALUE else closeMs - TimeWindow.parse(key.timeframe).durationMs
 
     private fun leave(member: String) {
         hub.unregister(owner(member))

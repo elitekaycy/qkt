@@ -6,6 +6,7 @@ import com.qkt.dsl.sets.DynamicSetHost
 import com.qkt.dsl.sets.SetCatalog
 import com.qkt.dsl.sets.SymbolSetSpec
 import com.qkt.instrument.EventContracts
+import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.universe.VenueCatalog
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
@@ -62,7 +63,7 @@ class StrategyHandleMovingSetTest {
         ),
     )
 
-    private val listing =
+    private fun listing(vararg rows: InstrumentMeta) =
         object : SetCatalog {
             override val source = "the venue listing"
             override val survivorsOnly = false
@@ -70,8 +71,13 @@ class StrategyHandleMovingSetTest {
             override fun venue(
                 alias: String,
                 spec: SymbolSetSpec.Filtered,
-            ) = VenueCatalog(listOf(contract("A", 0, 2), contract("B", 1, 3), contract("LATE", 30, 40)))
+            ) = VenueCatalog(rows.toList())
         }
+
+    private val listing = listing(contract("A", 0, 2), contract("B", 1, 3), contract("LATE", 30, 40))
+
+    /** Contracts listed long before and expiring long after any wall-clock start the factory takes. */
+    private val standing = listing(contract("A", -100_000, 1_000_000), contract("B", -100_000, 1_000_000))
 
     private fun strategy(): Path =
         tmp.resolve("rolling.qkt").also {
@@ -91,7 +97,16 @@ class StrategyHandleMovingSetTest {
     private fun held(symbol: String) =
         LegBook(symbol).also {
             it.add(
-                PositionLeg("l-$symbol", null, LegRole.PRIMARY, Side.BUY, symbol, BigDecimal.ONE, BigDecimal.ONE, 0L),
+                PositionLeg(
+                    legId = "l-$symbol",
+                    parentLegId = null,
+                    role = LegRole.PRIMARY,
+                    side = Side.BUY,
+                    symbol = symbol,
+                    quantity = BigDecimal.ONE,
+                    entryPrice = BigDecimal.ONE,
+                    openedAt = 0L,
+                ),
             )
         }
 
@@ -105,12 +120,12 @@ class StrategyHandleMovingSetTest {
                     requested += symbols
                     Silent
                 },
-                symbolSets = listing,
+                symbolSets = standing,
             )
         val handle = factory.create("rolling", strategy(), false)
         try {
-            assertThat(handle.ast.streams.map { it.alias }).containsExactly("m.A", "m.B")
-            assertThat(requested.single()).containsExactly("GW:A", "GW:B")
+            assertThat(handle.ast.streams.map { it.alias }).containsExactly("m.B")
+            assertThat(requested.single()).containsExactly("GW:B")
         } finally {
             handle.close()
         }

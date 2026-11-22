@@ -553,8 +553,8 @@ RULES
   top `n`. `TOP` is required and may not exceed 500. The members are resolved **once, when the run starts**, and do
   not change during it. Ending the spec with `DYNAMIC` (`... TOP 20 BY volume DYNAMIC EVERY 1m`) asks for members
   that join and leave during the run, re-evaluated at each close of the set's `EVERY` window from the rows listed
-  then (see [members that join and leave](#members-that-join-and-leave)); it runs in backtests, and live sessions
-  refuse it for now. Where the instruments come from is the only
+  then (see [members that join and leave](#members-that-join-and-leave)), in backtests and live sessions alike.
+  Where the instruments come from is the only
   difference between a backtest and a live run; both rank them with the same code, so the same instruments give the
   same members. See [where membership comes from](#where-a-filtered-sets-members-come-from).
 - **Union.** `majors = fx + crypto` names the members of sets declared above it, each keeping its own venue; the
@@ -636,8 +636,14 @@ at that close (an event contract once it opens, any contract until it expires) a
   [over a set whose members move](foreach.md#over-a-set-whose-members-move).
 - **Strike neighbours.** Over event contracts, `NEXT_STRIKE(expr)` and `PREV_STRIKE(expr)` read the contract one
   strike up or down in the same event, when it is an active member ([strike neighbours](foreach.md#strike-neighbours)).
-- **Limits, for now.** Live sessions refuse moving sets (`DYNAMIC`, or reading market fields). A dynamic set cannot
-  be part of a union, and a cross-member function in a loop over a moving set ranges over that set only.
+- **Live sessions.** A live deploy reads the venue listing once at start and declares as candidates every member any
+  close of the next 24 hours picks from it; the session subscribes them all and steps the membership at each close
+  with the same code as a backtest. A joining member warms from the bars the session has seen and, when those are
+  short, from the venue's history (older bars only); a candidate with short history never fails the start. A held
+  symbol that is still a candidate keeps the start; one that no close picks any more refuses it. Listings added after
+  the start, and restoring membership across a restart, come with the next slices.
+- **Limits, for now.** A dynamic set cannot be part of a union, and a cross-member function in a loop over a moving
+  set ranges over that set only.
 
 ### The filter vocabulary
 

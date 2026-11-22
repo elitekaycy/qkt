@@ -6,7 +6,6 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.dsl.ast.StrategyAst
-import com.qkt.dsl.compile.AstCompiler
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
@@ -177,8 +176,7 @@ class StrategyHandle(
                 "starting_balance must be > 0 when max_drawdown_pct or max_daily_drawdown_pct is configured"
             }
             val startMs = System.currentTimeMillis()
-            val ast = liveStrategyAst(file, symbolSets, startMs, persistor)
-            val strategy = AstCompiler().compile(ast)
+            val (ast, strategy) = liveStrategy(file, symbolSets, startMs, persistor)
             val symbols = ast.streams.map { it.qktSymbol }.distinct()
             val candleWindow: TimeWindow? =
                 ast.streams

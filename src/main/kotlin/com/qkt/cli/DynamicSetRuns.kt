@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.app.setMemberWarmup
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.SET_BROKER
@@ -41,10 +42,12 @@ internal object DynamicSetRuns {
     ) {
         /**
          * The strategy for one run with [overrides] substituted into its `PARAM`s, with fresh membership every call;
-         * [journal] observes each membership change beside the run's bus.
+         * [journal] observes each membership change beside the run's bus. A joining member reads the history it lacks
+         * from the run's market source; a [live] run does not seed every candidate at start (the joins do).
          */
         fun strategy(
             overrides: Map<String, String>,
+            live: Boolean = false,
             journal: (SetMembershipChanged) -> Unit = {},
         ): Strategy =
             DynamicSetHost(
@@ -56,6 +59,8 @@ internal object DynamicSetRuns {
                         spec.venue,
                     )
                 },
+                warmup = ::setMemberWarmup,
+                seedCandidates = !live,
                 journal = journal,
             )
     }

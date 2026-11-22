@@ -93,10 +93,15 @@ internal object SymbolSetResolution {
         survivorshipAccepted: Boolean,
     ): List<String> {
         if (spec.moves) {
-            val why = if (spec.dynamic) "is DYNAMIC" else "reads as-of market fields (close, volume, spread)"
+            val why =
+                when {
+                    spec.dynamic -> "is DYNAMIC"
+                    spec.readsMarket -> "reads as-of market fields (close, volume, spread)"
+                    else -> "follows event families (${spec.slot})"
+                }
             val fix = if (spec.dynamic) "; drop DYNAMIC to resolve its members once, at start" else ""
             throw BacktestContext.Companion.SetupError(
-                "symbol set '$alias' $why: members that join and leave during a run are backtested only, for now$fix",
+                "symbol set '$alias' $why: its members join and leave during a run, so it has no one member list$fix",
             )
         }
         val venue = rows(alias, spec, catalog, survivorshipAccepted)

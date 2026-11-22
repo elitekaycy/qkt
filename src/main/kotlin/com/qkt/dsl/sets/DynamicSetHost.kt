@@ -12,6 +12,7 @@ import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.universe.MarketFacts
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.source.MarketSource
 import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
@@ -37,13 +38,17 @@ internal class HostedSet(
  * [DynamicSetMembership] steps with the members that hold a position or a working entry order; the instances apply
  * the step, a joining member firing its rules from the next close on, and every change is published as a
  * [SetMembershipChanged] (and handed to [journal]). A joining member warms from the history the hub already holds
- * for its stream, else from [warmup]. A backtest and a live session drive it through the same tick path, so
- * membership, warmup and trades replay alike. Order callbacks reach whichever rule set sent the order.
+ * for its stream, and when that is short from [warmup] over the session's market source (older bars only). With
+ * [seedCandidates] the run also seeds every candidate's history at start, as a backtest's declared streams are; a live
+ * session leaves that to the joins, so a candidate with short history never fails its start. A backtest and a live
+ * session drive it through the same tick path, so membership, warmup and trades replay alike. Order callbacks reach
+ * whichever rule set sent the order.
  */
 internal class DynamicSetHost(
     private val outer: CompiledStrategy,
     private val sets: List<HostedSet>,
-    private val warmup: (HubKey, Int) -> List<Candle> = { _, _ -> emptyList() },
+    private val warmup: (MarketSource) -> (HubKey, Int, Long) -> List<Candle> = { { _, _, _ -> emptyList() } },
+    private val seedCandidates: Boolean = true,
     private val journal: (SetMembershipChanged) -> Unit = {},
 ) : DslCompiledStrategy by outer,
     PerStreamWarmable {
@@ -74,6 +79,7 @@ internal class DynamicSetHost(
     override val perStreamWarmup: Map<WarmupStream, WarmupSpec> =
         outer.perStreamWarmup +
             candidates.entries
+                .filter { seedCandidates }
                 .mapNotNull { (key, needs) -> needs.warmup?.let { stream(key) to it } }
                 .toMap()
 
@@ -88,8 +94,12 @@ internal class DynamicSetHost(
         emit: (Signal) -> Unit,
     ) {
         outer.bindToHub(hub, ctx, emit)
+        val history = warmup(ctx.source)
         running =
-            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, StrikeLadder(it.membership.rows), warmup) }
+            sets.map {
+                val ladder = StrikeLadder(it.membership.rows)
+                it to SetMemberInstances(it.template, hub, ctx, emit, ladder, history)
+            }
     }
 
     override fun onTick(
