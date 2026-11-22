@@ -7,6 +7,8 @@ import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.EventContracts
+import com.qkt.instrument.StrikePredicate
+import com.qkt.instrument.StrikeType
 import com.qkt.instrument.universe.MembershipChange
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
@@ -36,16 +38,19 @@ internal object DynamicSetFixtures {
     fun contract(
         code: String,
         openMinute: Int,
+        floor: Int = 7425,
     ) = EventContracts.meta(
         "BACKTEST:$code",
         EventContracts.terms().copy(
+            predicate = StrikePredicate(StrikeType.GREATER_OR_EQUAL, BigDecimal(floor), null),
             openAtMs = T0 + openMinute * MINUTE,
             closeAtMs = T0 + 1_440 * MINUTE,
             expiryMs = T0 + 1_440 * MINUTE,
         ),
     )
 
-    val rows = listOf(contract("A", 0), contract("B", 2), contract("C", 4))
+    /** One event's contracts, strikes 100, 200 and 300 ("100 or above", ...), listing two minutes apart. */
+    val rows = listOf(contract("A", 0, 100), contract("B", 2, 200), contract("C", 4, 300))
 
     fun ast(text: String = source): StrategyAst = (Dsl.parse(text) as ParseResult.Success).value
 
@@ -148,4 +153,20 @@ internal object DynamicSetFixtures {
                 Tick("BACKTEST:$code", BigDecimal(price), ts)
             }
         }
+
+    /**
+     * Every listed contract is a member. Each buys, when flat, as many contracts as the strike above reads, and sells
+     * as many as the strike below reads once that is above 1: over [summedTape] the neighbours appear as they list.
+     */
+    val strikeSource: String =
+        """
+        STRATEGY ladder VERSION 1
+        SYMBOLS
+            s = BACKTEST:* WHERE kind = event TOP 3 BY symbol DYNAMIC EVERY 1m
+        RULES
+            FOR EACH m IN s DO
+              WHEN POSITION.m = 0 AND NEXT_STRIKE(m.close) > 0 THEN BUY m SIZING NEXT_STRIKE(m.close)
+            FOR EACH m IN s DO
+              WHEN POSITION.m = 0 AND PREV_STRIKE(m.close) > 1 THEN SELL m SIZING PREV_STRIKE(m.close)
+        """.trimIndent()
 }
