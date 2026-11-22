@@ -18,7 +18,8 @@ import com.qkt.instrument.universe.UniverseResolver
  */
 class DynamicSetMembership(
     private val spec: SymbolSetSpec.Filtered,
-    private val rows: List<InstrumentMeta>,
+    /** The catalog rows the set ranks; the event contracts among them also give its strike ladders. */
+    val rows: List<InstrumentMeta>,
     val windowMs: Long,
 ) {
     private val membership = SetMembership()

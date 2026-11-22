@@ -45,6 +45,20 @@ internal object QktFunctionDocs {
                         "`count_of(m.close > ema(m.close, 50), fx) >= 3`. A member with no value yet does not " +
                         "count; 0 when none holds.",
                 ),
+            "NEXT_STRIKE" to
+                doc(
+                    "next_strike(expr)",
+                    "Inside `FOR EACH m IN <set>` over event contracts whose members move: `expr` with `m` bound to " +
+                        "the contract of the same event one strike up, e.g. `m.close - next_strike(m.close)`. Null " +
+                        "at the top of the ladder or when that contract is not a member.",
+                ),
+            "PREV_STRIKE" to
+                doc(
+                    "prev_strike(expr)",
+                    "Inside `FOR EACH m IN <set>` over event contracts whose members move: `expr` with `m` bound to " +
+                        "the contract of the same event one strike down. Null at the bottom of the ladder or when " +
+                        "that contract is not a member.",
+                ),
             "MOD" to
                 doc(
                     "mod(a, b)",

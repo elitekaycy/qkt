@@ -62,4 +62,25 @@ class MovingSetFunctionCompilerTest {
         assertThatThrownBy { ExprCompiler().compile(call(SetFunction.SUM_OF, NumLit(BigDecimal.ONE))) }
             .hasMessage("SUM_OF(…) over a set whose members move runs only inside the set's member instances")
     }
+
+    @Test
+    fun `a strike neighbour reads that member's latest value, and an unlowered one is refused`() {
+        val ladder =
+            SetCrossSections({ member, step, _ -> "s.B".takeIf { member == "s.A" && step > 0 } }) {
+                listOf("s.A", "s.B")
+            }
+        val exprs = ExprCompiler(crossSections = ladder)
+        val next =
+            FuncCall("NEXT_STRIKE.MOVING", listOf(NumLit(BigDecimal(3)), StringLit("s.A"), NumLit(BigDecimal.ZERO)))
+        val prev =
+            FuncCall("PREV_STRIKE.MOVING", listOf(NumLit(BigDecimal(3)), StringLit("s.A"), NumLit(BigDecimal.ONE)))
+        val up = exprs.compile(next)
+        val down = exprs.compile(prev)
+        assertThat(up.evaluate(at(60_000L))).isEqualTo(Value.Undefined)
+        ladder.post(0, "s.B", Value.Num(BigDecimal(7)))
+        assertThat(up.evaluate(at(60_000L))).isEqualTo(Value.Num(BigDecimal(7)))
+        assertThat(down.evaluate(at(60_000L))).isEqualTo(Value.Undefined)
+        assertThatThrownBy { ExprCompiler().compile(FuncCall("NEXT_STRIKE", listOf(NumLit(BigDecimal.ONE)))) }
+            .hasMessageStartingWith("NEXT_STRIKE(expr) reads a neighbouring strike of the same event: use it inside")
+    }
 }
