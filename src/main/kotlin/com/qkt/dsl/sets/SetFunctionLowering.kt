@@ -50,7 +50,8 @@ internal object SetFunctionLowering {
     /**
      * [loop]'s template for its member [self] (its alias) when [loop]'s set moves: each set function over that set
      * becomes its moving form, `SUM_OF.MOVING(expr, "<self>", <site>)`, which reads the set's shared cross-section at
-     * run time. [site] numbers the calls in the order met, so every member numbers them alike.
+     * run time, and so does each `NEXT_STRIKE(expr)` / `PREV_STRIKE(expr)` ([StrikeNeighbour]). [site] numbers the
+     * calls in the order met, so every member numbers them alike.
      */
     fun lowerMoving(
         loop: ForEachSet,
@@ -59,13 +60,34 @@ internal object SetFunctionLowering {
     ): WhenThen =
         walk(loop.template) { call ->
             val target = setCall(call)?.takeIf { it.second == loop.set }
-            if (target == null) {
-                call
-            } else {
-                val expr = checkedExpr(loop, call, target.first, target.second)
-                FuncCall(target.first.moving, listOf(expr, StringLit(self), NumLit(BigDecimal(site()))))
+            val strike = StrikeNeighbour.named(call.name)
+            when {
+                target != null -> {
+                    val expr = checkedExpr(loop, call, target.first, target.second)
+                    FuncCall(target.first.moving, listOf(expr, StringLit(self), NumLit(BigDecimal(site()))))
+                }
+                strike != null -> {
+                    val expr = checkedStrike(loop, call, strike)
+                    FuncCall(strike.moving, listOf(expr, StringLit(self), NumLit(BigDecimal(site()))))
+                }
+                else -> call
             }
         }
+
+    /** [call]'s one expression, or why it cannot name a neighbouring strike's value. */
+    private fun checkedStrike(
+        loop: ForEachSet,
+        call: FuncCall,
+        strike: StrikeNeighbour,
+    ): ExprAst {
+        fun refuse(why: String): Nothing = throw SymbolSetError(loop.line, "${strike.name}(…): $why")
+        if (call.args.size != 1) refuse("takes one expression, got ${call.args.size} arguments")
+        val expr = call.args[0]
+        if (containsLowered(expr)) refuse("a cross-member function cannot be nested inside another")
+        val v = loop.iterVar
+        if (subst(expr, v, PROBE) == expr) refuse("the expression must use the loop variable '$v'")
+        return expr
+    }
 
     private fun lowerCall(
         loop: ForEachSet,
@@ -111,7 +133,9 @@ internal object SetFunctionLowering {
     private fun containsLowered(expr: ExprAst): Boolean {
         var found = false
         transform { call ->
-            call.also { found = found || SetFunction.lowered(it.name) != null || SetFunction.moving(it.name) != null }
+            val name = call.name
+            val lowered = SetFunction.lowered(name) ?: SetFunction.moving(name) ?: StrikeNeighbour.moving(name)
+            call.also { found = found || lowered != null }
         }.expr(expr)
         return found
     }

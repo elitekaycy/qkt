@@ -22,7 +22,8 @@ import com.qkt.strategy.WarmupStream
  *   declared stream's warmup is. It evaluates from the next close on, never at the close it joined.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
- * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out.
+ * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out;
+ *   `NEXT_STRIKE` / `PREV_STRIKE` read the [ladder] neighbour's, when it is an active member (sticky included).
  * - A sticky member (it holds but left the ranking) keeps running, but an order that would open or add on it is
  *   refused, re-arming the rule that sent it as a rejection does: only reducing and closing orders pass.
  */
@@ -31,11 +32,16 @@ internal class SetMemberInstances(
     private val hub: CandleHub,
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
+    private val ladder: StrikeLadder = StrikeLadder(emptyList()),
     private val warmup: (HubKey, Int) -> List<Candle>,
 ) {
     private val instances = LinkedHashMap<String, CompiledStrategy>()
     private val sticky = HashSet<String>()
-    private val sections = SetCrossSections { instances.keys.filterNot { it in sticky }.map(template::alias) }
+    private val sections =
+        SetCrossSections({ alias, step, atMs ->
+            val symbol = instances.keys.firstOrNull { template.alias(it) == alias }
+            symbol?.let { ladder.neighbour(it, step, atMs) }?.takeIf { it in instances }?.let(template::alias)
+        }) { instances.keys.filterNot { it in sticky }.map(template::alias) }
     private var refused = 0L
 
     /** The members with a running instance, in the order they joined. */

@@ -71,6 +71,9 @@ internal class IdentifierExprParser(
                     // SUM_OF(expr, set) and its kin: lowered over the set's members when FOR EACH expands.
                     com.qkt.dsl.sets.SetFunction
                         .named(name) != null -> FuncCall(name.uppercase(), args)
+                    // NEXT_STRIKE(expr) / PREV_STRIKE(expr): lowered over a moving set's members when it expands.
+                    com.qkt.dsl.sets.StrikeNeighbour
+                        .named(name) != null -> FuncCall(name.uppercase(), args)
                     else -> IndicatorCall(name, args)
                 }
             }

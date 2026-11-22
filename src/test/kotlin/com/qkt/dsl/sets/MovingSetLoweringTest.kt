@@ -62,4 +62,45 @@ class MovingSetLoweringTest {
             .isInstanceOf(SymbolSetError::class.java)
             .hasMessage("SUM_OF(…, s): a cross-member function cannot be nested inside another")
     }
+
+    @Test
+    fun `NEXT_STRIKE and PREV_STRIKE keep their expression and are numbered with the set functions`() {
+        val loop =
+            loops(
+                "    FOR EACH m IN s DO WHEN SUM_OF(m.close, s) > NEXT_STRIKE(m.close) - prev_strike(m.close) " +
+                    "THEN BUY m SIZING 1",
+            ).single()
+        var site = 0
+        val cond = SetFunctionLowering.lowerMoving(loop, "s.A") { site++ }.cond as CmpOp
+        assertThat(cond.lhs).isEqualTo(moving(SetFunction.SUM_OF, 0))
+        val own = listOf(StreamFieldRef("m", "close"), StringLit("s.A"))
+        assertThat(cond.rhs).isEqualTo(
+            com.qkt.dsl.ast.BinaryOp(
+                com.qkt.dsl.ast.BinOp.SUB,
+                FuncCall("NEXT_STRIKE.MOVING", own + NumLit(BigDecimal(1))),
+                FuncCall("PREV_STRIKE.MOVING", own + NumLit(BigDecimal(2))),
+            ),
+        )
+        assertThat(StrikeNeighbour.moving("PREV_STRIKE.MOVING")).isEqualTo(StrikeNeighbour.PREV_STRIKE)
+        assertThat(StrikeNeighbour.moving("PREV_STRIKE")).isNull()
+    }
+
+    @Test
+    fun `a strike call that cannot name one neighbour's value is refused`() {
+        fun refusal(cond: String): String? =
+            runCatching {
+                SetFunctionLowering.lowerMoving(
+                    loops("    FOR EACH m IN s DO WHEN $cond THEN BUY m SIZING 1").single(),
+                    "s.A",
+                ) { 0 }
+            }.exceptionOrNull()?.message
+        assertThat(
+            refusal("NEXT_STRIKE(m.close, s) > 0"),
+        ).isEqualTo("NEXT_STRIKE(…): takes one expression, got 2 arguments")
+        assertThat(
+            refusal("PREV_STRIKE(1) > 0"),
+        ).isEqualTo("PREV_STRIKE(…): the expression must use the loop variable 'm'")
+        assertThat(refusal("NEXT_STRIKE(PREV_STRIKE(m.close)) > 0"))
+            .isEqualTo("NEXT_STRIKE(…): a cross-member function cannot be nested inside another")
+    }
 }

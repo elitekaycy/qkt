@@ -14,6 +14,17 @@ interface CrossSections {
     )
 
     fun read(site: Int): CrossSection
+
+    /**
+     * The latest value at [site] of [member]'s neighbour [step] strikes away (`NEXT_STRIKE` +1, `PREV_STRIKE` -1) as
+     * of [atMs]; Undefined when there is none, it is not an active member, or it has no value yet.
+     */
+    fun neighbour(
+        site: Int,
+        member: String,
+        step: Int,
+        atMs: Long,
+    ): Value
 }
 
 /**

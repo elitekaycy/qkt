@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.sets.SetFunction
+import com.qkt.dsl.sets.StrikeNeighbour
 import com.qkt.dsl.stdlib.Constants
 import com.qkt.dsl.stdlib.FuncArity
 import com.qkt.dsl.stdlib.FuncRegistry
@@ -28,6 +29,9 @@ object VocabularyJson {
 
     /** `SUM_OF(expr, set)` and its kin take the expression and the set; `RANK_OF` is in the registry, variadic. */
     private val SET_FUNCTION_ARITY = FuncArity(2, variadic = false)
+
+    /** `NEXT_STRIKE(expr)` and `PREV_STRIKE(expr)` take the expression only. */
+    private val STRIKE_NEIGHBOUR_ARITY = FuncArity(1, variadic = false)
 
     private val CLOCK_PREDICATE_ARITY: Map<String, FuncArity> =
         mapOf(
@@ -84,7 +88,8 @@ object VocabularyJson {
             SetFunction.names
                 .filter { FuncRegistry.arity(it) == null }
                 .map { function(it, SET_FUNCTION_ARITY) }
-        return array(registered + predicates + sets)
+        val strikes = StrikeNeighbour.names.map { function(it, STRIKE_NEIGHBOUR_ARITY) }
+        return array(registered + predicates + sets + strikes)
     }
 
     private fun constants(): JsonArray =

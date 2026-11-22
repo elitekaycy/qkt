@@ -7,6 +7,7 @@ import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.TokenKind
 import com.qkt.dsl.sets.SetFunction
+import com.qkt.dsl.sets.StrikeNeighbour
 import com.qkt.dsl.stdlib.Constants
 import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
@@ -69,7 +70,9 @@ class DocsDriftTest {
         assertThat(QktDocs.indicatorNames())
             .isSubsetOf(IndicatorRegistry.names() + DslVocabulary.externalIndicators)
         assertThat(QktDocs.functionNames())
-            .isSubsetOf(FuncRegistry.names() + DslVocabulary.clockPredicates + SetFunction.names)
+            .isSubsetOf(
+                FuncRegistry.names() + DslVocabulary.clockPredicates + SetFunction.names + StrikeNeighbour.names,
+            )
     }
 
     @Test

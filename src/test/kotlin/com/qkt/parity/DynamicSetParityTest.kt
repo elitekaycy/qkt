@@ -127,6 +127,31 @@ class DynamicSetParityTest {
             .containsExactly(Triple("BACKTEST:A", 3, 2), Triple("BACKTEST:B", 3, 3), Triple("BACKTEST:C", 6, 5))
     }
 
+    @Test
+    fun `NEXT_STRIKE and PREV_STRIKE read the neighbouring strikes as they list, alike in a backtest and live`() {
+        val (backtest, live) = both(DynamicSetFixtures.strikeSource, DynamicSetFixtures.summedTape())
+
+        assertThat(live.journal).containsExactlyElementsOf(backtest.journal)
+        assertThat(live.trades).containsExactlyElementsOf(backtest.trades)
+        // A (100) has no strike above listed until B (200, at 2) joins, and buys B's 2 then; B buys C's 4 once C
+        // (300) lists at 4; C sells B's 2 from its first close. A has no strike below, and B's (A at 1) is too low.
+        val minute = { ts: Long -> ((ts - DynamicSetFixtures.T0) / 60_000L).toInt() }
+        assertThat(
+            backtest.trades.map {
+                listOf(
+                    it.symbol,
+                    it.side,
+                    it.quantity.toBigDecimal().toInt(),
+                    minute(it.timestamp),
+                )
+            },
+        ).containsExactly(
+            listOf("BACKTEST:A", "BUY", 2, 2),
+            listOf("BACKTEST:B", "BUY", 4, 4),
+            listOf("BACKTEST:C", "SELL", 2, 5),
+        )
+    }
+
     private fun both(
         source: String,
         ticks: List<Tick>,
