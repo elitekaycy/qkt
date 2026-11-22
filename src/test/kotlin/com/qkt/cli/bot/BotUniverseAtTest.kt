@@ -50,4 +50,11 @@ class BotUniverseAtTest {
         val (_, slots) = universe("KALSHI:*@front.p70 WHERE kind = event TOP 5 BY symbol", "--json")
         assertThat(slots).contains("names each family's slot").contains("KALSHI:<FAMILY>@front.*")
     }
+
+    @Test
+    fun `--at and --as-of together are refused instead of one silently winning`() {
+        val (code, out) = universe(front, "--at", "2024-03-04T10:30:00Z", "--as-of", "2024-03-04")
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(out).contains("give --at or --as-of, not both")
+    }
 }
