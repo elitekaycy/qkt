@@ -36,26 +36,35 @@ class SetMemberOrderIdsTest {
     private fun instances(
         ids: Collection<String> = emptyList(),
         marks: Map<String, Long> = emptyMap(),
-    ) = SetMemberInstances(
-        SetMemberTemplate(ast, "movers"),
-        CandleHub(),
-        testStrategyContext(strategyId = "movers"),
-        emit = {},
-        resumedIds = { ids },
-        restoredMarks = { marks },
-        warmup = none,
-    )
+    ): SetMemberInstances {
+        val restore = MemberRestore()
+        restore.usedIds = ids
+        restore.marks = marks
+        return SetMemberInstances(
+            SetMemberTemplate(ast, "movers"),
+            CandleHub(),
+            testStrategyContext(strategyId = "movers"),
+            emit = {},
+            restore = restore,
+            warmup = none,
+        )
+    }
+
+    /** The next order id the single running member's instance would mint. */
+    private fun nextId(instances: SetMemberInstances): String? {
+        val ids = instances.compiled.single().orderIds
+        return ids?.next()
+    }
 
     @Test
     fun `a member that rejoins continues the order ids it sent before it left`() {
         val instances = instances()
         instances.apply(membership.step(listOf("AAA"), emptySet()))
-        val first = instances.compiled.single().orderIds
-        assertThat(listOf(first?.next(), first?.next())).containsExactly("$prefix-0", "$prefix-1")
+        assertThat(listOf(nextId(instances), nextId(instances))).containsExactly("$prefix-0", "$prefix-1")
         instances.apply(membership.step(emptyList(), emptySet()))
         assertThat(instances.idMarks()).containsEntry(prefix, 1L)
         instances.apply(membership.step(listOf("AAA"), emptySet()))
-        assertThat(instances.compiled.single().orderIds?.next()).isEqualTo("$prefix-2")
+        assertThat(nextId(instances)).isEqualTo("$prefix-2")
         assertThat(instances.idMarks()).containsEntry(prefix, 2L)
     }
 
@@ -63,9 +72,9 @@ class SetMemberOrderIdsTest {
     fun `a member continues past the ids and the marks a restart restored`() {
         val byIds = instances(ids = listOf("$prefix-5", "ORD-x-9"))
         byIds.apply(membership.step(listOf("AAA"), emptySet()))
-        assertThat(byIds.compiled.single().orderIds?.next()).isEqualTo("$prefix-6")
+        assertThat(nextId(byIds)).isEqualTo("$prefix-6")
         val byMarks = instances(marks = mapOf(prefix to 11L, "dsl-other-" to 50L))
         byMarks.apply(SetMembership().step(listOf("AAA"), emptySet()))
-        assertThat(byMarks.compiled.single().orderIds?.next()).isEqualTo("$prefix-12")
+        assertThat(nextId(byMarks)).isEqualTo("$prefix-12")
     }
 }

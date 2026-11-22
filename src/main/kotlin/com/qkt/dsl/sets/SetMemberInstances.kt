@@ -7,7 +7,6 @@ import com.qkt.dsl.compile.HubKey
 import com.qkt.instrument.universe.MembershipChange
 import com.qkt.instrument.universe.MembershipStep
 import com.qkt.marketdata.Candle
-import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
@@ -22,10 +21,12 @@ import com.qkt.strategy.WarmupStream
  *   what the hub holds, and when that is short the older bars [warmup] (key, bar count, latest bar end) reads, then
  *   replayed through its indicators exactly as a declared stream's warmup is. It evaluates from the next close on,
  *   never at the close it joined.
- * - A joining member's order ids continue past [resumedIds] (the ids a restarted session restored), so a member that
- *   traded before a restart never sends an id it already sent.
- * - A member's rule edges persist under its own id ([persistor]), so a restart over a member ranked again does not
- *   fire an edge it already fired; a member that leaves clears them, so a rejoin starts fresh as in a backtest.
+ * - A joining member's order ids continue past every id it sent before: the ids it sent before it last left, and
+ *   what a restarted session restored ([restore]: active orders' ids and every generator's persisted mark), so no id
+ *   repeats, which a venue's idempotency on the client order id would otherwise swallow.
+ * - A member's rule edges persist under its own id ([MemberRestore.persistor]), so a restart over a member ranked
+ *   again does not fire an edge it already fired; a member that leaves clears them, so a rejoin starts fresh as in a
+ *   backtest.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
  * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out;
@@ -38,11 +39,11 @@ internal class SetMemberInstances(
     private val hub: CandleHub,
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
-    private val resumedIds: () -> Collection<String> = { emptyList() },
-    private val persistor: StatePersistor? = null,
+    private val restore: MemberRestore = MemberRestore(),
     private val ladder: () -> StrikeLadder? = { null },
     private val warmup: (HubKey, Int, Long) -> List<Candle>,
 ) {
+    private val retiredMarks = HashMap<String, Long>()
     private val instances = LinkedHashMap<String, CompiledStrategy>()
     private val sticky = HashSet<String>()
     private val sections =
@@ -69,6 +70,21 @@ internal class SetMemberInstances(
         val books = instances[member]?.slotBooks ?: return false
         return books.total(ctx, template.alias(member), nowMs).signum() != 0
     }
+
+    /** The running members (bare symbols of [venue]) that hold a position, a working entry order or a slot contract. */
+    fun held(venue: String): Set<String> =
+        instances.keys.filterTo(HashSet()) { member ->
+            val symbol = "$venue:$member"
+            val position = ctx.positions.positionFor(symbol)
+            (position?.quantity?.signum() ?: 0) != 0 ||
+                ctx.openOrders.entryCountFor(symbol) > 0 ||
+                holdsThroughSlot(member, ctx.clock.now())
+        }
+
+    /** Each member generator's last issued sequence, by prefix: the running members' and those that left. */
+    fun idMarks(): Map<String, Long> =
+        retiredMarks +
+            instances.values.mapNotNull { i -> i.orderIds?.let { g -> g.lastIssued()?.let { g.prefix to it } } }
 
     /** Whether [member] is sticky: held while out of the ranking. */
     fun isSticky(member: String): Boolean = member in sticky
@@ -101,8 +117,11 @@ internal class SetMemberInstances(
         closeMs: Long,
     ) {
         val instance = template.compile(member, sections)
-        instance.resumeOrderIds(resumedIds())
-        persistor?.let { instance.bindStatePersistor(stateId(member), it) }
+        instance.orderIds?.let { ids ->
+            listOfNotNull(retiredMarks[ids.prefix], restore.marks[ids.prefix]).maxOrNull()?.let(ids::resumeAfter)
+        }
+        instance.resumeOrderIds(restore.usedIds)
+        restore.persistor?.let { instance.bindStatePersistor(stateId(member), it) }
         instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
@@ -137,6 +156,7 @@ internal class SetMemberInstances(
             ?: if (closeMs == Long.MIN_VALUE) Long.MAX_VALUE else closeMs - TimeWindow.parse(key.timeframe).durationMs
 
     private fun leave(member: String) {
+        instances[member]?.orderIds?.let { ids -> ids.lastIssued()?.let { retiredMarks[ids.prefix] = it } }
         instances[member]?.clearRuleEdges()
         hub.unregister(owner(member))
         instances.remove(member)

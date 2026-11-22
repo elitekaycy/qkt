@@ -6,6 +6,7 @@ import com.qkt.dsl.compile.DecisionOrderLink
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.ExitRetry
 import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.OrderIdMarks
 import com.qkt.events.Event
 import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.universe.MarketFacts
@@ -42,11 +43,11 @@ internal class DynamicSetHost(
     seedCandidates: Boolean,
     private val journal: (SetMembershipChanged) -> Unit = {},
 ) : DslCompiledStrategy by outer,
-    PerStreamWarmable {
+    PerStreamWarmable,
+    OrderIdMarks {
     private val changes = MembershipJournal(journal)
     private val started = HashSet<HostedSet>()
-    private var usedIds: Collection<String> = emptyList()
-    private var persistor: StatePersistor? = null
+    private val restore = MemberRestore()
     private var running: List<Pair<HostedSet, SetMemberInstances>> = emptyList()
 
     private val streams = CandidateStreams(outer, sets, seedCandidates)
@@ -89,8 +90,7 @@ internal class DynamicSetHost(
     ) {
         outer.bindToHub(hub, ctx, emit)
         val history = warmup(ctx.source)
-        running =
-            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, { usedIds }, persistor, it::ladder, history) }
+        running = sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, restore, it::ladder, history) }
     }
 
     override fun onTick(
@@ -105,7 +105,7 @@ internal class DynamicSetHost(
             val atStart = if (started.add(set)) heldAtStart(set, ctx) else emptySet()
             set.membership
                 .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }, atStart.isNotEmpty()) {
-                    atStart.ifEmpty { held(set.venue, instances, ctx) }
+                    atStart.ifEmpty { instances.held(set.venue) }
                 }?.let { apply(set, instances, it, ctx) }
             watch?.onTick(tick)
         }
@@ -116,14 +116,21 @@ internal class DynamicSetHost(
         strategyId: String,
         persistor: StatePersistor,
     ) {
-        this.persistor = persistor
+        restore.persistor = persistor
         outer.bindStatePersistor(strategyId, persistor)
     }
 
     override fun resumeOrderIds(usedIds: Collection<String>) {
-        this.usedIds = usedIds
+        restore.usedIds = usedIds
         outer.resumeOrderIds(usedIds)
     }
+
+    override fun resumeOrderIdMarks(marks: Map<String, Long>) {
+        restore.marks = marks
+    }
+
+    override fun orderIdMarks(): Map<String, Long> =
+        running.fold(emptyMap()) { marks, (_, instances) -> marks + instances.idMarks() }
 
     /** The declared members of [set] the strategy holds when it starts: a restart's positions, restored sticky. */
     private fun heldAtStart(
@@ -173,18 +180,4 @@ internal class DynamicSetHost(
     /** The strategy's own rules first, then every running member instance. */
     private fun all(): Sequence<CompiledStrategy> =
         sequenceOf(outer) + running.asSequence().flatMap { (_, instances) -> instances.compiled }
-
-    /** The running members of a set that hold a position or a working entry order. */
-    private fun held(
-        venue: String,
-        instances: SetMemberInstances,
-        ctx: StrategyContext,
-    ): Set<String> =
-        instances.members.filterTo(HashSet()) { member ->
-            val symbol = "$venue:$member"
-            val position = ctx.positions.positionFor(symbol)
-            (position?.quantity?.signum() ?: 0) != 0 ||
-                ctx.openOrders.entryCountFor(symbol) > 0 ||
-                instances.holdsThroughSlot(member, ctx.clock.now())
-        }
 }
