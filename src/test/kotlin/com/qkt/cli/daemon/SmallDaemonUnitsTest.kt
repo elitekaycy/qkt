@@ -26,6 +26,8 @@ class SmallDaemonUnitsTest : ListRouteFixture() {
             StateDir.resolve(null, mapOf("QKT_STATE_DIR" to "$tmp/env"), userDirs).root,
         ).isEqualTo(tmp.resolve("env"))
         assertThat(StateDir.resolve(null, emptyMap(), userDirs).root).isEqualTo(userDirs.stateHome())
+        assertThat(StateDir.resolve(env = mapOf("QKT_STATE_DIR" to "$tmp/env"), userDirs = userDirs).root)
+            .isEqualTo(tmp.resolve("env"))
     }
 
     @Test

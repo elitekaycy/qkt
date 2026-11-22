@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.app.LiveSession
 import com.qkt.app.OrderManager
 import com.qkt.app.SessionPnl
+import com.qkt.cli.observe.EventRing
 import com.qkt.common.Side
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
@@ -27,6 +28,22 @@ class RunStatusTest {
     fun `a fill prints as one console line with its time side size price and realized`() {
         assertThat(tradeLogLine(trade, BigDecimal("12.5")))
             .isEqualTo("[INFO] 2024-01-15T00:00:00Z BUY BTCUSDT qty=0.25 px=42000.50 realized=12.5")
+    }
+
+    @Test
+    fun `a recorded fill is printed and appended to the event ring as a trade`() {
+        val ring = EventRing(capacity = 4)
+
+        val run =
+            captureCliRun {
+                tradeRecorder(ring)(trade, BigDecimal("12.5"), "order-1")
+                0
+            }
+
+        assertThat(run.out.trim()).isEqualTo(tradeLogLine(trade, BigDecimal("12.5")))
+        val entry = ring.snapshot(since = 0, limit = 4).single()
+        assertThat(entry.kind).isEqualTo("trade")
+        assertThat(entry.payload).isEqualTo(tradeToJson(trade, BigDecimal("12.5")))
     }
 
     @Test

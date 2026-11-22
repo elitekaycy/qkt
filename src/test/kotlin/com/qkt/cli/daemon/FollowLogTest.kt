@@ -21,7 +21,12 @@ class FollowLogTest {
         private val allowed: Int,
     ) : OutputStream() {
         val written = ByteArrayOutputStream()
+        var flushes = 0
         private var writes = 0
+
+        override fun flush() {
+            flushes++
+        }
 
         override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
 
@@ -40,17 +45,19 @@ class FollowLogTest {
     @Test
     fun `a follower gets what is appended, starts over when the file shrinks, and is sent blanks while idle`() {
         val file = log("abc\n")
-        val out = FailingAfter(allowed = 2)
+        val out = FailingAfter(allowed = 3)
         val steps =
             ArrayDeque<() -> Unit>().apply {
                 add { Files.writeString(file, "x\n") }
                 add { Files.writeString(file, "y\n", StandardOpenOption.APPEND) }
                 add { }
+                add { }
             }
 
         followLog(file, out) { steps.removeFirst()() }
 
-        assertThat(out.written.toString()).isEqualTo("x\ny\n")
+        assertThat(out.written.toString()).isEqualTo("x\ny\n\n")
+        assertThat(out.flushes).isEqualTo(3)
     }
 
     @Test

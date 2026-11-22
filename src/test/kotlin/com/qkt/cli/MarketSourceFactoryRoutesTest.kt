@@ -4,6 +4,7 @@ import com.qkt.marketdata.hub.HubStoreConfig
 import com.qkt.marketdata.source.ReplayMarketSource
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -26,5 +27,15 @@ class MarketSourceFactoryRoutesTest {
         assertThat(MarketSourceFactory.replaySource(emptyMap())).isNull()
         assertThat(MarketSourceFactory.replaySource(mapOf("QKT_REPLAY_TICKS" to tmp.resolve("ticks.csv").toString())))
             .isInstanceOf(ReplayMarketSource::class.java)
+    }
+
+    @Test
+    fun `a replay source with no QKT_REPLAY_TICKS in the environment serves no stream`() {
+        assumeTrue(System.getenv("QKT_REPLAY_TICKS") == null)
+
+        val replay = MarketSourceFactory.composite(emptyList(), source = "replay")(emptyList())
+
+        assertThat(replay.supports("EXNESS:XAUUSD")).isFalse()
+        assertThat(replay.capabilitiesFor("EXNESS:XAUUSD")).isEmpty()
     }
 }

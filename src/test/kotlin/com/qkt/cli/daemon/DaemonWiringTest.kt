@@ -3,6 +3,9 @@ package com.qkt.cli.daemon
 import com.qkt.observe.insights.InsightsConfig
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.util.concurrent.atomic.AtomicReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -27,6 +30,19 @@ class DaemonWiringTest : ListRouteFixture() {
     }
 
     @Test
+    fun `the account lookup the broker context gets reads the registry held when it asks`() {
+        val ref = AtomicReference<StrategyRegistry?>(null)
+        val lookup = strategiesOnAccount(ref)
+        assertThat(lookup("exness_a")).isEmpty()
+
+        val registry = registry(mapOf("gold" to "Exness_A"))
+        registry.deploy("alpha", tmp.resolve("alpha.qkt"))
+        ref.set(registry)
+
+        assertThat(lookup("exness_a")).containsExactly("alpha")
+    }
+
+    @Test
     fun `the deployed names come from each strategy's declared name and are empty before the registry exists`() {
         val registry = registry(emptyMap())
         registry.deploy("alpha", tmp.resolve("alpha.qkt"))
@@ -44,6 +60,17 @@ class DaemonWiringTest : ListRouteFixture() {
 
         assertThat(summary.asOfUtc).startsWith("2024-01-15")
         assertThat(summary.strategies).isEmpty()
+    }
+
+    @Test
+    fun `a daily summary without a time is as of now`() {
+        val registry = registry(emptyMap())
+        val before = LocalDate.now(ZoneOffset.UTC).toString()
+
+        val summary = dailySummaryOf(registry)
+
+        val after = LocalDate.now(ZoneOffset.UTC).toString()
+        assertThat(summary.asOfUtc.take(10)).isIn(before, after)
     }
 
     @Test
