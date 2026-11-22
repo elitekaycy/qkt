@@ -609,9 +609,12 @@ at that close (an event contract once it opens, any contract until it expires) a
 - **Backtest and live alike.** Membership steps at the first tick at or past each close, before that tick reaches the
   rules, in both modes, and reads only the catalog and the positions held; so a backtest and a live session over the
   same catalog and ticks join, stick and release the same members at the same closes (`DynamicSetParityTest`).
+- **Market fields.** A set reading `close`, `volume` or `spread` watches every row whose catalog part passes (its
+  market clauses aside): the run feeds those streams and keeps, per row, the figures of each window. At a close the
+  set reads the window that ended at or before it, so it sees every tick before the close and none after.
 - **The journal.** Each change is published as a `SetMembershipChanged` event (set, member, change, rank, window
   close), which the engine audit journal records.
-- **Limits, for now.** Live sessions refuse `DYNAMIC`. A dynamic set cannot be part of a union, and cross-member
+- **Limits, for now.** Live sessions refuse moving sets (`DYNAMIC`, or reading market fields). A dynamic set cannot be part of a union, and cross-member
   functions (`RANK_OF(expr, set)`, `SUM_OF`, ...) over it are refused.
 
 ### The filter vocabulary
@@ -631,9 +634,12 @@ false. `WHERE`, `TOP`, `GLOB`, `ASC`, `DESC` and `DYNAMIC` are words with meanin
 | `trade_mode` | `full`, `long_only`, `short_only`, `close_only`, `disabled` |
 | `family`, `underlying` | a derivative's root (`ES`, `KXINXU`); an option's underlying index |
 | `expiry_at`, `dte` | a dated contract's expiry in epoch milliseconds; its days to expiry as of `--from` |
+| `close`, `volume`, `spread` | as-of market figures: the last price, the volume traded and the last ask minus bid in the last window of the set's `EVERY` that ended at or before the evaluation; never lifetime figures |
 
-As-of market fields (`volume`, `close`, `open_interest`) and event-slot universes (`KALSHI:*@front.p70 WHERE ...`)
-are not in this vocabulary yet; they arrive with runtime membership. `qkt bot universe "<spec>"` lists what a spec
+A set that filters or ranks on `close`, `volume` or `spread` always moves, with or without `DYNAMIC`: its members are
+re-evaluated at each close ([members that join and leave](#members-that-join-and-leave)). An instrument with no
+figure yet reads null, so it fails comparisons and ranks last. `open_interest` and event-slot universes
+(`KALSHI:*@front.p70 WHERE ...`) are not in this vocabulary yet. `qkt bot universe "<spec>"` lists what a spec
 resolves to ([bot CLI](../bot-cli.md#universe)).
 
 ## Synchronizing streams

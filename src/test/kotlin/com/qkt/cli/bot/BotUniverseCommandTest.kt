@@ -127,9 +127,9 @@ class BotUniverseCommandTest {
         assertThat(union.code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(union.err).contains("a union names sets declared in a strategy; resolve each set's own spec")
 
-        val bad = universe("EXNESS:* WHERE volume > 1 TOP 5 BY symbol", "--instruments", yaml(), "--json")
+        val bad = universe("EXNESS:* WHERE open_interest > 1 TOP 5 BY symbol", "--instruments", yaml(), "--json")
         assertThat(bad.code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(bad.out).contains("unknown catalog field 'volume'")
+        assertThat(bad.out).contains("unknown catalog field 'open_interest'")
 
         val empty = tmp.resolve("empty").also { Files.createDirectories(it) }
         val noCatalog =
