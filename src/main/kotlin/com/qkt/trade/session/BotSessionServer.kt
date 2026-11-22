@@ -50,7 +50,13 @@ class BotSessionServer(
     private val handlers =
         BotSessionHandlers(session, accountCurrency, onFinish, quoteContextFor, readsJournal, trail, clock)
 
-    val finished: Boolean get() = handlers.finished
+    /**
+     * True once a finish has been answered: its reply written, or its write failed. The owner closes the
+     * server as soon as this turns true, so it must not turn true while the reply is still in flight.
+     */
+    @Volatile
+    var finished: Boolean = false
+        private set
 
     val boundPort: Int get() = server.address.port
 
@@ -66,6 +72,14 @@ class BotSessionServer(
     override fun close() = server.stop(0)
 
     private fun handle(ex: HttpExchange) {
+        try {
+            route(ex)
+        } finally {
+            if (handlers.finished) finished = true
+        }
+    }
+
+    private fun route(ex: HttpExchange) {
         try {
             if (!authorized(ex)) {
                 ex.responseHeaders.add("WWW-Authenticate", "Bearer")
