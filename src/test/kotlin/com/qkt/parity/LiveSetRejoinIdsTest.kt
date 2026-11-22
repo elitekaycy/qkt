@@ -35,7 +35,7 @@ class LiveSetRejoinIdsTest {
             .replace("kind = event TOP 2 BY symbol DESC DYNAMIC", "kind = event AND volume > 0 TOP 1 BY volume")
             .replace(
                 "THEN BUY m SIZING 1",
-                "THEN BUY m SIZING 1 BRACKET { STOP LOSS PCT 50, TAKE PROFIT PCT 50 }",
+                "THEN BUY m SIZING 1 BRACKET { STOP LOSS PCT 40, TAKE PROFIT PCT 40 }",
             )
 
     private fun tick(
