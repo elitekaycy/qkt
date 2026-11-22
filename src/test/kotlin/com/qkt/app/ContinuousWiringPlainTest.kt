@@ -9,6 +9,7 @@ import com.qkt.instrument.FuturesRoot
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.RollHistory
+import com.qkt.marketdata.source.ExpandableLiveSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.persistence.NoopStatePersistor
 import org.assertj.core.api.Assertions.assertThat
@@ -36,28 +37,38 @@ class ContinuousWiringPlainTest {
             .hasMessage("a lane bus was bound before the session's mailbox existed")
     }
 
+    private val directory =
+        object : FuturesDirectory {
+            override fun root(rootId: String): FuturesRoot? = null
+
+            override fun catalog(rootId: String): ContractCatalog? = null
+
+            override fun history(rootId: String): RollHistory? = null
+
+            override fun rootOfContinuous(symbol: String): String? = "X:GC".takeIf { symbol.endsWith("@front") }
+        }
+    private val registry =
+        object : InstrumentRegistry {
+            override fun lookup(qktSymbol: String): InstrumentMeta? = null
+
+            override fun futures(): FuturesDirectory = directory
+        }
+
     @Test
     fun `a continuous stream whose roll histories are not on disk is refused at wiring`() {
-        val directory =
-            object : FuturesDirectory {
-                override fun root(rootId: String): FuturesRoot? = null
-
-                override fun catalog(rootId: String): ContractCatalog? = null
-
-                override fun history(rootId: String): RollHistory? = null
-
-                override fun rootOfContinuous(symbol: String): String? = "X:GC".takeIf { symbol.endsWith("@front") }
-            }
-        val registry =
-            object : InstrumentRegistry {
-                override fun lookup(qktSymbol: String): InstrumentMeta? = null
-
-                override fun futures(): FuturesDirectory = directory
-            }
-
         assertThatThrownBy {
             ContinuousWiring(listOf("X:GC@front"), registry, NullMarketSource, clock, NoopStatePersistor(), "gold")
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("need their roll histories on disk")
+    }
+
+    @Test
+    fun `a continuous stream beside a symbol set whose members move is refused at wiring, naming why`() {
+        val moving = ExpandableLiveSource(NullMarketSource)
+        assertThatThrownBy {
+            ContinuousWiring(listOf("X:GC@front"), registry, moving, clock, NoopStatePersistor(), "gold")
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("beside a continuous futures stream")
+            .hasMessageContaining("run them as two strategies")
     }
 }

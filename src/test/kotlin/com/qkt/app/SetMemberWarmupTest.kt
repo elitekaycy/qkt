@@ -48,4 +48,17 @@ class SetMemberWarmupTest {
     fun `a source without bars gives a joiner none`() {
         assertThat(setMemberWarmup(NullMarketSource)(key, 5, t0)).isEmpty()
     }
+
+    @Test
+    fun `a history read that fails gives a joiner no bars instead of stopping the session`() {
+        val failing =
+            object : MarketSource by source {
+                override fun bars(
+                    symbol: String,
+                    window: TimeWindow,
+                    range: TimeRange,
+                ): Sequence<Candle> = error("venue timed out")
+            }
+        assertThat(setMemberWarmup(failing)(key, 5, t0)).isEmpty()
+    }
 }
