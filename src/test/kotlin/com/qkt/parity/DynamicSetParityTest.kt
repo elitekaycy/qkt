@@ -113,8 +113,9 @@ class DynamicSetParityTest {
 
         assertThat(live.journal).containsExactlyElementsOf(backtest.journal)
         assertThat(live.trades).containsExactlyElementsOf(backtest.trades)
-        // SUM_OF(m.close, s): A alone reads 1; once B joins, A and B read 1 + 2; once C pushes A out of the ranking,
-        // B and C read 2 + 4. A holds, so it sticks, but a sticky member is no longer a member: it never counts.
+        // SUM_OF(m.close, s): A alone reads 1, so it waits; at 2m B joins and is counted at once from its history
+        // (A reads 1 + 2 at that very close); once C pushes A out of the ranking, B and C read 2 + 4. A holds, so it
+        // sticks, but a sticky member is no longer a member: it never counts.
         assertThat(backtest.journal.map { it.member to it.change }).containsExactly(
             "BACKTEST:A" to MembershipChange.JOIN,
             "BACKTEST:B" to MembershipChange.JOIN,
@@ -123,7 +124,7 @@ class DynamicSetParityTest {
         )
         val minute = { ts: Long -> ((ts - DynamicSetFixtures.T0) / 60_000L).toInt() }
         assertThat(backtest.trades.map { Triple(it.symbol, it.quantity.toBigDecimal().toInt(), minute(it.timestamp)) })
-            .containsExactly(Triple("BACKTEST:A", 1, 1), Triple("BACKTEST:B", 3, 3), Triple("BACKTEST:C", 6, 5))
+            .containsExactly(Triple("BACKTEST:A", 3, 2), Triple("BACKTEST:B", 3, 3), Triple("BACKTEST:C", 6, 5))
     }
 
     private fun both(

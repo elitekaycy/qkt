@@ -127,8 +127,8 @@ internal object DynamicSetFixtures {
         )
 
     /**
-     * Each member buys once, as many contracts as `SUM_OF(m.close, s)` reads at its first close, and holds: the order
-     * sizes are the cross-section of the members at that close.
+     * Each member buys once, as many contracts as `SUM_OF(m.close, s)` reads, once that sum is above 1, and holds: the
+     * order sizes are the members' values at that close, a member that joins there counted from its history.
      */
     val summedSource: String =
         """
@@ -137,7 +137,7 @@ internal object DynamicSetFixtures {
             s = BACKTEST:* WHERE kind = event TOP 2 BY symbol DESC DYNAMIC EVERY 1m
         RULES
             FOR EACH m IN s DO
-              WHEN POSITION.m = 0 THEN BUY m SIZING SUM_OF(m.close, s)
+              WHEN POSITION.m = 0 AND SUM_OF(m.close, s) > 1 THEN BUY m SIZING SUM_OF(m.close, s)
         """.trimIndent()
 
     /** Ticks every 10s over [minutes] minutes, each contract at its own price: A at 1, B at 2, C at 4. */
