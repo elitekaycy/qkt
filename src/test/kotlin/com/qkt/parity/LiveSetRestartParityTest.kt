@@ -63,10 +63,15 @@ class LiveSetRestartParityTest {
 
     private val atStart = listOf(contract("A", 0), contract("B", 10), contract("C", 25))
     private val late = contract("D", 27)
-    private val source =
-        "STRATEGY roll VERSION 1\nSYMBOLS\n" +
-            "    s = BACKTEST:* WHERE kind = event TOP 1 BY symbol DESC DYNAMIC EVERY 1h\n" +
-            "RULES\n    FOR EACH m IN s DO\n      WHEN m.close > 100 AND POSITION.m = 0 THEN BUY m SIZING 1"
+
+    /** The rule buys a member once its close is above 100; [guarded] also requires it to be flat. */
+    private var guarded = true
+    private val source: String
+        get() =
+            "STRATEGY roll VERSION 1\nSYMBOLS\n" +
+                "    s = BACKTEST:* WHERE kind = event TOP 1 BY symbol DESC DYNAMIC EVERY 1h\n" +
+                "RULES\n    FOR EACH m IN s DO\n" +
+                "      WHEN m.close > 100${if (guarded) " AND POSITION.m = 0" else ""} THEN BUY m SIZING 1"
 
     private val ticks: List<Tick> =
         (0 until 30 * 6).flatMap { i ->
@@ -159,6 +164,12 @@ class LiveSetRestartParityTest {
                 busOverride = bus,
             ).start()
         check(handle.awaitTermination(Duration.ofSeconds(20))) { "live session did not terminate" }
+    }
+
+    @Test
+    fun `a member's rule edges survive a restart, so a member ranked again is not bought twice`() {
+        guarded = false
+        `a restart mid-run restores held members and then joins and trades as an uninterrupted backtest`()
     }
 
     @Test
