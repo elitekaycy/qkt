@@ -39,7 +39,7 @@ import java.time.ZoneOffset
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
  * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
- * `qkt fetch VENUE:ROOT --rolls [--tf 1d]` measures its roll history from stored (and fetched) bars, and
+ * `qkt fetch VENUE:ROOT --rolls [--tf 1d] [--remeasure]` extends its roll history from stored (and fetched) bars, and
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
  * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
  * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]),
