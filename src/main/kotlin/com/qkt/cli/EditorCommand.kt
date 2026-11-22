@@ -18,6 +18,12 @@ import com.qkt.editor.GrammarGenerator
  */
 class EditorCommand(
     private val args: Args,
+    /** Test seam: the environment editor locations and the install manifest resolve against. */
+    private val env: Map<String, String> = System.getenv(),
+    /** Test seam: whether a person can answer a prompt; a console exists only in a terminal. */
+    private val interactive: () -> Boolean = { System.console() != null },
+    /** Test seam: how editors are detected on this machine. */
+    private val detectorFor: (Map<String, String>) -> EditorDetector = { EditorDetector(env = it) },
 ) {
     fun run(): Int =
         when (val sub = args.firstNonOption()) {
@@ -49,7 +55,7 @@ class EditorCommand(
     }
 
     private fun list(): Int {
-        val detector = EditorDetector()
+        val detector = detectorFor(env)
         val bundle = EditorPaths.bundledEditorRoot()
         println("qkt editor — bundled at: ${bundle ?: "<not found>"}")
         println()
@@ -67,8 +73,8 @@ class EditorCommand(
                 System.err.println("qkt: missing target. Try: qkt editor install <$TARGET_CHOICES>")
                 return ExitCodes.ARG_ERROR
             }
-        val detector = EditorDetector()
-        val installer = EditorInstaller(detector = detector)
+        val detector = detectorFor(env)
+        val installer = EditorInstaller(detector = detector, manifestPath = EditorManifest.defaultPath(env))
         val guard = PluginManagerGuard(nvimDir = detector.nvimConfigDir(), vimDir = detector.vimConfigDir())
         val assumeYes = args.flag("yes") || args.flag("y")
         val targets =
@@ -127,8 +133,7 @@ class EditorCommand(
             println("     --yes given: proceeding with sideload.")
             return true
         }
-        val interactive = System.console() != null
-        if (!interactive) {
+        if (!interactive()) {
             println("     Non-interactive shell and --yes not given — skipping ${target.displayName}.")
             return false
         }
@@ -166,10 +171,10 @@ class EditorCommand(
                 System.err.println("qkt: missing target. Try: qkt editor uninstall <$TARGET_CHOICES>")
                 return ExitCodes.ARG_ERROR
             }
-        val installer = EditorInstaller()
+        val installer = EditorInstaller(manifestPath = EditorManifest.defaultPath(env))
         val targets: List<EditorTarget> =
             if (arg.equals("all", ignoreCase = true)) {
-                val manifest = EditorManifest.load(EditorManifest.defaultPath())
+                val manifest = EditorManifest.load(EditorManifest.defaultPath(env))
                 EditorTarget.entries.filter { manifest.recordFor(it) != null }
             } else {
                 val parsed =

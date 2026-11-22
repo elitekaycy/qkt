@@ -160,7 +160,9 @@ internal class DynamicSetHost(
         instances.members.filterTo(HashSet()) { member ->
             val symbol = "$venue:$member"
             val position = ctx.positions.positionFor(symbol)
-            (position?.quantity?.signum() ?: 0) != 0 || ctx.openOrders.entryCountFor(symbol) > 0
+            (position?.quantity?.signum() ?: 0) != 0 ||
+                ctx.openOrders.entryCountFor(symbol) > 0 ||
+                instances.holdsThroughSlot(member, ctx.clock.now())
         }
 
     private fun stream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))

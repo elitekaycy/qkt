@@ -28,6 +28,7 @@ internal object MarksFetch {
         target: String,
         args: Args,
         clock: Clock,
+        sourceOverride: MarkHistorySource? = null,
     ): Int {
         val tf = args.option("tf") ?: return usage("--marks needs --tf, the sampling window (e.g. 1m, 1h)")
         val windowMs = runCatching { TimeWindow.parse(tf).durationMs }.getOrNull()
@@ -38,7 +39,7 @@ internal object MarksFetch {
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last")) ?: return ExitCodes.ARG_ERROR
         val venue = target.substringBefore(':')
         val source =
-            sourceFor(venue, args.option("config")) ?: run {
+            sourceOverride ?: sourceFor(venue, args.option("config")) ?: run {
                 System.err.println(
                     "qkt: no mark history for '$venue' (a type: gateway account of that name in --config)",
                 )

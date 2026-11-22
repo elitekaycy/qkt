@@ -46,15 +46,27 @@ class DynamicSetMembership(
 
     /**
      * The members at [closeMs]: the venue's rows alive then, filtered and ranked as of it with market fields from
-     * [facts], top n, bare symbols.
+     * [facts], top n, bare symbols. A slot universe ranks each family through its front contract and names the
+     * family's slot (`KXINXU@front.p70`).
      */
     fun membersAt(
         closeMs: Long,
         facts: MarketFacts = MarketFacts.NONE,
-    ): List<String> =
+    ): List<String> {
+        val alive = rows.filter { alive(it, closeMs) }
+        val slot = spec.slot ?: return rank(alive, closeMs, facts).map { it.qktSymbol.substringAfter(':') }
+        val fronts = SlotUniverse.fronts(alive)
+        return rank(fronts.keys.toList(), closeMs, facts).map { SlotUniverse.member(fronts.getValue(it), slot) }
+    }
+
+    private fun rank(
+        rows: List<InstrumentMeta>,
+        closeMs: Long,
+        facts: MarketFacts,
+    ): List<InstrumentMeta> =
         UniverseResolver
             .members(
-                rows.filter { alive(it, closeMs) },
+                rows,
                 spec.venue,
                 spec.filter,
                 spec.top,
@@ -62,7 +74,7 @@ class DynamicSetMembership(
                 spec.descending,
                 closeMs,
                 facts,
-            ).map { it.qktSymbol.substringAfter(':') }
+            )
 
     /**
      * The step of the window close at or before [nowMs], with the market figures [facts] gives for that close and the

@@ -58,6 +58,16 @@ internal fun warnDaemonRiskConfig(
     defaultDailyLossWarning(cfg, tradesThroughVenue)?.let(log::warn)
 }
 
+/** The warning for live-money accounts running under governance short of production, or null when none apply. */
+internal fun liveMoneyWarning(
+    mode: RuntimeMode,
+    liveAccountNames: List<String>,
+): String? {
+    if (mode.production || liveAccountNames.isEmpty()) return null
+    return "[WARN] live-money account(s) ${liveAccountNames.joinToString()} detected while " +
+        "runtime.mode=${mode.name.lowercase()}; production governance checks are not active"
+}
+
 /** What the hard limit watches: every session of the daemon, a portfolio's children included. */
 internal fun StrategyRegistry.guardedSessions(): List<GuardedSession> = list().map { GuardedSession(it.name, it.live) }
 

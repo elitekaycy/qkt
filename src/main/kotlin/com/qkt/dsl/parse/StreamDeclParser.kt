@@ -9,7 +9,6 @@ import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.sets.SetSpecParser
 import com.qkt.instrument.ContinuousSelector
-import com.qkt.instrument.SlotSelectors
 
 /**
  * Parses the right-hand side of one `SYMBOLS` declaration: a venue stream
@@ -87,7 +86,7 @@ internal class StreamDeclParser(
     private fun parseSelector(): String {
         cursor.advance()
         val token = cursor.expect(TokenKind.IDENT, "expected a continuous selector after '@'").lexeme
-        if (cursor.peek().kind == TokenKind.DOT) return slotSelector(token)
+        if (cursor.peek().kind == TokenKind.DOT) return cursor.slotSelector(token)
         if (ContinuousSelector.parse(token) == null) {
             cursor.error(
                 "unknown continuous selector '@$token'; use ${ContinuousSelector.entries.joinToString {
@@ -96,19 +95,6 @@ internal class StreamDeclParser(
             )
         }
         return token
-    }
-
-    /** An event slot's `<event>.<strike>` after `@` (`front.p70`), each part validated against [SlotSelectors]. */
-    private fun slotSelector(event: String): String {
-        if (SlotSelectors.eventOffset(event) == null) {
-            cursor.error("unknown slot event selector '@$event'; use ${SlotSelectors.eventSpellings}")
-        }
-        cursor.advance()
-        val strike = cursor.expect(TokenKind.IDENT, "expected a slot strike selector after '@$event.'").lexeme
-        if (SlotSelectors.strike(strike) == null) {
-            cursor.error("unknown slot strike selector '$strike'; use ${SlotSelectors.strikeSpellings}")
-        }
-        return "$event.$strike"
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.qkt.cli.fetch
 
 import com.qkt.cli.ExitCodes
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.instrument.OptionCatalog
 import com.qkt.instrument.OptionCatalogStore
 import com.qkt.instrument.OptionRoot
@@ -23,12 +24,7 @@ internal object OptionCatalogFetch {
     fun handles(venue: String): Boolean = venue == DeribitClient.VENUE
 
     /** Deribit's public listing. */
-    private val public = {
-        root: OptionRoot,
-        warn: (String) -> Unit,
-        ->
-        DeribitOptionCatalog(DeribitClient()).build(root, warn)
-    }
+    private val public: (OptionRoot, (String) -> Unit) -> OptionCatalog = ::deribitCatalog
 
     /** Builds [target]'s catalog from [account]'s listing, else the public one; returns a process exit code. */
     fun forRoot(
@@ -72,7 +68,7 @@ internal object OptionCatalogFetch {
         build: (
             OptionRoot,
             (String) -> Unit,
-        ) -> OptionCatalog = public,
+        ) -> OptionCatalog,
     ): Int {
         val root = declaredOptionRoot(target, dataRoot) ?: return ExitCodes.USER_ERROR
         val built =
@@ -127,3 +123,11 @@ internal object OptionCatalogFetch {
         return ExitCodes.USER_ERROR
     }
 }
+
+@ExcludeFromCoverage(
+    "builds the catalog from Deribit's public listing over the network; only a networked run reaches it",
+)
+private fun deribitCatalog(
+    root: OptionRoot,
+    warn: (String) -> Unit,
+): OptionCatalog = DeribitOptionCatalog(DeribitClient()).build(root, warn)

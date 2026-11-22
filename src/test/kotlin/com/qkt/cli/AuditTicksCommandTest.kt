@@ -82,6 +82,42 @@ class AuditTicksCommandTest {
         )
 
     @Test
+    fun `the tradingview reference hands the gateway client and the flags to the drift audit and returns its code`() {
+        gateway { MockResponse().setBody("[]") }
+        val seen = mutableListOf<Any?>()
+        val out = tmp.resolve("tv.json").toString()
+
+        val run =
+            captureCliRun {
+                AuditTicksCommand(
+                    Args(
+                        arrayOf(
+                            "audit-ticks",
+                            "--symbol",
+                            "EURUSD",
+                            "--duration",
+                            "7",
+                            "--poll-ms",
+                            "300",
+                            "--json",
+                            "--out",
+                            out,
+                            "--config",
+                            config(),
+                        ),
+                    ),
+                ) { client, symbol, brokerSymbol, seconds, pollMs, json, outPath ->
+                    seen.addAll(listOf(client.isReady(), symbol, brokerSymbol, seconds, pollMs, json, outPath))
+                    42
+                }.run()
+            }
+
+        assertThat(run.code).isEqualTo(42)
+        assertThat(run.out).contains("reference=tradingview")
+        assertThat(seen).containsExactly(true, "EURUSD", "EURUSDm", 7L, 300L, true, out)
+    }
+
+    @Test
     fun `history reference passes when every polled quote is in raw history and writes the artifact`() {
         gateway { tick -> MockResponse().setBody("[$tick]") }
         val out = tmp.resolve("audit/result.json")

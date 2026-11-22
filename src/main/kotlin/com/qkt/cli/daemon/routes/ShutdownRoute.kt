@@ -18,15 +18,21 @@ internal fun handleShutdown(
         .from(stateDir, "http")
         ?.record("shutdown", target = "_daemon", affected = emptyList())
     // Trigger asynchronously so the response can flush before the server closes.
-    Thread {
-        try {
-            Thread.sleep(50)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-        runCatching { shutdown() }
-    }.apply {
+    Thread { shutdownAfterGrace(shutdown) }.apply {
         isDaemon = true
         start()
     }
+}
+
+/** Waits [grace] so the response can flush, then runs [shutdown]; an interrupt ends the wait early, not the shutdown. */
+internal fun shutdownAfterGrace(
+    shutdown: () -> Unit,
+    grace: () -> Unit = { Thread.sleep(50) },
+) {
+    try {
+        grace()
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+    }
+    runCatching { shutdown() }
 }

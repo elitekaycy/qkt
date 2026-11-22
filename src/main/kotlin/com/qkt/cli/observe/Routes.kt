@@ -2,8 +2,10 @@ package com.qkt.cli.observe
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -105,7 +107,10 @@ object Routes {
             respond(ex, 200, json.encodeToString(JsonArray.serializer(), arr))
         }
 
-    fun events(ring: EventRing): HttpHandler =
+    fun events(
+        ring: EventRing,
+        keepAlivePause: () -> Unit = { Thread.sleep(15_000) },
+    ): HttpHandler =
         HttpHandler { ex ->
             if (ex.requestMethod != "GET") {
                 respond(ex, 405, """{"error":"method not allowed"}""")
@@ -117,9 +122,7 @@ object Routes {
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.sendResponseHeaders(200, 0)
             val out = ex.responseBody
-            val alive =
-                java.util.concurrent.atomic
-                    .AtomicBoolean(true)
+            val alive = AtomicBoolean(true)
             val writeLock = Any()
 
             fun writeFrame(bytes: ByteArray): Boolean =
@@ -140,11 +143,7 @@ object Routes {
                 ring.subscribe { entry ->
                     if (!alive.get()) return@subscribe
                     val payload =
-                        json.encodeToString(
-                            kotlinx.serialization.json.JsonObject
-                                .serializer(),
-                            entry.payload,
-                        )
+                        json.encodeToString(JsonObject.serializer(), entry.payload)
                     writeFrame("event: ${entry.kind}\ndata: $payload\n\n".toByteArray(Charsets.UTF_8))
                 }
             // Prelude so the client unblocks on response start.
@@ -155,7 +154,7 @@ object Routes {
             }
             try {
                 while (alive.get()) {
-                    Thread.sleep(15_000)
+                    keepAlivePause()
                     if (!writeFrame(": keep-alive\n\n".toByteArray(Charsets.UTF_8))) break
                 }
             } catch (_: InterruptedException) {

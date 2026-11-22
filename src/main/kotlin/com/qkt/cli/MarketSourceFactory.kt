@@ -101,8 +101,11 @@ object MarketSourceFactory {
             else -> NullMarketSource
         }
 
-    private fun buildReplaySource(): MarketSource? {
-        val csv = System.getenv("QKT_REPLAY_TICKS") ?: return null
+    private fun buildReplaySource(): MarketSource? = replaySource(System.getenv())
+
+    /** The replay source for the tick file `QKT_REPLAY_TICKS` names in [env], or null when it names none. */
+    internal fun replaySource(env: Map<String, String>): MarketSource? {
+        val csv = env["QKT_REPLAY_TICKS"] ?: return null
         return ReplayMarketSource(Path.of(csv))
     }
 }

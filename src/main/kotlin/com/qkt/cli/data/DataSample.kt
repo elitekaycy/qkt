@@ -3,6 +3,7 @@ package com.qkt.cli.data
 import com.qkt.cli.Args
 import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
+import com.qkt.common.coverage.ExcludeFromCoverage
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -45,8 +46,8 @@ internal data class SampleData(
  */
 internal fun dataSample(
     args: Args,
-    sample: SampleData = SampleData.BTCUSDT_2026_09,
-    http: OkHttpClient = defaultClient(),
+    sample: SampleData,
+    http: OkHttpClient,
 ): Int {
     val dataRoot = CliDataRoot.of(args)
     val file = dataRoot.resolve("samples").resolve(sample.fileName)
@@ -69,6 +70,10 @@ internal fun dataSample(
     }
     return code
 }
+
+/** `qkt data sample` as run for real: the pinned Binance month, over the network. */
+@ExcludeFromCoverage("downloads the pinned sample from data.binance.vision; only a networked run reaches it")
+internal fun dataSampleFromBinance(args: Args): Int = dataSample(args, SampleData.BTCUSDT_2026_09, defaultClient())
 
 /** Fetches [sample] to [dest] through a temporary file, or returns why it could not; never leaves a bad file. */
 private fun download(
@@ -111,7 +116,7 @@ private fun sha256(file: Path): String? {
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
-private fun defaultClient(): OkHttpClient =
+internal fun defaultClient(): OkHttpClient =
     OkHttpClient
         .Builder()
         .connectTimeout(Duration.ofSeconds(20))

@@ -77,12 +77,16 @@ class StateDir private constructor(
     }
 
     companion object {
-        fun resolve(override: String? = null): StateDir {
+        fun resolve(
+            override: String? = null,
+            env: Map<String, String> = System.getenv(),
+            userDirs: UserDirs = UserDirs(),
+        ): StateDir {
             val root =
                 when {
                     override != null -> Path.of(override)
-                    System.getenv("QKT_STATE_DIR") != null -> Path.of(System.getenv("QKT_STATE_DIR"))
-                    else -> UserDirs().stateHome()
+                    env["QKT_STATE_DIR"] != null -> Path.of(env.getValue("QKT_STATE_DIR"))
+                    else -> userDirs.stateHome()
                 }
             return StateDir(root)
         }

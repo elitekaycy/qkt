@@ -4,6 +4,7 @@ import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.parse.TokenCursor
 import com.qkt.dsl.parse.TokenKind
+import com.qkt.dsl.parse.slotSelector
 import com.qkt.dsl.parse.venueSymbol
 import com.qkt.instrument.universe.CatalogField
 import com.qkt.instrument.universe.CatalogValue
@@ -13,7 +14,8 @@ import java.math.BigDecimal
 
 /**
  * Parses the symbol-set forms of a `SYMBOLS` declaration (design §2): a picked list `VENUE:{A, B}`, a filtered
- * universe `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]` and a union `a + b`. `WHERE`, `TOP`,
+ * universe `VENUE:*[@<event>.<strike>] WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]` and a union
+ * `a + b`. `WHERE`, `TOP`,
  * `GLOB`, `ASC`, `DESC` and `DYNAMIC` are contextual words here, not keywords, so no strategy's identifiers become
  * reserved.
  */
@@ -84,7 +86,13 @@ internal class SetSpecParser(
 
     private fun parseFiltered(venue: String): SymbolSetSpec.Filtered {
         cursor.expect(TokenKind.STAR, "expected '*'")
-        expectWord("WHERE", "expected WHERE after '$venue:*'")
+        val slot =
+            if (cursor.match(TokenKind.AT_SIGN)) {
+                cursor.slotSelector(cursor.expect(TokenKind.IDENT, "expected a slot event selector after '*@'").lexeme)
+            } else {
+                null
+            }
+        expectWord("WHERE", "expected WHERE after '$venue:*${slot?.let { "@$it" }.orEmpty()}'")
         val filter = parseOr()
         expectWord("TOP", "expected TOP <n> after the WHERE filter")
         val count = cursor.expect(TokenKind.NUMBER, "expected a member count after TOP")
@@ -100,7 +108,7 @@ internal class SetSpecParser(
                 else -> true
             }
         val dynamic = isWord("DYNAMIC").also { if (it) cursor.advance() }
-        return SymbolSetSpec.Filtered(venue, filter, n, by, descending, dynamic)
+        return SymbolSetSpec.Filtered(venue, filter, n, by, descending, dynamic, slot)
     }
 
     private fun parseOr(): UniverseFilter {
