@@ -4,7 +4,6 @@ import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.parse.TokenCursor
 import com.qkt.dsl.parse.TokenKind
-import com.qkt.dsl.parse.slotSelector
 import com.qkt.dsl.parse.venueSymbol
 import com.qkt.instrument.universe.CatalogField
 import com.qkt.instrument.universe.CatalogValue
@@ -22,7 +21,7 @@ import java.math.BigDecimal
 internal class SetSpecParser(
     private val cursor: TokenCursor,
 ) {
-    /** The set after `VENUE:` when the next token opens one (`{` or `*`); the venue is [venue]. */
+    /** The set after `VENUE:` when the next tokens open one (`{`, `*` or `FAMILY@<event>.*`); the venue is [venue]. */
     fun parseVenueSet(venue: String): SymbolSetSpec =
         when (cursor.peek().kind) {
             TokenKind.LBRACE -> parsePicked(venue)
@@ -55,9 +54,8 @@ internal class SetSpecParser(
             } else {
                 val venue = cursor.expect(TokenKind.IDENT, "expected a venue prefix").lexeme
                 cursor.expect(TokenKind.COLON, "expected ':' after the venue")
-                if (cursor.peek().kind != TokenKind.LBRACE && cursor.peek().kind != TokenKind.STAR) {
-                    cursor.error("expected '{' or '*' after '$venue:'")
-                }
+                val opens = cursor.peek().kind == TokenKind.LBRACE || cursor.peek().kind == TokenKind.STAR
+                if (!opens && !cursor.atLadderSet()) cursor.error("expected '{' or '*' after '$venue:'")
                 parseVenueSet(venue)
             }
         if (cursor.peek().kind != TokenKind.EOF) cursor.error("unexpected '${cursor.peek().lexeme}' after the set")
@@ -85,14 +83,9 @@ internal class SetSpecParser(
     }
 
     private fun parseFiltered(venue: String): SymbolSetSpec.Filtered {
-        cursor.expect(TokenKind.STAR, "expected '*'")
-        val slot =
-            if (cursor.match(TokenKind.AT_SIGN)) {
-                cursor.slotSelector(cursor.expect(TokenKind.IDENT, "expected a slot event selector after '*@'").lexeme)
-            } else {
-                null
-            }
-        expectWord("WHERE", "expected WHERE after '$venue:*${slot?.let { "@$it" }.orEmpty()}'")
+        val scope = cursor.setScope()
+        val slot = scope.selector
+        expectWord("WHERE", "expected WHERE after '$venue:${scope.family ?: "*"}${slot?.let { "@$it" }.orEmpty()}'")
         val filter = parseOr()
         expectWord("TOP", "expected TOP <n> after the WHERE filter")
         val count = cursor.expect(TokenKind.NUMBER, "expected a member count after TOP")
@@ -108,7 +101,7 @@ internal class SetSpecParser(
                 else -> true
             }
         val dynamic = isWord("DYNAMIC").also { if (it) cursor.advance() }
-        return SymbolSetSpec.Filtered(venue, filter, n, by, descending, dynamic, slot)
+        return SymbolSetSpec.Filtered(venue, filter, n, by, descending, dynamic, slot, scope.family)
     }
 
     private fun parseOr(): UniverseFilter {
