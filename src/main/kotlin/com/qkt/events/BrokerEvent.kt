@@ -137,9 +137,9 @@ sealed interface BrokerEvent : Event {
     ) : OrderEvent
 
     /**
-     * The venue accepted a modification to a working order, after [com.qkt.broker.Broker.modify] succeeds. The
-     * order manager updates its tracked SL/TP/trigger from the [OrderModification] the caller supplied; the event
-     * carries the same accepted change set so observability can explain what changed.
+     * A working order's levels changed: the venue accepted a modification after [com.qkt.broker.Broker.modify]
+     * succeeded, or a continuous lane moved the order's levels into a rebuilt roll series (qkt#1754). The order
+     * manager applies the levels to its tracked order; observability shows what changed.
      */
     data class OrderModified(
         override val clientOrderId: String,

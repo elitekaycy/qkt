@@ -20,10 +20,11 @@ import com.qkt.strategy.Strategy
 import java.nio.file.Path
 
 /**
- * A backtest's symbol sets (runtime membership plan, step 4). Filtered sets resolve once, at `--from`
- * ([SymbolSetResolution]); each `DYNAMIC` set instead becomes every member some close of the run's window picks, so
- * the run declares and feeds those candidates' streams, and the strategy runs as a [DynamicSetHost] that steps the
- * set's membership from the same catalog rows at each close of its window.
+ * A backtest's symbol sets (runtime membership plan, steps 4-5). Filtered sets resolve once, at `--from`
+ * ([SymbolSetResolution]); each set whose members move (`DYNAMIC`, or reading market fields) instead becomes its
+ * candidates: every member some close of the run's window picks, or for a set reading market fields every row it
+ * could pick. The run declares and feeds those candidates' streams, and the strategy runs as a [DynamicSetHost] that
+ * steps the set's membership from the same catalog rows (and the market figures it watches) at each close.
  */
 internal object DynamicSetRuns {
     /** The strategy a backtest declares ([ast]) and how it builds the strategy that runs, null without DYNAMIC sets. */
@@ -94,7 +95,7 @@ internal object DynamicSetRuns {
     ): Plan? {
         val dynamic =
             ast.streams.mapNotNull { decl ->
-                (SymbolSetSpec.of(decl) as? SymbolSetSpec.Filtered)?.takeIf { it.dynamic }?.let { decl to it }
+                (SymbolSetSpec.of(decl) as? SymbolSetSpec.Filtered)?.takeIf { it.moves }?.let { decl to it }
             }
         if (dynamic.isEmpty()) return null
         val unions = ast.streams.mapNotNull { SymbolSetSpec.of(it) as? SymbolSetSpec.Union }
@@ -118,6 +119,19 @@ internal object DynamicSetRuns {
         return Plan(ast.copy(streams = expanded.streams, rules = rules), ast, sets)
     }
 
+    /**
+     * The rows a set reading market fields must watch at [closeMs]: every row listed then whose catalog part passes
+     * (`mayMatch`), with no `TOP` cut, since which of them rank depends on figures only the run sees.
+     */
+    private fun watchable(
+        spec: SymbolSetSpec.Filtered,
+        rows: List<InstrumentMeta>,
+        closeMs: Long,
+    ): List<String> =
+        rows
+            .filter { DynamicSetMembership.alive(it, closeMs) && spec.filter.mayMatch(it, closeMs) }
+            .map { it.qktSymbol.substringAfter(':') }
+
     private fun candidates(
         decl: StreamDecl,
         spec: SymbolSetSpec.Filtered,
@@ -130,7 +144,7 @@ internal object DynamicSetRuns {
         val picked = sortedSetOf<String>()
         var closeMs = fromMs - Math.floorMod(fromMs, windowMs)
         while (closeMs <= toMs) {
-            picked += membership.membersAt(closeMs)
+            picked += if (spec.readsMarket) watchable(spec, rows, closeMs) else membership.membersAt(closeMs)
             closeMs += windowMs
         }
         if (picked.isEmpty()) {

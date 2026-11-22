@@ -109,7 +109,7 @@ class SymbolSetSpecTest {
         refuse("EXNESS:EURUSD", "expected '{' or '*' after 'EXNESS:'")
         refuse("EXNESS", "expected ':' after the venue")
         refuse("EXNESS:* kind = spot TOP 1 BY symbol", "expected WHERE after 'EXNESS:*'")
-        refuse("X:* WHERE volume > 1 TOP 1 BY symbol", "unknown catalog field 'volume'; use symbol, kind")
+        refuse("X:* WHERE open_interest > 1 TOP 1 BY symbol", "unknown catalog field 'open_interest'; use symbol, kind")
         refuse("X:* WHERE kind spot TOP 1 BY symbol", "expected a comparison, IN or GLOB after 'kind'")
         refuse("X:* WHERE kind = spot BY symbol", "expected TOP <n> after the WHERE filter")
         refuse("X:* WHERE kind = spot TOP 0 BY symbol", "TOP needs a positive whole number, got '0'")

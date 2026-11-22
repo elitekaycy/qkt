@@ -59,7 +59,7 @@ class CatalogFieldTest {
     @Test
     fun `fields parse by name ignoring case and list their spellings`() {
         assertThat(CatalogField.parse("Contract_Size")).isEqualTo(CatalogField.CONTRACT_SIZE)
-        assertThat(CatalogField.parse("volume")).isNull()
-        assertThat(CatalogField.spellings).startsWith("symbol, kind, category").contains("dte")
+        assertThat(CatalogField.parse("open_interest")).isNull()
+        assertThat(CatalogField.spellings).startsWith("symbol, kind, category").contains("dte", "volume")
     }
 }

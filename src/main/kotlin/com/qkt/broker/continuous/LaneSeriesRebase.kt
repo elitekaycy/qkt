@@ -1,8 +1,11 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.OrderModification
+import com.qkt.broker.withLevels
 import com.qkt.bus.EventBus
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
+import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
 import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
@@ -13,8 +16,8 @@ import org.slf4j.LoggerFactory
  * (#1683, #1754).
  *
  * The engine holds each strategy's position, and each order's levels, at continuous prices: contract prices plus the
- * contract's shift as the roll history gave it. `qkt fetch --rolls` re-prices every roll from the stored bars, so a
- * rebuilt history can give the same contract another shift. A session reads it at its next start, or, running, at its
+ * contract's shift as the roll history gave it. `qkt fetch --rolls --remeasure` re-prices every roll from the stored
+ * bars, so a rebuilt history can give the same contract another shift. A session reads it at its next start, or, running, at its
  * next live roll measurement. Mapped by the new shift, every exit would book the move on top of the venue's P&L (a long
  * 0.03 whose contract's shift grew 3 points books 0.09 more than the venue paid), and every working order would be
  * sent the move away from where it rests.
@@ -23,11 +26,14 @@ import org.slf4j.LoggerFactory
  * restored after a restart ([restore]). Once the session is [active], a chain that shifts that contract differently
  * ([check]) books the move on each open position as a cost, `quantity × multiplier × (new shift − old shift)`, moves
  * each working order on the contract the same amount in the series, so its venue order stays at the contract price it
- * rests at, and maps by the chain's shift from then on. The venue's orders are left alone: they rest where the strategy
- * put them against the market it saw, and their fills now map into the series the engine marks in.
+ * rests at, and maps by the chain's shift from then on. The engine hears each order's new levels as an
+ * [BrokerEvent.OrderModified], so the engine, the lane and a recovery hold the same level. The venue's orders are left
+ * alone: they rest where the strategy put them against the market it saw, and their fills now map into the series the
+ * engine marks in.
  *
- * The lane is saved at the new shift ([save]) before the engine hears of the costs, as a roll's closes are: a restart
- * that finds the move saved books nothing, so a running session's booking is never booked again by the next start.
+ * The lane is saved at the new shift ([save]) before the engine hears of the orders and costs, as a roll's closes
+ * are: a restart that finds the move saved books nothing, so a running session's booking is never booked again by the
+ * next start.
  *
  * Only panama streams take orders ([orderRefusal]), so a position or an order only ever stands on an additive shift.
  */
@@ -102,9 +108,15 @@ internal class LaneSeriesRebase(
             now.toPlainString(),
         )
         basis = index to now
-        orders.on(index).forEach { orders.add(it.copy(request = it.request.shifted(delta))) }
+        val modified =
+            orders.on(index).mapNotNull { order ->
+                val changes = order.request.movedBy(delta) ?: return@mapNotNull null
+                orders.add(order.copy(request = order.request.withLevels(changes)))
+                BrokerEvent.OrderModified(order.request.id, order.venueId, changes, order.request.strategyId)
+            }
         moved()
         save()
+        modified.forEach(bus::publish)
         val reason = "series rebased $contract ${old.toPlainString()}->${now.toPlainString()}"
         positions
             .filterValues { it.signum() != 0 }
@@ -114,12 +126,13 @@ internal class LaneSeriesRebase(
             }
     }
 
-    /** This order with every level [delta] higher in the series. */
-    private fun OrderRequest.shifted(delta: BigDecimal): OrderRequest =
+    /** Every level of this order [delta] higher in the series; null for an order without one. */
+    private fun OrderRequest.movedBy(delta: BigDecimal): OrderModification? =
         when (this) {
-            is OrderRequest.Limit -> copy(limitPrice = limitPrice + delta)
-            is OrderRequest.Stop -> copy(stopPrice = stopPrice + delta)
-            is OrderRequest.StopLimit -> copy(stopPrice = stopPrice + delta, limitPrice = limitPrice + delta)
-            else -> this
+            is OrderRequest.Limit -> OrderModification(newLimitPrice = limitPrice + delta)
+            is OrderRequest.Stop -> OrderModification(newStopPrice = stopPrice + delta)
+            is OrderRequest.StopLimit ->
+                OrderModification(newLimitPrice = limitPrice + delta, newStopPrice = stopPrice + delta)
+            else -> null
         }
 }

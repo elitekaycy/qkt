@@ -23,8 +23,22 @@ enum class CompareOp(
 sealed interface UniverseFilter {
     val canonical: String
 
-    /** True when [meta], as of [nowMs], passes this filter. */
+    /** True when a clause reads an as-of market field ([CatalogField.market]). */
+    val readsMarket: Boolean
+
+    /** True when [meta], as of [nowMs] with market fields from [facts], passes this filter. */
     fun matches(
+        meta: InstrumentMeta,
+        nowMs: Long,
+        facts: MarketFacts = MarketFacts.NONE,
+    ): Boolean
+
+    /**
+     * True when [meta] could pass this filter at [nowMs] whatever its market figures are: the catalog part decides,
+     * and a market clause (or the negation of anything that reads one) is taken as passing. Every instrument that
+     * [matches] at [nowMs] also passes this, so it names the instruments a run must watch.
+     */
+    fun mayMatch(
         meta: InstrumentMeta,
         nowMs: Long,
     ): Boolean
@@ -37,11 +51,19 @@ sealed interface UniverseFilter {
     ) : UniverseFilter {
         override val canonical: String get() = "${this.field.token} ${op.token} ${value.canonical}"
 
+        override val readsMarket: Boolean get() = this.field.market
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = field.market || matches(meta, nowMs)
+
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
+            facts: MarketFacts,
         ): Boolean {
-            val actual = field.read(meta, nowMs) ?: return false
+            val actual = field.read(meta, nowMs, facts) ?: return false
             val sameKind = (actual is CatalogValue.Num) == (value is CatalogValue.Num)
             if (!sameKind) return op == CompareOp.NE
             val cmp = CatalogValue.ordering.compare(actual, value)
@@ -63,11 +85,19 @@ sealed interface UniverseFilter {
     ) : UniverseFilter {
         override val canonical: String get() = "${this.field.token} IN (${values.joinToString(", ") { it.canonical }})"
 
+        override val readsMarket: Boolean get() = this.field.market
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = field.market || matches(meta, nowMs)
+
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
+            facts: MarketFacts,
         ): Boolean {
-            val actual = field.read(meta, nowMs) ?: return false
+            val actual = field.read(meta, nowMs, facts) ?: return false
             return values.any { CatalogValue.same(actual, it) }
         }
     }
@@ -81,11 +111,19 @@ sealed interface UniverseFilter {
 
         override val canonical: String get() = "${this.field.token} GLOB ${CatalogValue.Str(pattern).canonical}"
 
+        override val readsMarket: Boolean get() = this.field.market
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = field.market || matches(meta, nowMs)
+
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
+            facts: MarketFacts,
         ): Boolean {
-            val actual = field.read(meta, nowMs) ?: return false
+            val actual = field.read(meta, nowMs, facts) ?: return false
             val text = if (actual is CatalogValue.Str) actual.value else (actual as CatalogValue.Num).canonical
             return regex.matches(text)
         }
@@ -96,11 +134,18 @@ sealed interface UniverseFilter {
         val right: UniverseFilter,
     ) : UniverseFilter {
         override val canonical: String get() = "(${left.canonical} AND ${right.canonical})"
+        override val readsMarket: Boolean get() = left.readsMarket || right.readsMarket
 
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
-        ): Boolean = left.matches(meta, nowMs) && right.matches(meta, nowMs)
+            facts: MarketFacts,
+        ): Boolean = left.matches(meta, nowMs, facts) && right.matches(meta, nowMs, facts)
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = left.mayMatch(meta, nowMs) && right.mayMatch(meta, nowMs)
     }
 
     data class Or(
@@ -108,21 +153,35 @@ sealed interface UniverseFilter {
         val right: UniverseFilter,
     ) : UniverseFilter {
         override val canonical: String get() = "(${left.canonical} OR ${right.canonical})"
+        override val readsMarket: Boolean get() = left.readsMarket || right.readsMarket
 
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
-        ): Boolean = left.matches(meta, nowMs) || right.matches(meta, nowMs)
+            facts: MarketFacts,
+        ): Boolean = left.matches(meta, nowMs, facts) || right.matches(meta, nowMs, facts)
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = left.mayMatch(meta, nowMs) || right.mayMatch(meta, nowMs)
     }
 
     data class Not(
         val inner: UniverseFilter,
     ) : UniverseFilter {
         override val canonical: String get() = "NOT ${inner.canonical}"
+        override val readsMarket: Boolean get() = inner.readsMarket
 
         override fun matches(
             meta: InstrumentMeta,
             nowMs: Long,
-        ): Boolean = !inner.matches(meta, nowMs)
+            facts: MarketFacts,
+        ): Boolean = !inner.matches(meta, nowMs, facts)
+
+        override fun mayMatch(
+            meta: InstrumentMeta,
+            nowMs: Long,
+        ): Boolean = inner.readsMarket || !inner.matches(meta, nowMs)
     }
 }

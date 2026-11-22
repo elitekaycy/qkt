@@ -151,7 +151,10 @@ internal class OrderWorkflows(
             ops = ops,
             positionMode = s.positionMode,
             closeGuard = closeGuard,
-        ).also { LegCloseRelease(closeGuard, ops).subscribe(s.bus) }
+        ).also {
+            LegCloseRelease(closeGuard, ops).subscribe(s.bus)
+            WorkingOrderLevels(ops, clock).subscribe(s.bus)
+        }
     private val reclamation = OrderReclamation(store, ocoGuard, siblingCancels, timeExits)
 
     override fun submit(request: OrderRequest): SubmitAck = router.submit(request)
