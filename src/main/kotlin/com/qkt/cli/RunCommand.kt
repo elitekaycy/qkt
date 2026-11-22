@@ -129,10 +129,7 @@ class RunCommand(
                 runawayMaxRoundTrips = runawayMaxRoundTrips,
                 runawayMaxRejections = runawayMaxRejections,
                 candleCloseGraceMs = candleCloseGraceMs,
-                onTrade = { trade, realized, _ ->
-                    println(tradeLogLine(trade, realized))
-                    ring.append("trade", tradeToJson(trade, realized))
-                },
+                onTrade = tradeRecorder(ring),
                 onSignal = { sig ->
                     ring.append("signal", signalToJson(sig))
                 },

@@ -6,6 +6,7 @@ import com.qkt.notify.aggregateDailySummary
 import com.qkt.observe.insights.InsightsConfig
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicReference
 
 /** The deployed strategies whose streams route to [accountName] (any case), as the broker context asks for them. */
 internal fun strategiesOnAccount(
@@ -21,6 +22,10 @@ internal fun strategiesOnAccount(
                 .values
                 .any { it.equals(accountName, ignoreCase = true) }
         }.map { it.name }
+
+/** [strategiesOnAccount] over whatever registry [registryRef] holds when the broker context asks. */
+internal fun strategiesOnAccount(registryRef: AtomicReference<StrategyRegistry?>): (String) -> List<String> =
+    { accountName -> strategiesOnAccount(registryRef.get(), accountName) }
 
 /** The `STRATEGY` names currently deployed, for the insights state poller; empty before the registry exists. */
 internal fun deployedStrategyNames(registry: StrategyRegistry?): List<String> =

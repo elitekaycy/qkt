@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
 import com.qkt.app.SessionPnl
+import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PersistenceHealthDto
@@ -24,6 +25,13 @@ internal fun tradeLogLine(
 ): String =
     "[INFO] ${Instant.ofEpochMilli(trade.timestamp)} ${trade.side} ${trade.symbol} " +
         "qty=${trade.quantity.toPlainString()} px=${trade.price.toPlainString()} realized=${realized.toPlainString()}"
+
+/** What `qkt run` does with every fill: print its console line and append it to the event ring. */
+internal fun tradeRecorder(ring: EventRing): (Trade, BigDecimal, String) -> Unit =
+    { trade, realized, _ ->
+        println(tradeLogLine(trade, realized))
+        ring.append("trade", tradeToJson(trade, realized))
+    }
 
 internal fun tradeToJson(
     trade: Trade,

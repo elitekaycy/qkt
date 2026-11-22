@@ -20,6 +20,7 @@ import com.qkt.cli.daemon.deployedStrategyNames
 import com.qkt.cli.daemon.insightsJournalDir
 import com.qkt.cli.daemon.loadDirDeployer
 import com.qkt.cli.daemon.strategiesOnAccount
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailySummaryScheduler
@@ -152,7 +153,8 @@ class DaemonCommand(
                     stateDir.stateRoot,
                     daemonInstrumentRegistry,
                     startupDeploys::underway,
-                ) { accountName -> strategiesOnAccount(registryRef.get(), accountName) }
+                    strategiesOnAccount(registryRef),
+                )
             } catch (e: Exception) {
                 DaemonLog.line("[ERROR] qkt: broker account load failed: ${e.message}")
                 runCatching { insightsSink?.close() }
@@ -467,9 +469,7 @@ class DaemonCommand(
 
     companion object {
         @Suppress("UNUSED_PARAMETER")
-        @com.qkt.common.coverage.ExcludeFromCoverage(
-            "opens the live TradingView websocket; only a running process reaches it",
-        )
+        @ExcludeFromCoverage("opens the live TradingView websocket; only a running process reaches it")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
 }

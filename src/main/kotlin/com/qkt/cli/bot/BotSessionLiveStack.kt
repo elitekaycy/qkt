@@ -8,6 +8,7 @@ import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.liveFactory
+import com.qkt.cli.liveMoneyWarning
 import com.qkt.cli.openAccounts
 import com.qkt.connectivity.AccountDirectory
 import java.nio.file.Path
@@ -47,11 +48,7 @@ internal class LiveSessionStack(
                     .fromEnv()
                     .verifyAll(accounts)
             val live = verified.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
-            com.qkt.cli
-                .liveMoneyWarning(
-                    cfg.runtimeMode,
-                    live.map { it.first.config.name },
-                )?.let { System.err.println(it) }
+            liveMoneyWarning(cfg.runtimeMode, live.map { it.first.config.name })?.let { System.err.println(it) }
             val (_, notifier, notifyEvents) = configNotifier(cfg)
             factory =
                 liveFactory(
