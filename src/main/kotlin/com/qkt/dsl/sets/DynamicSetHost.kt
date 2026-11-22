@@ -164,7 +164,10 @@ internal class DynamicSetHost(
         atMs: Long,
     ) = all().forEach { it.onPositionStateChanged(symbol, nowHeld, atMs) }
 
-    override fun clearRuleEdges() = all().forEach { it.clearRuleEdges() }
+    override fun clearRuleEdges() {
+        restore.clearEdges = true
+        all().forEach { it.clearRuleEdges() }
+    }
 
     /** Applies [evaluation] to [instances] and journals each change under the member's qkt symbol. */
     private fun apply(
@@ -174,6 +177,7 @@ internal class DynamicSetHost(
         ctx: StrategyContext,
     ) {
         instances.apply(evaluation.step, evaluation.closeMs)
+        restore.own(ctx.strategyId, set, evaluation.step)
         for (change in SetMembershipChanged.of(ctx.strategyId, set.template.set, evaluation.closeMs, evaluation.step)) {
             changes.record(change.copy(member = "${set.venue}:${change.member}"))
         }

@@ -1,6 +1,5 @@
 package com.qkt.dsl.sets
 
-import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledStrategy
 import com.qkt.dsl.compile.HubKey
@@ -9,8 +8,6 @@ import com.qkt.instrument.universe.MembershipStep
 import com.qkt.marketdata.Candle
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
-import com.qkt.strategy.WarmupSpec
-import com.qkt.strategy.WarmupStream
 
 /**
  * The live instances of one symbol set's members (runtime membership plan, step 3), driven by the membership steps
@@ -52,6 +49,7 @@ internal class SetMemberInstances(
             symbol?.let { ladder()?.neighbour(it, step, atMs) }?.takeIf { it in instances }?.let(template::alias)
         }) { instances.keys.filterNot { it in sticky }.map(template::alias) }
     private var refused = 0L
+    private val warming = MemberWarmup(hub, warmup)
 
     /** The members with a running instance, in the order they joined. */
     val members: Set<String> get() = instances.keys
@@ -110,7 +108,7 @@ internal class SetMemberInstances(
                 MembershipChange.UNAVAILABLE -> Unit
             }
         }
-        if (step.changes.isNotEmpty()) restore.own(ctx.strategyId, template.set, step.active)
+        warming.stepped()
     }
 
     private fun join(
@@ -123,38 +121,16 @@ internal class SetMemberInstances(
         }
         instance.resumeOrderIds(restore.usedIds)
         restore.persistor?.let { instance.bindStatePersistor(stateId(member), it) }
+        if (restore.clearEdges) instance.clearRuleEdges()
         instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
-        val stream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
-        val need = (instance.perStreamWarmup[stream] as? WarmupSpec.Bars)?.count ?: 0
-        for (k in instance.declaredStreams.values.toSet() + instance.retentionByKey.keys) {
-            val retention = instance.retentionByKey[k] ?: 1
-            hub.register(k, if (k == key) maxOf(retention, need) else retention, owner)
-        }
-        val held = hub.seededHistory(key)
-        if (need > held.size) {
-            val bars = warmup(key, need - held.size, warmupEndMs(held, key, closeMs))
-            if (bars.isNotEmpty()) hub.seed(key, bars)
-        }
+        warming.warm(instance, key, owner, closeMs)
         instance.bindToHubAs(owner, hub, ctx) { signal ->
             if (passes(member, signal)) emit(signal) else refuse(instance, owner, signal)
         }
         instances[member] = instance
     }
-
-    /**
-     * The latest bar end a joiner's warmup may read: the start of the oldest bar the hub holds for the stream, so
-     * fetched history only ever goes in front of it; with none held, the start of the join close's own bar, which
-     * reaches the hub as it closes (backtest and live alike, whichever comes first).
-     */
-    private fun warmupEndMs(
-        held: List<Candle>,
-        key: HubKey,
-        closeMs: Long,
-    ): Long =
-        held.firstOrNull()?.startTime
-            ?: if (closeMs == Long.MIN_VALUE) Long.MAX_VALUE else closeMs - TimeWindow.parse(key.timeframe).durationMs
 
     private fun leave(member: String) {
         instances[member]?.orderIds?.let { ids -> ids.lastIssued()?.let { retiredMarks[ids.prefix] = it } }

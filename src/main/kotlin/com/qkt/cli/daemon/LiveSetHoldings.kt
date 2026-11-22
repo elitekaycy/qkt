@@ -1,23 +1,30 @@
 package com.qkt.cli.daemon
 
+import com.qkt.cli.BacktestContext
 import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.sets.DynamicSetMembership
 import com.qkt.dsl.sets.SetCatalog
 import com.qkt.dsl.sets.SetOwnership
 import com.qkt.dsl.sets.SymbolSetSpec
+import com.qkt.instrument.InstrumentMeta
 import com.qkt.persistence.StatePersistor
 import org.slf4j.LoggerFactory
 
 /**
  * What a restarting strategy still has at the venue, and which of its moving symbol sets each part belongs to.
  *
- * - [symbols]: every symbol with an open leg or a working order in the persisted state.
- * - [bySet]: for each moving set (by alias), the bare symbols among them the set itself had as members before the
- *   restart ([SetOwnership]) and the venue still lists unexpired. A position a plain stream or another set opened is
- *   never handed to a set, e.g. set `m` owned `[A]`; holding `GW:A` and `GW:FOO` gives `m -> [A]`.
- * - [settled]: owned symbols the venue no longer lists, or lists as expired. Nothing can trade them any more (the
- *   venue settles an expired contract itself), so they are left out instead of stopping the whole restart.
+ * - [symbols]: every symbol with an open leg in the persisted state.
+ * - [bySet]: for each moving set (by alias), the bare symbols the set itself had as members before the restart
+ *   ([SetOwnership]), that the strategy still holds or has an order working on, and that the venue lists unexpired.
+ *   A position a plain stream or another set opened is never handed to a set, e.g. set `m` owned `[A]`; holding
+ *   `GW:A` and `GW:FOO` gives `m -> [A]`.
+ * - [settled]: such symbols that are proven expired: the listing shows them expired, or the expiry the set saved
+ *   for them has passed. Nothing can trade them any more (the venue settles an expired contract itself), so they
+ *   are left out instead of stopping the whole restart.
+ *
+ * A symbol a set held that the listing does not show, with no proof it expired, refuses the start: the listing may
+ * be cut short or filtered, and a live position nothing manages is worse than a start that has to be repeated.
  */
 internal class LiveSetHoldings(
     val symbols: Set<String>,
@@ -35,59 +42,64 @@ internal class LiveSetHoldings(
             nowMs: Long,
         ): LiveSetHoldings {
             val held = heldSymbols(persistor, ast.name)
+            val working = persistor.loadPendingOrders(ast.name).values.map { it.symbol }
             val settled = sortedSetOf<String>()
+            val missing = sortedSetOf<String>()
             val bySet =
                 ast.streams.filter { it.broker == SET_BROKER }.associate { decl ->
                     val spec = SymbolSetSpec.of(decl) as? SymbolSetSpec.Filtered
                     val owned = SetOwnership.load(persistor, ast.name, decl.alias).toSet()
                     val mine =
-                        held
+                        (held + working)
                             .filter { it.substringBefore(':').equals(spec?.venue, true) }
-                            .filter { it.substringAfter(':') in owned }
-                    val tradable =
-                        if (spec == null || mine.isEmpty()) emptySet() else tradable(decl.alias, spec, catalog, nowMs)
-                    settled += mine.filter { it.uppercase() !in tradable }
-                    decl.alias to mine.filter { it.uppercase() in tradable }.mapTo(sortedSetOf()) { bare(it) }
+                            .filter { bare(it) in owned }
+                    val rows = if (spec == null || mine.isEmpty()) emptyMap() else listed(decl.alias, spec, catalog)
+                    val expiries = SetOwnership.expiries(persistor, ast.name, decl.alias)
+                    val expired = { s: String -> (expiries[bare(s)] ?: Long.MAX_VALUE) <= nowMs }
+                    val live = mine.filter { s -> rows[s.uppercase()]?.let { !gone(it, nowMs) } ?: false }
+                    val over = (mine - live.toSet()).filter { rows[it.uppercase()] != null || expired(it) }
+                    settled += over
+                    missing += mine - live.toSet() - over.toSet()
+                    decl.alias to live.mapTo(sortedSetOf()) { bare(it) }
                 }
-            if (settled.isNotEmpty()) {
-                log.warn(
-                    "strategy '{}' holds {}, which the venue no longer lists unexpired; left to the venue's settlement",
-                    ast.name,
-                    settled,
+            if (missing.isNotEmpty()) {
+                throw BacktestContext.Companion.SetupError(
+                    "strategy '${ast.name}' holds ${missing.joinToString()} in a symbol set, but the venue's " +
+                        "listing does not show it and nothing proves it expired, so no rule would manage that " +
+                        "position; check the listing (or close the position) and start again",
                 )
+            }
+            if (settled.isNotEmpty()) {
+                log.warn("strategy '{}' holds {}, which expired; left to the venue's settlement", ast.name, settled)
             }
             return LiveSetHoldings(held, bySet, settled)
         }
 
-        /** The qkt symbols (upper case) [catalog] lists for the set [alias] that have not expired at [nowMs]. */
-        private fun tradable(
+        /** The rows [catalog] lists for the set [alias], by qkt symbol in upper case. */
+        private fun listed(
             alias: String,
             spec: SymbolSetSpec.Filtered,
             catalog: SetCatalog,
+        ): Map<String, InstrumentMeta> = catalog.venue(alias, spec).rows.associateBy { it.qktSymbol.uppercase() }
+
+        private fun gone(
+            row: InstrumentMeta,
             nowMs: Long,
-        ): Set<String> =
-            catalog
-                .venue(alias, spec)
-                .rows
-                .filterNot { DynamicSetMembership.expired(it, nowMs) }
-                .mapTo(HashSet()) { it.qktSymbol.uppercase() }
+        ): Boolean = DynamicSetMembership.expired(row, nowMs)
 
         private fun bare(symbol: String): String = symbol.substringAfter(':')
 
-        /** The symbols [strategyId]'s persisted state still has an open leg or a working order on. */
+        /** The symbols [strategyId]'s persisted state still has an open leg on. */
         private fun heldSymbols(
             persistor: StatePersistor,
             strategyId: String,
-        ): Set<String> {
-            val legs =
-                persistor.legBookSymbols(strategyId).filter { symbol ->
-                    persistor
-                        .loadLegBook(strategyId, symbol)
-                        ?.legs
-                        .orEmpty()
-                        .isNotEmpty()
-                }
-            return (legs + persistor.loadPendingOrders(strategyId).values.map { it.symbol }).toSortedSet()
-        }
+        ): Set<String> =
+            persistor.legBookSymbols(strategyId).filterTo(sortedSetOf()) { symbol ->
+                persistor
+                    .loadLegBook(strategyId, symbol)
+                    ?.legs
+                    .orEmpty()
+                    .isNotEmpty()
+            }
     }
 }

@@ -639,7 +639,10 @@ at that close (an event contract once it opens, any contract until it expires) a
 - **Live sessions.** A live deploy reads the venue listing once at start and declares as candidates every member any
   close of the next 24 hours picks from it; the session subscribes them all and steps the membership at each close
   with the same code as a backtest. A joining member warms from the bars the session has seen and, when those are
-  short, from the venue's history (older bars only); a candidate with short history never fails the start. A
+  short, from the venue's history, read so the series has no hole: older bars only when the session built the bar
+  that just closed, and through that bar when it did not (the first close after a start or restart, or a contract
+  subscribed while the session runs). e.g. 1h bars and a restart at 12:30: a member restored at the 12:00 close reads
+  the venue's bars up to 12:00. A candidate with short history never fails the start. A
   position the set itself held is declared at start whether or not any close picks it. Every five minutes
   the session reads the listing again and subscribes the candidates of the next 24 hours it does not feed yet, before
   they can join: a set only ever ranks contracts whose market data the session serves. A candidate whose subscription
@@ -648,24 +651,37 @@ at that close (an event contract once it opens, any contract until it expires) a
   universes yet.
 - **Live market data for later members.** Contracts subscribed after the start arrive over one extra connection,
   which the session re-opens with the contracts it still needs whenever that list grows; a contract that expired or
-  left the listing, and that the set no longer has active, is not asked for again. If that connection fails for good
+  left the listing, and that the set no longer has active, is not asked for again. A contract the venue refuses to
+  quote is left out and the others are still served, so one refused contract never blocks the rest (it is journalled
+  `UNAVAILABLE`; a held contract the venue stopped quoting is logged). If that connection fails for good
   the session stops with the reason, exactly as it does when its main feed gives up, so a held member never sits on
   stale data unnoticed. A set that ranks on market fields watches every symbol of its venue the session receives, so
   a contract subscribed later is ranked on what it has traded since. Strike neighbours follow the same listing.
 - **Restarts.** Membership is recomputed at start, never read back: a session that starts holding members of a set
   reports each ranked member as `RESTORE` with its rank and each held one outside the ranking as `RESTORE` without a
   rank (sticky: it only reduces until flat), then steps as usual. A member's order ids continue past those the restart
-  restored, and its rule edges are kept, so a rule that already fired does not fire again. A session that starts flat
-  joins its members as a fresh run does.
+  restored (also after several restarts in which it was not a member), and its rule edges are kept, so a rule that
+  already fired does not fire again; a position closed while the daemon was down clears them, for members as for
+  the strategy's own rules. A session that starts flat joins its members as a fresh run does.
 - **What a restart restores.** A set saves which members it has active. A restart restores into it only those of
   them the strategy still holds or has an entry order working on: a position a plain stream, or another set, holds on
   the same venue stays with its own rules, e.g. set `m` had `A`; holding `GW:A` and `GW:FOO` restores only `A` into
-  `m`. A held contract that has expired or left the venue's listing is not declared; the venue settles it, the
-  session logs it, and the restart goes on. A set that holds a member starts even when no close of the next 24 hours
-  picks one.
+  `m`. A held contract that is proven expired is not declared: the listing shows it expired, or the expiry the set
+  saved for it has passed; the venue settles it, the session logs it, and the restart goes on. A held contract the
+  listing does not show, with no such proof, refuses the start and names it: the listing may be cut short or
+  filtered, and a live position that no rule manages is worse than a start to repeat. A set that holds a member
+  starts even when no close of the next 24 hours picks one.
 - **Member rules live.** A session's start checks (volume for `vwap`/`obv`, marks, book sizing) cover the member
-  rules too. `STACK_AT` and exit hooks (`ON_STOP`, `ON_TP`, `ON_CLOSE`) in a rule over a moving set are refused at a
-  live start: they are tracked per strategy and a member's would never be acted on.
+  rules too. `STACK_AT`, exit hooks (`ON_STOP`, `ON_TP`, `ON_CLOSE`) and `LATCH` in a rule over a moving set are
+  refused at a live start: stacks and hooks are tracked per strategy and a member's would never be acted on, and a
+  latch hears only the candles of streams declared at the start. A moving set and a continuous futures stream
+  (`ROOT@front`) cannot share one live session yet (a roll would cut the set off from new members): the start is
+  refused; run them as two strategies.
+- **Known limits of live moving sets.** The bar in progress when a session starts is built for a member from the
+  ticks since the start: its close is exact, its open, high, low and volume are partial. A join reads venue history
+  on the engine loop and never waits for a venue whose history is behind, so a bar the venue has not published yet
+  at the instant of a join is missing for that member. Candles and rule evaluations of members are not written to
+  the audit journal, and the feed-health check watches only the symbols subscribed at the start.
 - **Limits, for now.** A dynamic set cannot be part of a union, and a cross-member function in a loop over a moving
   set ranges over that set only.
 

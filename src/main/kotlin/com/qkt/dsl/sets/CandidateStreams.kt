@@ -61,18 +61,22 @@ internal class CandidateStreams(
 
     /**
      * What a member rule uses that a live session cannot run for a moving set yet, or null: stacked entries
-     * (`STACK_AT`) and exit hooks are tracked per strategy, and a member's would never be acted on.
+     * (`STACK_AT`) and exit hooks are tracked per strategy, and a member's would never be acted on; a `LATCH` hears
+     * only the candles of streams declared at the start, so one on a member subscribed later would never confirm.
      */
     fun unsupportedLive(): String? =
         when {
             samples.any { it.multiPositionPerSymbolSymbols.isNotEmpty() } -> "STACK_AT"
             samples.any { it.exitHookReferences().isNotEmpty() } -> "an exit hook"
+            sets.any { it.template.usesLatch } -> "LATCH"
             else -> null
         }
 
     /** The candidate members (bare symbols) of the set named [set] that [outer] declares. */
-    fun declaredMembers(set: String): Set<String> =
-        keysOf(sets.first { it.template.set == set }).mapTo(HashSet()) { it.symbol }
+    fun declaredMembers(set: String): Set<String> = declared.getValue(set)
+
+    private val declared: Map<String, Set<String>> =
+        sets.associate { set -> set.template.set to keysOf(set).mapTo(HashSet()) { it.symbol } }
 
     private fun keysOf(set: HostedSet): Collection<HubKey> =
         outer.declaredStreams.filterKeys { SetMemberAlias.setOf(it) == set.template.set }.values

@@ -37,6 +37,10 @@ class DynamicSetMembership(
         rows = next
     }
 
+    /** The expiry (UTC ms) of [member] (a bare symbol) in the rows the set ranks now, or null when it has none. */
+    fun expiryOf(member: String): Long? =
+        rows.firstOrNull { it.qktSymbol.substringAfter(':') == member }?.let(::expiryMs)
+
     private val membership = SetMembership()
     private var nextCloseMs = Long.MIN_VALUE
 
@@ -172,9 +176,10 @@ class DynamicSetMembership(
         fun expired(
             meta: InstrumentMeta,
             atMs: Long,
-        ): Boolean {
-            val expiry = (CatalogField.EXPIRY_AT.read(meta, atMs) as? CatalogValue.Num)?.value?.toLong()
-            return expiry != null && atMs >= expiry
-        }
+        ): Boolean = expiryMs(meta)?.let { atMs >= it } ?: false
+
+        /** [meta]'s expiry (UTC ms), or null when it has none. */
+        fun expiryMs(meta: InstrumentMeta): Long? =
+            (CatalogField.EXPIRY_AT.read(meta, 0L) as? CatalogValue.Num)?.value?.toLong()
     }
 }

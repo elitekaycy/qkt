@@ -1,5 +1,6 @@
 package com.qkt.dsl.sets
 
+import com.qkt.instrument.universe.MembershipStep
 import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.StrategyContext
 
@@ -14,6 +15,12 @@ internal class MemberRestore {
     var marks: Map<String, Long> = emptyMap()
     var persistor: StatePersistor? = null
     var owned: Map<String, Set<String>> = emptyMap()
+
+    /**
+     * True once the session cleared the strategy's rule edges (a position closed while it was down, or an operator
+     * stop flattened it): a member that joins afterwards starts with clear edges too, instead of the ones it saved.
+     */
+    var clearEdges: Boolean = false
 
     /**
      * The members of [set] (among [declared]) a restart restores: those the set had active before and the strategy
@@ -34,12 +41,23 @@ internal class MemberRestore {
         }
     }
 
-    /** Records [members] as what [set] of [strategyId] has active now, when the session persists state. */
+    private val expiries = HashMap<String, MutableMap<String, Long>>()
+
+    /**
+     * Records what [set] has active after [step], when the session persists state and the step changed anything.
+     * Each member's expiry is saved with it while the listing gives one, and kept once it no longer does (an expired
+     * contract leaves the listing while it can still be held).
+     */
     fun own(
         strategyId: String,
-        set: String,
-        members: List<String>,
+        set: HostedSet,
+        step: MembershipStep,
     ) {
-        persistor?.let { SetOwnership.save(it, strategyId, set, members) }
+        val store = persistor?.takeIf { step.changes.isNotEmpty() } ?: return
+        val name = set.template.set
+        val known = expiries.getOrPut(name) { HashMap(SetOwnership.expiries(store, strategyId, name)) }
+        for (member in step.active) set.membership.expiryOf(member)?.let { known[member] = it }
+        known.keys.retainAll(step.active.toSet())
+        SetOwnership.save(store, strategyId, name, step.active, known)
     }
 }
