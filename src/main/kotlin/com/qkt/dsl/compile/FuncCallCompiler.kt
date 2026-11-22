@@ -7,7 +7,8 @@ import com.qkt.dsl.stdlib.FuncRegistry
 /**
  * Compiles a stdlib function call (`abs(x)`, `max(a, b)`, ...) looked up in [FuncRegistry]. Any
  * non-numeric argument makes the call [Value.Undefined]. A cross-member function already lowered over a
- * set's members compiles with set semantics ([SetFunctionCompiler]).
+ * set's members compiles with set semantics ([SetFunctionCompiler]), and one over a set whose members move reads
+ * the set's shared cross-section ([MovingSetFunctionCompiler]).
  */
 internal object FuncCallCompiler {
     fun compile(
@@ -17,6 +18,7 @@ internal object FuncCallCompiler {
     ): CompiledExpr {
         val setFunction = SetFunction.lowered(call.name)
         if (setFunction != null) return SetFunctionCompiler.compile(setFunction, call, ruleAlias, exprs)
+        SetFunction.moving(call.name)?.let { return MovingSetFunctionCompiler.compile(it, call, exprs) }
         require(FuncRegistry.has(call.name)) {
             if (SetFunction.named(call.name) == null) {
                 "Unknown function: ${call.name}"

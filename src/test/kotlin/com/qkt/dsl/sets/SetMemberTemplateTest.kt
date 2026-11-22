@@ -60,7 +60,7 @@ class SetMemberTemplateTest {
                     ranked = BACKTEST:* WHERE kind = spot TOP 3 BY symbol EVERY 1m
                 RULES
                     FOR EACH m IN both DO WHEN m.close > 0 THEN BUY m SIZING 1
-                    FOR EACH m IN ranked DO WHEN RANK_OF(m.close, ranked) = 1 THEN BUY m SIZING 1
+                    FOR EACH m IN ranked DO WHEN RANK_OF(m.close, idle) = 1 THEN BUY m SIZING 1
                 """.trimIndent(),
             )
         assertThatThrownBy { SetMemberTemplate(union, "both") }
@@ -69,7 +69,8 @@ class SetMemberTemplateTest {
             .hasMessage("symbol set 'idle' has no FOR EACH rule to run per member")
         assertThatThrownBy { SetMemberTemplate(union, "ranked") }
             .hasMessage(
-                "FOR EACH m IN ranked: cross-member functions over a set whose members change are not supported yet",
+                "FOR EACH m IN ranked: a cross-member function in a loop over a set whose members move ranges over " +
+                    "that set only, not 'idle'",
             )
     }
 }
