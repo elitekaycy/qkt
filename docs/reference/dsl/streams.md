@@ -527,6 +527,7 @@ member without naming them twice. Three forms, all in the stream position of `SY
 SYMBOLS
     <set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [WARMUP <n> BARS]      -- picked
     <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC] EVERY <timeframe>   -- filtered
+    <set>   = <VENUE>:*@<event>.<strike> WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- slot universe
     <union> = <set> + <set> [+ <set> ...]                                                 -- union
 ```
 
@@ -607,6 +608,11 @@ at that close (an event contract once it opens, any contract until it expires) a
   families, read from their event catalogs (`contracts/<VENUE>/<FAMILY>.events.json`): a contract is a row from its
   listing (`openAtMs`) until its expiry, so `KALSHI:* WHERE family = KXINXU TOP 8 BY expiry_at ASC DYNAMIC EVERY 1h`
   rolls from one hourly event's contracts to the next as they list and expire.
+- **Slot universes.** `KALSHI:*@front.p70 WHERE family GLOB "KXINXU*" TOP 5 BY expiry_at ASC EVERY 1h` filters and
+  ranks the venue's event families instead of single contracts, each read through its front contract (earliest
+  expiry, then symbol); a member is the family's slot (`KXINXU@front.p70`), followed and traded exactly as a slot
+  declared by hand ([event slots](#event-slots-kalshikxinxufrontp70)). A family is a candidate while a contract of
+  it is listed and unexpired. A slot universe always moves, and cannot read market fields yet.
 - **Warmup.** A joining member reads the history the run already holds for its stream: a backtest declares every
   member some close of the run picks (printed as `symbol set 'm': DYNAMIC over 4 candidate(s): ...`) and keeps each
   one's last bars, as many as the member's indicators or `WARMUP` need, so a member that joins late is warm at once.
@@ -642,8 +648,7 @@ false. `WHERE`, `TOP`, `GLOB`, `ASC`, `DESC` and `DYNAMIC` are words with meanin
 
 A set that filters or ranks on `close`, `volume` or `spread` always moves, with or without `DYNAMIC`: its members are
 re-evaluated at each close ([members that join and leave](#members-that-join-and-leave)). An instrument with no
-figure yet reads null, so it fails comparisons and ranks last. `open_interest` and event-slot universes
-(`KALSHI:*@front.p70 WHERE ...`) are not in this vocabulary yet. `qkt bot universe "<spec>"` lists what a spec
+figure yet reads null, so it fails comparisons and ranks last. `open_interest` is not in this vocabulary yet. `qkt bot universe "<spec>"` lists what a spec
 resolves to ([bot CLI](../bot-cli.md#universe)).
 
 ## Synchronizing streams

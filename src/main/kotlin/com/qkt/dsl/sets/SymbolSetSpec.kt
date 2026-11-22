@@ -31,7 +31,9 @@ sealed interface SymbolSetSpec {
     }
 
     /**
-     * `VENUE:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]`: the venue's catalog, filtered and ranked.
+     * `VENUE:*[@<event>.<strike>] WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]`: the venue's catalog,
+     * filtered and ranked. With a [slot] (`front.p70`) it is a slot universe: the filter and ranking run over the
+     * venue's event families (each read through its front contract) and each member is that family's slot.
      * Resolved once at start, unless it [moves]: then re-evaluated at each close of the set's `EVERY` window as of
      * that close, members joining and leaving during the run (runtime membership plan, steps 4-5).
      */
@@ -42,6 +44,7 @@ sealed interface SymbolSetSpec {
         val by: CatalogField,
         val descending: Boolean,
         val dynamic: Boolean,
+        val slot: String? = null,
     ) : SymbolSetSpec {
         init {
             require(top > 0) { "TOP must be a positive count: $top" }
@@ -50,13 +53,16 @@ sealed interface SymbolSetSpec {
         /** True when the set reads an as-of market field (`close`, `volume`, `spread`) to filter or rank. */
         val readsMarket: Boolean get() = filter.readsMarket || by.market
 
-        /** True when the members change during a run: [dynamic], or reading market fields, which only move. */
-        val moves: Boolean get() = dynamic || readsMarket
+        /**
+         * True when the members change during a run: [dynamic], reading market fields, or a slot universe ([slot]),
+         * whose families come and go with their events.
+         */
+        val moves: Boolean get() = dynamic || readsMarket || slot != null
 
         override val canonical: String
             get() =
-                "$venue:* WHERE ${filter.canonical} TOP $top BY ${by.token} ${if (descending) "DESC" else "ASC"}" +
-                    if (dynamic) " DYNAMIC" else ""
+                "$venue:*${slot?.let { "@$it" }.orEmpty()} WHERE ${filter.canonical} TOP $top BY ${by.token} " +
+                    (if (descending) "DESC" else "ASC") + if (dynamic) " DYNAMIC" else ""
     }
 
     /** `a + b`: the members of sets declared above, each keeping its own venue. */
