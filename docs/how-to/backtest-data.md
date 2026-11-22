@@ -246,6 +246,7 @@ futures:
 ```bash
 qkt fetch BINANCE_UM:BTCUSDT --rolls   # fetches missing roll days, writes contracts/BINANCE_UM/BTCUSDT.rolls.json
 qkt fetch CME:CL --rolls --tf 1d       # a root with only daily bars, e.g. from a vendor archive
+qkt fetch CME:CL --rolls --remeasure   # price every roll again (moves a live session's series)
 ```
 
 Each roll is priced at each contract's last stored bar (fetched, or built into the binary store)
@@ -254,9 +255,12 @@ most). Daily bars are looked for over the week before the roll, so a Monday roll
 bar source for the venue; otherwise the history is measured from what is stored. Only rolls whose
 minute has passed are recorded: a roll still ahead is left out (the report counts it), so no record is
 priced from the bars before it. A live session prices the rolls it adds from 1m bars, at their minute,
-and takes no record dated after it started. A rebuild keeps a record already in the history for a
-roll the stored bars cannot price, such as one a live session measured from its venue's bars, so the
-history never ends before a roll live traded on.
+and takes no record dated after it started. A later fetch keeps every record already in the history,
+including those a live session measured from its venue's bars, and only appends rolls after the last
+one: it never re-prices a roll a session traded on, nor adds one before the first (which would shift
+every contract). `--remeasure` prices every roll the stored bars can again, keeping a record they cannot
+price; a session running on the root then books the move as a `cost:series rebased` on its open
+positions, and its strategies see the series jump.
 
 A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
 contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that

@@ -27,7 +27,9 @@ import java.time.ZoneOffset
  * (default 1m; a root with only daily bars, as a vendor archive gives them, uses `--tf 1d`), fetched or
  * built ([RollBars]), fetching the roll days it cannot price through [fetchDay], and writes
  * `contracts/<VENUE>/<ROOT>.rolls.json`. Only rolls that have passed are measured ([RollPricing.hasPassed]): a roll
- * still ahead is priced at its own minute by the live session that reaches it, or by a later fetch.
+ * still ahead is priced at its own minute by the live session that reaches it, or by a later fetch. A history already
+ * there keeps its records and gains only the rolls after them ([RollHistoryBuilder]); `--remeasure` prices them all
+ * again, and warns that a session running on the root books the move as a series rebase.
  */
 internal object RollsFetch {
     private const val DEFAULT_TIMEFRAME = "1m"
@@ -53,7 +55,8 @@ internal object RollsFetch {
         val store = LocalBarStore(root = dataRoot)
         val fetcher = lazy { buildFetcher(broker, args.option("config")).also { if (it == null) noSource(broker) } }
         val now = SystemClock().now()
-        return run(target, dataRoot, args.option("instruments")?.let(Path::of), timeframe, now) { contract, day ->
+        val instruments = args.option("instruments")?.let(Path::of)
+        return run(target, dataRoot, instruments, timeframe, now, args.flag("remeasure")) { contract, day ->
             fetcher.value?.let { fetchOneDay(it, store, broker, contract, day, timeframe) }
         }
     }
@@ -133,6 +136,7 @@ internal object RollsFetch {
             }
         }
         val known = RollHistoryStore(dataRoot).read(target)?.takeIf { it.policy == policy.key }
+        if (remeasure) remeasuring(target)
         val history = RollHistoryBuilder(timeframe.durationMs, nowMs, known, remeasure, bars).build(root, catalog)
         RollHistoryStore(dataRoot).write(history)
         report(target, schedule, passed, history, RollHistoryStore(dataRoot).path(target))
@@ -161,6 +165,12 @@ internal object RollsFetch {
         val pair = "${schedule.contracts[gap.fromIndex].symbol} -> ${schedule.contracts[gap.toIndex].symbol}"
         println("  starts after the ${Instant.ofEpochMilli(gap.atMs)} roll ($pair), which could not be measured")
     }
+
+    private fun remeasuring(target: String) =
+        System.err.println(
+            "qkt fetch: --remeasure prices every roll of $target again from the stored bars; a session running on " +
+                "it books any move as a series rebase on its open positions (cost:series rebased)",
+        )
 
     private fun failed(
         target: String,
