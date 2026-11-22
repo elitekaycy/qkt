@@ -102,7 +102,8 @@ class StrategyHandleMovingSetTest {
             tmp.resolve("stacked.qkt").also {
                 val rule = "BUY s SIZING 1"
                 val text = strategy().toFile().readText()
-                Files.writeString(it, text.replace(rule, "$rule\n        STACK_AT MFE >= 50 WITHIN 30m SIZING 1"))
+                val stack = "STACK_AT MFE >= 50 WITHIN 30m SIZING 1 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 20 }"
+                Files.writeString(it, text.replace(rule, "$rule\n        $stack"))
             }
         assertThatThrownBy { liveStrategy(file, listing, now, FileStatePersistor(tmp.resolve("p4"))) }
             .hasMessageContaining("a rule over a symbol set whose members move uses STACK_AT")
