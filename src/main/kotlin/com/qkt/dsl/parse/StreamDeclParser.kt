@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.sets.SetSpecParser
+import com.qkt.dsl.sets.atLadderSet
 import com.qkt.instrument.ContinuousSelector
 
 /**
@@ -37,9 +38,9 @@ internal class StreamDeclParser(
             }
         }
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
-        // A symbol set (`{A, B}` or `* WHERE ...`) is a SET: stream whose symbol is the set's canonical spec.
+        // A symbol set (`{A, B}`, `* WHERE ...`, `KXS@front.* WHERE ...`) is a SET: stream whose symbol is its spec.
         val set =
-            if (cursor.peek().kind == TokenKind.LBRACE || cursor.peek().kind == TokenKind.STAR) {
+            if (cursor.peek().kind in SET_OPENERS || cursor.atLadderSet()) {
                 SetSpecParser(cursor).parseVenueSet(broker)
             } else {
                 null
@@ -158,3 +159,6 @@ internal class StreamDeclParser(
         return SeriesDecl(alias = alias, source = source, timeframe = timeframe)
     }
 }
+
+/** The tokens that open a symbol set right after `VENUE:`: a picked list or a filtered universe. */
+private val SET_OPENERS = setOf(TokenKind.LBRACE, TokenKind.STAR)

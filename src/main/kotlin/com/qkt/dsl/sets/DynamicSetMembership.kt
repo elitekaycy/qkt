@@ -55,6 +55,10 @@ class DynamicSetMembership(
     ): List<String> {
         val alive = rows.filter { alive(it, closeMs) }
         val slot = spec.slot ?: return rank(alive, closeMs, facts).map { it.qktSymbol.substringAfter(':') }
+        if (spec.ladder) {
+            val ladder = SlotUniverse.ladder(alive, spec.venue, spec.family, slot, closeMs)
+            return rank(ladder, closeMs, facts).map { it.qktSymbol.substringAfter(':') }
+        }
         val fronts = SlotUniverse.fronts(alive)
         return rank(fronts.keys.toList(), closeMs, facts).map { SlotUniverse.member(fronts.getValue(it), slot) }
     }
