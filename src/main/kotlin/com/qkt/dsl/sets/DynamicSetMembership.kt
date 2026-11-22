@@ -17,11 +17,26 @@ import com.qkt.instrument.universe.UniverseResolver
  * members, so a backtest replays it exactly and a live run steps alike.
  */
 class DynamicSetMembership(
-    private val spec: SymbolSetSpec.Filtered,
-    /** The catalog rows the set ranks; the event contracts among them also give its strike ladders. */
-    val rows: List<InstrumentMeta>,
+    val spec: SymbolSetSpec.Filtered,
+    listed: List<InstrumentMeta>,
     val windowMs: Long,
 ) {
+    /**
+     * The catalog rows the set ranks; the event contracts among them also give its strike ladders. A live session
+     * replaces them as it subscribes more ([list]).
+     */
+    @Volatile
+    var rows: List<InstrumentMeta> = listed
+        private set
+
+    /**
+     * Ranks only [next] from now on: a live session lists the venue rows whose market data it serves, so a member is
+     * never picked that the session cannot feed. Safe from another thread; the next evaluation reads the new rows.
+     */
+    fun list(next: List<InstrumentMeta>) {
+        rows = next
+    }
+
     private val membership = SetMembership()
     private var nextCloseMs = Long.MIN_VALUE
 
@@ -105,6 +120,37 @@ class DynamicSetMembership(
     )
 
     companion object {
+        /**
+         * Every member some close of a [windowMs] window in [fromMs]..[toMs] picks from [rows] for [spec], in symbol
+         * order: for a set reading market fields, every row listed then whose catalog part may pass ([watchable]),
+         * since which rank depends on figures only the run sees.
+         */
+        fun candidatesOver(
+            spec: SymbolSetSpec.Filtered,
+            rows: List<InstrumentMeta>,
+            windowMs: Long,
+            fromMs: Long,
+            toMs: Long,
+        ): List<String> {
+            val membership = DynamicSetMembership(spec, rows, windowMs)
+            val picked = sortedSetOf<String>()
+            var closeMs = fromMs - Math.floorMod(fromMs, windowMs)
+            while (closeMs <= toMs) {
+                picked += if (spec.readsMarket) watchable(spec, rows, closeMs) else membership.membersAt(closeMs)
+                closeMs += windowMs
+            }
+            return picked.toList()
+        }
+
+        private fun watchable(
+            spec: SymbolSetSpec.Filtered,
+            rows: List<InstrumentMeta>,
+            closeMs: Long,
+        ): List<String> =
+            rows
+                .filter { alive(it, closeMs) && spec.filter.mayMatch(it, closeMs) }
+                .map { it.qktSymbol.substringAfter(':') }
+
         /**
          * Whether [meta] is listed at [atMs]: an event contract once it opened, any contract until it expires (a row
          * without an expiry never does). The catalog's own rows are what was listed; nothing else is inferred.

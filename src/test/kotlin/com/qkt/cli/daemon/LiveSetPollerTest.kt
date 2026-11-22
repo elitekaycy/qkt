@@ -54,7 +54,10 @@ class LiveSetPollerTest {
             },
         )
 
-    private fun membersAt(minute: Int): List<String> = host.hosted.single().membership.membersAt(T0 + minute * MINUTE)
+    private fun membersAt(minute: Int): List<String> {
+        val membership = host.hosted.single().membership
+        return membership.membersAt(T0 + minute * MINUTE)
+    }
 
     @Test
     fun `a poll subscribes the next candidates before they can join, and lists only what is fed`() {

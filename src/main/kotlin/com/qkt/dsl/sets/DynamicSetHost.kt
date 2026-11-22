@@ -10,6 +10,7 @@ import com.qkt.dsl.compile.HubKey
 import com.qkt.events.Event
 import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.universe.MarketFacts
+import com.qkt.instrument.universe.MembershipChange.UNAVAILABLE
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
@@ -52,7 +53,7 @@ internal class DynamicSetHost(
     private val journal: (SetMembershipChanged) -> Unit = {},
 ) : DslCompiledStrategy by outer,
     PerStreamWarmable {
-    private var publish: (Event) -> Unit = {}
+    private val changes = MembershipJournal(journal)
     private var running: List<Pair<HostedSet, SetMemberInstances>> = emptyList()
 
     /** Every candidate member's stream, with what a member instance asks of it. */
@@ -83,9 +84,32 @@ internal class DynamicSetHost(
                 .mapNotNull { (key, needs) -> needs.warmup?.let { stream(key) to it } }
                 .toMap()
 
+    /** The sets this strategy runs, for a live session that keeps their rows to what it can feed. */
+    val hosted: List<HostedSet> get() = sets
+
+    /** Wraps the session's market source when the strategy needs more of it (a live set's subscriptions); or none. */
+    var sourceDecorator: ((MarketSource) -> MarketSource)? = null
+
     /** Publish each membership change through [publish] (the pipeline's bus) from now on. */
     fun journalTo(publish: (Event) -> Unit) {
-        this.publish = publish
+        changes.publish = publish
+    }
+
+    /** The candidate members (bare symbols) of [set] the strategy declared at start. */
+    fun declaredMembers(set: String): Set<String> =
+        keysOf(sets.first { it.template.set == set }).mapTo(HashSet()) { it.symbol }
+
+    /**
+     * Journals that [members] of [set] could not be subscribed at [atMs], so they never join: safe from another
+     * thread, published at the next tick with the run's other membership changes.
+     */
+    fun unavailable(
+        set: String,
+        members: Collection<String>,
+        atMs: Long,
+    ) {
+        val venue = sets.first { it.template.set == set }.venue
+        members.forEach { changes.later(SetMembershipChanged("", set, "$venue:$it", UNAVAILABLE, null, atMs)) }
     }
 
     override fun bindToHub(
@@ -108,6 +132,7 @@ internal class DynamicSetHost(
         emit: (Signal) -> Unit,
     ) {
         outer.onTick(tick, ctx, emit)
+        changes.drain(ctx.strategyId)
         for ((set, instances) in running) {
             val watch = watched[set]
             set.membership
@@ -149,9 +174,7 @@ internal class DynamicSetHost(
     ) {
         instances.apply(evaluation.step, evaluation.closeMs)
         for (change in SetMembershipChanged.of(ctx.strategyId, set.template.set, evaluation.closeMs, evaluation.step)) {
-            val event = change.copy(member = "${set.venue}:${change.member}")
-            publish(event)
-            journal(event)
+            changes.record(change.copy(member = "${set.venue}:${change.member}"))
         }
     }
 

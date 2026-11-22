@@ -3,13 +3,17 @@ package com.qkt.cli.daemon
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.DynamicSetRuns
 import com.qkt.cli.SymbolSetResolution
+import com.qkt.common.SystemClock
 import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.dsl.sets.DynamicSetHost
 import com.qkt.dsl.sets.SetCatalog
 import com.qkt.dsl.sets.SymbolSetSpec
+import com.qkt.marketdata.source.ExpandableLiveSource
+import com.qkt.marketdata.source.MarketSource
 import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.Strategy
 import java.nio.file.Path
@@ -28,8 +32,40 @@ internal fun liveStrategy(
     persistor: StatePersistor,
 ): Pair<StrategyAst, Strategy> {
     val sets = liveSets(file, symbolSets, nowMs, persistor)
-    return sets.ast to (sets.plan?.strategy(emptyMap(), live = true) ?: AstCompiler().compile(sets.ast))
+    val plan = sets.plan ?: return sets.ast to AstCompiler().compile(sets.ast)
+    val host = plan.strategy(emptyMap(), live = true) as DynamicSetHost
+    val catalog = requireNotNull(symbolSets)
+    host.sourceDecorator = { source -> liveSetSource(host, catalog, source) }
+    return sets.ast to host
 }
+
+/** How often a live session reads its moving sets' listings again. */
+internal const val LIVE_SET_POLL_MS: Long = 5L * 60 * 1000
+
+/**
+ * [source] as a live session with moving sets reads it: a feed that takes more symbols while it runs, and a
+ * [LiveSetPoller] over [catalog] every [LIVE_SET_POLL_MS] that subscribes new candidates before they can join,
+ * stopped when the feed closes.
+ */
+internal fun liveSetSource(
+    host: DynamicSetHost,
+    catalog: SetCatalog,
+    source: MarketSource,
+): MarketSource {
+    var stop = AutoCloseable {}
+    val expandable = ExpandableLiveSource(source) { stop.close() }
+    stop = LiveSetPoller(host, catalog, expandable::subscribe).start(LIVE_SET_POLL_MS, SystemClock())
+    return expandable
+}
+
+/** [source] wrapped by every strategy of [strategies] that needs more of it ([DynamicSetHost.sourceDecorator]). */
+internal fun decoratedSource(
+    strategies: List<Pair<String, Strategy>>,
+    source: MarketSource,
+): MarketSource =
+    strategies
+        .mapNotNull { (it.second as? DynamicSetHost)?.sourceDecorator }
+        .fold(source) { wrapped, decorate -> decorate(wrapped) }
 
 /** The strategy [liveStrategy] declares. */
 internal fun liveStrategyAst(
@@ -62,6 +98,15 @@ private fun liveSets(
         }
     val catalog = symbolSets ?: return DynamicSetRuns.Sets(ast, null)
     val resolved = SymbolSetResolution.resolve(ast, catalog, nowMs, false, keepDynamic = true)
+    val slots =
+        resolved.streams.firstOrNull { decl ->
+            (SymbolSetSpec.of(decl) as? SymbolSetSpec.Filtered)?.let { it.slot != null && !it.ladder } == true
+        }
+    if (slots != null) {
+        throw BacktestContext.Companion.SetupError(
+            "symbol set '${slots.alias}' is a slot universe, which live sessions do not run yet; backtest it",
+        )
+    }
     val plan = DynamicSetRuns.plan(resolved, catalog, nowMs, nowMs + LIVE_CANDIDATE_HORIZON_MS, false)
     val declared = plan?.ast ?: resolved
     requireHeldMembersKept(ast, declared, heldSymbols(persistor, ast.name))

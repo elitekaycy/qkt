@@ -40,7 +40,7 @@ internal fun StrategyHandle.RealFactory.startPipeline(
                     .DaemonEntryBlock(maxDailyLoss, daemonRisk),
             ),
         haltRules = haltRules,
-        source = marketSourceProvider(feedSymbols),
+        source = decoratedSource(strategies, marketSourceProvider(feedSymbols)),
         symbols = symbols,
         feedSymbols = feedSymbols,
         candleWindow = candleWindow,

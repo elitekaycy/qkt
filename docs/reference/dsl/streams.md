@@ -640,8 +640,11 @@ at that close (an event contract once it opens, any contract until it expires) a
   close of the next 24 hours picks from it; the session subscribes them all and steps the membership at each close
   with the same code as a backtest. A joining member warms from the bars the session has seen and, when those are
   short, from the venue's history (older bars only); a candidate with short history never fails the start. A held
-  symbol that is still a candidate keeps the start; one that no close picks any more refuses it. Listings added after
-  the start, and restoring membership across a restart, come with the next slices.
+  symbol that is still a candidate keeps the start; one that no close picks any more refuses it. Every five minutes
+  the session reads the listing again and subscribes the candidates of the next 24 hours it does not feed yet, before
+  they can join: a set only ever ranks contracts whose market data the session serves. A candidate whose subscription
+  fails never joins; the session logs it and journals an `UNAVAILABLE` membership change. Live sessions do not run
+  slot universes yet. Restoring membership across a restart comes with the next slice.
 - **Limits, for now.** A dynamic set cannot be part of a union, and a cross-member function in a loop over a moving
   set ranges over that set only.
 

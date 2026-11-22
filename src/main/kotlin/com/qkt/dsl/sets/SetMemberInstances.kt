@@ -84,6 +84,7 @@ internal class SetMemberInstances(
                 MembershipChange.LEAVE, MembershipChange.RELEASE -> leave(change.member)
                 MembershipChange.STICK -> sticky += change.member
                 MembershipChange.STAY -> sticky -= change.member
+                MembershipChange.UNAVAILABLE -> Unit
             }
         }
     }
