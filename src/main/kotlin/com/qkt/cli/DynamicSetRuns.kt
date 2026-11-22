@@ -109,6 +109,12 @@ internal object DynamicSetRuns {
                 "symbol set '${unioned.first.alias}' is DYNAMIC, so it cannot be part of a union",
             )
         }
+        val marketSlots = dynamic.firstOrNull { (_, spec) -> spec.slot != null && spec.readsMarket }
+        if (marketSlots != null) {
+            throw BacktestContext.Companion.SetupError(
+                "symbol set '${marketSlots.first.alias}' is a slot universe, which cannot read market fields yet",
+            )
+        }
         val sets =
             dynamic.map { (decl, spec) ->
                 Triple(decl, spec, SymbolSetResolution.rows(decl.alias, spec, catalog, survivorshipAccepted).rows)

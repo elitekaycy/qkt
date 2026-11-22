@@ -42,6 +42,18 @@ internal class SetMemberInstances(
     /** The running instances, in the order their members joined. */
     val compiled: Collection<CompiledStrategy> get() = instances.values
 
+    /**
+     * Whether [member]'s instance holds a contract through an event slot it trades ([CompiledStrategy.slotBooks]): a
+     * slot universe's member holds the contracts its slot opened, never the slot symbol itself.
+     */
+    fun holdsThroughSlot(
+        member: String,
+        nowMs: Long,
+    ): Boolean {
+        val books = instances[member]?.slotBooks ?: return false
+        return books.total(ctx, template.alias(member), nowMs).signum() != 0
+    }
+
     /** Whether [member] is sticky: held while out of the ranking. */
     fun isSticky(member: String): Boolean = member in sticky
 
