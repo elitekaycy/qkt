@@ -61,7 +61,7 @@ class PortfolioDeployFailureRoutesTest : DaemonRouteFixture() {
             Files.writeString(
                 it,
                 "PORTFOLIO book VERSION 1 $capital\nSYMBOLS\n    x = BACKTEST:X EVERY 1m\n" +
-                    "IMPORT 'child.qkt' AS child\nRULES\n    RUN child\n",
+                    "IMPORT 'child.qkt' AS child\nRULES\n    RUN child${if (capital.isEmpty()) "" else " WEIGHT 1.0"}\n",
             )
         }
     }
@@ -85,7 +85,8 @@ class PortfolioDeployFailureRoutesTest : DaemonRouteFixture() {
     fun `a resync the deployer refuses is a bad request`() {
         val registry = registry(stateDir)
         val p = plane(registry, stateDir, portfolioDeployer = deployer())
-        post(p, "/deploy", body("book", book("book.qkt")))
+        val (deployCode, deployed) = post(p, "/deploy", body("book", book("book.qkt")))
+        assertThat(deployCode).describedAs(deployed).isEqualTo(200)
 
         val (limitCode, limit) = post(p, "/resync", body("book", book("nocap.qkt", capital = "")))
         post(p, "/stop/book?flatten=false")
