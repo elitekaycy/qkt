@@ -8,6 +8,7 @@ import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.OrderIdMarks
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.events.OrderEvent
@@ -101,5 +102,36 @@ class OrderIdResumptionTest {
 
         assertThat(strategy.orderIds!!.next()).isEqualTo("dsl-ids_dsl--0")
         assertThat(session.next()).isEqualTo("ORD-ids_dsl-0")
+    }
+
+    /** A strategy with a second generator (a set member's), whose marks it reports and resumes itself. */
+    private class Marked(
+        inner: DslCompiledStrategy,
+    ) : DslCompiledStrategy by inner,
+        OrderIdMarks {
+        val member = SequentialIdGenerator(prefix = "dsl-ids_dsl.s.A-")
+
+        override fun orderIdMarks(): Map<String, Long> =
+            member.lastIssued()?.let { mapOf(member.prefix to it) }.orEmpty()
+
+        override fun resumeOrderIdMarks(marks: Map<String, Long>) {
+            marks[member.prefix]?.let(member::resumeAfter)
+        }
+    }
+
+    @Test
+    fun `a strategy with more generators keeps every one of them past what it sent across a restart`(
+        @TempDir state: Path,
+    ) {
+        val before = Marked(compile())
+        val bus = restore(state, before, SequentialIdGenerator.forSession(listOf("ids_dsl")))
+        val sent = (1..2).map { before.member.next() }
+        bus.publish(submitted(sent.last()))
+
+        val after = Marked(compile())
+        restore(state, after, SequentialIdGenerator.forSession(listOf("ids_dsl")))
+
+        assertThat(sent).containsExactly("dsl-ids_dsl.s.A--0", "dsl-ids_dsl.s.A--1")
+        assertThat(after.member.next()).isEqualTo("dsl-ids_dsl.s.A--2")
     }
 }

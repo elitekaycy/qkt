@@ -66,4 +66,16 @@ class DynamicSetRestoreTest {
         host.onTick(Tick("BACKTEST:C", BigDecimal("99"), T0 + 4 * MINUTE), ctx) {}
         assertThat(journal.map { it.change }).containsOnly(MembershipChange.JOIN)
     }
+
+    @Test
+    fun `a host resumes its members past the order-id marks a restart restored, and reports them`() {
+        val host = DynamicSetFixtures.plan().strategy(emptyMap(), live = true) as DynamicSetHost
+        host.resumeOrderIdMarks(mapOf("dsl-rotation.s.A-" to 4L))
+        val ctx = testStrategyContext(strategyId = "rotation")
+        val hub = CandleHub()
+        for (k in host.declaredStreams.values.toSet() + host.retentionByKey.keys) hub.register(k, 1, "rotation")
+        host.bindToHub(hub, ctx) {}
+        host.onTick(Tick("BACKTEST:A", BigDecimal("101"), T0), ctx) {}
+        assertThat(host.orderIdMarks()).containsEntry("dsl-rotation.s.A-", 4L)
+    }
 }
