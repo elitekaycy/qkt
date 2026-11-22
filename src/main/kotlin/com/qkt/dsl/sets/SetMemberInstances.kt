@@ -110,6 +110,7 @@ internal class SetMemberInstances(
                 MembershipChange.UNAVAILABLE -> Unit
             }
         }
+        if (step.changes.isNotEmpty()) restore.own(ctx.strategyId, template.set, step.active)
     }
 
     private fun join(

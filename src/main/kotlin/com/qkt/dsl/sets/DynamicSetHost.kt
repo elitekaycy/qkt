@@ -56,6 +56,15 @@ internal class DynamicSetHost(
 
     override val perStreamWarmup: Map<WarmupStream, WarmupSpec> get() = streams.perStreamWarmup
 
+    override val volumeRequiringSymbols: Set<String> get() = streams.volumeRequiringSymbols
+
+    override val markSymbols: Set<String> get() = streams.markSymbols
+
+    override val usesBookSizing: Boolean get() = streams.usesBookSizing
+
+    /** What a member rule uses that a live session cannot run for a moving set yet, or null. */
+    fun unsupportedLive(): String? = streams.unsupportedLive()
+
     /** The sets this strategy runs, for a live session that keeps their rows to what it can feed. */
     val hosted: List<HostedSet> get() = sets
 
@@ -102,7 +111,8 @@ internal class DynamicSetHost(
         changes.drain(ctx.strategyId)
         for ((set, instances) in running) {
             val watch = streams.watched[set]
-            val atStart = if (started.add(set)) heldAtStart(set, ctx) else emptySet()
+            val declared = declaredMembers(set.template.set)
+            val atStart = if (started.add(set)) restore.heldAtStart(set, declared, ctx) else emptySet()
             set.membership
                 .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }, atStart.isNotEmpty()) {
                     atStart.ifEmpty { instances.held(set.venue) }
@@ -117,6 +127,8 @@ internal class DynamicSetHost(
         persistor: StatePersistor,
     ) {
         restore.persistor = persistor
+        val names = sets.map { it.template.set }
+        restore.owned = names.associateWith { SetOwnership.load(persistor, strategyId, it).toSet() }
         outer.bindStatePersistor(strategyId, persistor)
     }
 
@@ -131,16 +143,6 @@ internal class DynamicSetHost(
 
     override fun orderIdMarks(): Map<String, Long> =
         running.fold(emptyMap()) { marks, (_, instances) -> marks + instances.idMarks() }
-
-    /** The declared members of [set] the strategy holds when it starts: a restart's positions, restored sticky. */
-    private fun heldAtStart(
-        set: HostedSet,
-        ctx: StrategyContext,
-    ): Set<String> =
-        declaredMembers(set.template.set).filterTo(HashSet()) {
-            val position = ctx.positions.positionFor("${set.venue}:$it")
-            (position?.quantity?.signum() ?: 0) != 0
-        }
 
     override fun onOrderSubmitted(
         signal: Signal,

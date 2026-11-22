@@ -35,6 +35,12 @@ internal fun liveStrategy(
     val sets = liveSets(file, symbolSets, nowMs, persistor)
     val plan = sets.plan ?: return sets.ast to AstCompiler().compile(sets.ast)
     val host = plan.strategy(emptyMap(), live = true) as DynamicSetHost
+    host.unsupportedLive()?.let {
+        throw BacktestContext.Companion.SetupError(
+            "strategy '${sets.ast.name}': a rule over a symbol set whose members move uses $it, which live " +
+                "sessions do not run for such a set yet",
+        )
+    }
     val catalog = requireNotNull(symbolSets)
     host.sourceDecorator = { source -> liveSetSource(host, catalog, source) }
     return sets.ast to host
@@ -117,27 +123,13 @@ private fun liveSets(
         )
     }
     // A restart keeps every position a moving set held: it is declared as a candidate and restored as a sticky member.
-    val held = heldSymbols(persistor, ast.name)
-    val plan = DynamicSetRuns.plan(resolved, catalog, nowMs, nowMs + LIVE_CANDIDATE_HORIZON_MS, false, held = held)
+    val held = LiveSetHoldings.of(resolved, catalog, persistor, nowMs)
+    val toMs = nowMs + LIVE_CANDIDATE_HORIZON_MS
+    val plan = DynamicSetRuns.plan(resolved, catalog, nowMs, toMs, false, held = held.bySet)
     val declared = plan?.ast ?: resolved
-    requireHeldMembersKept(ast, declared, held)
+    requireHeldMembersKept(ast, declared, held.symbols - held.settled)
     return DynamicSetRuns.Sets(declared, plan)
 }
-
-/** The symbols [strategyId]'s persisted leg books still hold an open leg on. */
-private fun heldSymbols(
-    persistor: StatePersistor,
-    strategyId: String,
-): Set<String> =
-    persistor
-        .legBookSymbols(strategyId)
-        .filterTo(sortedSetOf()) { symbol ->
-            persistor
-                .loadLegBook(strategyId, symbol)
-                ?.legs
-                .orEmpty()
-                .isNotEmpty()
-        }
 
 /**
  * Refuses a live start that would leave a held position with no rule: a symbol on a filtered set's venue that

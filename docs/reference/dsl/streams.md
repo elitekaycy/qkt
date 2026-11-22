@@ -639,8 +639,8 @@ at that close (an event contract once it opens, any contract until it expires) a
 - **Live sessions.** A live deploy reads the venue listing once at start and declares as candidates every member any
   close of the next 24 hours picks from it; the session subscribes them all and steps the membership at each close
   with the same code as a backtest. A joining member warms from the bars the session has seen and, when those are
-  short, from the venue's history (older bars only); a candidate with short history never fails the start. A held
-  position on the set's venue is declared at start whether or not any close picks it. Every five minutes
+  short, from the venue's history (older bars only); a candidate with short history never fails the start. A
+  position the set itself held is declared at start whether or not any close picks it. Every five minutes
   the session reads the listing again and subscribes the candidates of the next 24 hours it does not feed yet, before
   they can join: a set only ever ranks contracts whose market data the session serves. A candidate whose subscription
   fails never joins; the session logs it and journals an `UNAVAILABLE` membership change once, and tries again at
@@ -655,7 +655,17 @@ at that close (an event contract once it opens, any contract until it expires) a
 - **Restarts.** Membership is recomputed at start, never read back: a session that starts holding members of a set
   reports each ranked member as `RESTORE` with its rank and each held one outside the ranking as `RESTORE` without a
   rank (sticky: it only reduces until flat), then steps as usual. A member's order ids continue past those the restart
-  restored. A session that starts flat joins its members as a fresh run does.
+  restored, and its rule edges are kept, so a rule that already fired does not fire again. A session that starts flat
+  joins its members as a fresh run does.
+- **What a restart restores.** A set saves which members it has active. A restart restores into it only those of
+  them the strategy still holds or has an entry order working on: a position a plain stream, or another set, holds on
+  the same venue stays with its own rules, e.g. set `m` had `A`; holding `GW:A` and `GW:FOO` restores only `A` into
+  `m`. A held contract that has expired or left the venue's listing is not declared; the venue settles it, the
+  session logs it, and the restart goes on. A set that holds a member starts even when no close of the next 24 hours
+  picks one.
+- **Member rules live.** A session's start checks (volume for `vwap`/`obv`, marks, book sizing) cover the member
+  rules too. `STACK_AT` and exit hooks (`ON_STOP`, `ON_TP`, `ON_CLOSE`) in a rule over a moving set are refused at a
+  live start: they are tracked per strategy and a member's would never be acted on.
 - **Limits, for now.** A dynamic set cannot be part of a union, and a cross-member function in a loop over a moving
   set ranges over that set only.
 

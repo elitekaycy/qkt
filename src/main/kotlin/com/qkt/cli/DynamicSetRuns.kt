@@ -109,8 +109,9 @@ internal object DynamicSetRuns {
 
     /**
      * The plan for [ast]'s `DYNAMIC` sets over `[fromMs, toMs]`, null when it has none. A set's candidates are the
-     * members of every close of its window in that span, plus the symbols of its venue in [held] (a live restart's
-     * positions, which stay as sticky members), in symbol order; a set no close gives a member is refused.
+     * members of every close of its window in that span, plus the members [held] names for it (by set alias, bare
+     * symbols: a live restart's positions the set itself had, which stay as sticky members), in symbol order; a set no
+     * close gives a member, and that holds none, is refused.
      */
     fun plan(
         ast: StrategyAst,
@@ -118,7 +119,7 @@ internal object DynamicSetRuns {
         fromMs: Long,
         toMs: Long,
         survivorshipAccepted: Boolean,
-        held: Set<String> = emptySet(),
+        held: Map<String, Set<String>> = emptyMap(),
         note: (String) -> Unit = { System.err.println("qkt: note: $it") },
     ): Plan? {
         val dynamic =
@@ -145,9 +146,8 @@ internal object DynamicSetRuns {
             }
         val candidates =
             sets.associate { (decl, spec, rows) ->
-                val holding =
-                    held.filter { it.substringBefore(':').equals(spec.venue, true) }.map { it.substringAfter(':') }
-                decl.alias to (candidates(decl, spec, rows, fromMs, toMs) + holding).distinct().sorted()
+                val holding = held[decl.alias].orEmpty()
+                decl.alias to (candidates(decl, spec, rows, fromMs, toMs, holding) + holding).distinct().sorted()
             }
         for ((alias, members) in candidates) {
             note("symbol set '$alias': DYNAMIC over ${members.size} candidate(s): ${members.joinToString()}")
@@ -163,10 +163,11 @@ internal object DynamicSetRuns {
         rows: List<InstrumentMeta>,
         fromMs: Long,
         toMs: Long,
+        holding: Set<String>,
     ): List<String> {
         val picked =
             DynamicSetMembership.candidatesOver(spec, rows, TimeWindow.parse(decl.timeframe).durationMs, fromMs, toMs)
-        if (picked.isEmpty()) {
+        if (picked.isEmpty() && holding.isEmpty()) {
             throw BacktestContext.Companion.SetupError(
                 "symbol set '${decl.alias}': no ${spec.venue} instrument passes ${spec.filter.canonical} at any " +
                     "close of the run",

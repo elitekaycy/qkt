@@ -44,6 +44,32 @@ internal class CandidateStreams(
                 .mapNotNull { (key, need) -> need.warmup?.let { stream(key) to it } }
                 .toMap()
 
+    /**
+     * One compiled member of each set that declares a candidate. Every member of a set runs the same rules on the
+     * same venue, so what one asks of the session (volume, marks, a book, stacked legs) every member asks: the
+     * session's start checks read these beside [outer], which holds none of the member rules.
+     */
+    val samples: List<CompiledStrategy> =
+        sets.mapNotNull { set -> keysOf(set).firstOrNull()?.let { set.template.compile(it.symbol) } }
+
+    val volumeRequiringSymbols: Set<String> =
+        samples.fold(outer.volumeRequiringSymbols) { all, member -> all + member.volumeRequiringSymbols }
+
+    val markSymbols: Set<String> = samples.fold(outer.markSymbols) { all, member -> all + member.markSymbols }
+
+    val usesBookSizing: Boolean = outer.usesBookSizing || samples.any { it.usesBookSizing }
+
+    /**
+     * What a member rule uses that a live session cannot run for a moving set yet, or null: stacked entries
+     * (`STACK_AT`) and exit hooks are tracked per strategy, and a member's would never be acted on.
+     */
+    fun unsupportedLive(): String? =
+        when {
+            samples.any { it.multiPositionPerSymbolSymbols.isNotEmpty() } -> "STACK_AT"
+            samples.any { it.exitHookReferences().isNotEmpty() } -> "an exit hook"
+            else -> null
+        }
+
     /** The candidate members (bare symbols) of the set named [set] that [outer] declares. */
     fun declaredMembers(set: String): Set<String> =
         keysOf(sets.first { it.template.set == set }).mapTo(HashSet()) { it.symbol }
