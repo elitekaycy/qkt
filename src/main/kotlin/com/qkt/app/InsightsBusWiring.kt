@@ -127,5 +127,8 @@ internal class InsightsBusWiring(
                 sink.offer(t.fromBrokerConnectionChanged(e, venues.fields(e.broker)))
             }
         }
+        if (InsightsEventFamily.SETS in insightsEvents) {
+            bus.subscribe<com.qkt.events.SetMembershipChanged> { e -> sink.offer(t.fromSetMembershipChanged(e)) }
+        }
     }
 }

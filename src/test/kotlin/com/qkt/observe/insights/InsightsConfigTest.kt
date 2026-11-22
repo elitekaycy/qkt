@@ -71,7 +71,13 @@ class InsightsConfigTest {
         assertThat(
             cfg.events,
         ).containsExactlyInAnyOrderElementsOf(InsightsEventFamily.entries.filter { it.onByDefault })
-        assertThat(cfg.events).doesNotContain(InsightsEventFamily.MARKETDATA)
+        assertThat(cfg.events).doesNotContain(InsightsEventFamily.MARKETDATA, InsightsEventFamily.SETS)
+    }
+
+    @Test
+    fun `listing sets opts into the set membership family`() {
+        val cfg = InsightsConfig.parse(mapOf("enabled" to true, "url" to "http://h/ingest", "events" to listOf("sets")))
+        assertThat(cfg.events).containsExactly(InsightsEventFamily.SETS)
     }
 
     @Test
