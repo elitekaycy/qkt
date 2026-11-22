@@ -21,16 +21,6 @@ import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
 
 /**
- * One `DYNAMIC` symbol set a [DynamicSetHost] runs: its member [template], its point-in-time [membership] and the
- * [venue] its bare member symbols belong to.
- */
-internal class HostedSet(
-    val template: SetMemberTemplate,
-    val membership: DynamicSetMembership,
-    val venue: String,
-)
-
-/**
  * A strategy whose `DYNAMIC` symbol sets gain and lose members during the run (runtime membership plan, step 4):
  * the strategy's own rules ([outer], compiled with every candidate member's stream declared, so the run feeds and
  * keeps history for each) and, per set, the member instances of [SetMemberInstances].
@@ -65,12 +55,12 @@ internal class DynamicSetHost(
                 keys.mapNotNull { key -> needs?.let { key to it } }
             }.toMap()
 
-    /** The watched tier of each set that reads market fields: its candidates' records per window. */
+    /** The watched tier of each set that reads market fields: a record per window for every symbol of its venue. */
     private val watched: Map<HostedSet, WatchedWindows> =
         sets
             .filter { it.membership.readsMarket }
             .associateWith { set ->
-                WatchedWindows(set.membership.windowMs, keysOf(set).mapTo(HashSet()) { it.qktSymbol })
+                WatchedWindows(set.membership.windowMs) { it.substringBefore(':').equals(set.venue, true) }
             }
 
     override val retentionByKey: Map<HubKey, Int> =
@@ -119,11 +109,7 @@ internal class DynamicSetHost(
     ) {
         outer.bindToHub(hub, ctx, emit)
         val history = warmup(ctx.source)
-        running =
-            sets.map {
-                val ladder = StrikeLadder(it.membership.rows)
-                it to SetMemberInstances(it.template, hub, ctx, emit, ladder, history)
-            }
+        running = sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, it::ladder, history) }
     }
 
     override fun onTick(

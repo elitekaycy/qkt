@@ -132,7 +132,8 @@ internal class SessionBrokers(
                 val familyOf = { s: String -> (instrumentRegistry?.lookup(s)?.derivative as? EventTerms)?.root }
                 val inFamily = { s: String -> families.isNotEmpty() && familyOf(s) in families }
                 val venueWide = label in moving
-                val onVenue = { s: String -> venueWide && s.substringBefore(':').lowercase() == label }
+                // A continuous stream on the same venue keeps its own lanes: the account route is tried first.
+                val onVenue = { s: String -> venueWide && s !in streams && s.substringBefore(':').lowercase() == label }
                 val account =
                     SymbolPattern { s ->
                         s in listed || roots.any { it.covers(s) && catalogued(s) } || inFamily(s) || onVenue(s)

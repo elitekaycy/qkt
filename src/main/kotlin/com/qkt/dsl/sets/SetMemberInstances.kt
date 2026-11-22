@@ -33,7 +33,7 @@ internal class SetMemberInstances(
     private val hub: CandleHub,
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
-    private val ladder: StrikeLadder = StrikeLadder(emptyList()),
+    private val ladder: () -> StrikeLadder = { NO_LADDER },
     private val warmup: (HubKey, Int, Long) -> List<Candle>,
 ) {
     private val instances = LinkedHashMap<String, CompiledStrategy>()
@@ -41,7 +41,7 @@ internal class SetMemberInstances(
     private val sections =
         SetCrossSections({ alias, step, atMs ->
             val symbol = instances.keys.firstOrNull { template.alias(it) == alias }
-            symbol?.let { ladder.neighbour(it, step, atMs) }?.takeIf { it in instances }?.let(template::alias)
+            symbol?.let { ladder().neighbour(it, step, atMs) }?.takeIf { it in instances }?.let(template::alias)
         }) { instances.keys.filterNot { it in sticky }.map(template::alias) }
     private var refused = 0L
 
@@ -157,3 +157,5 @@ internal class SetMemberInstances(
 
     private fun owner(member: String): String = "${ctx.strategyId}/${template.set}/$member"
 }
+
+private val NO_LADDER = StrikeLadder(emptyList())

@@ -29,6 +29,7 @@ class LiveSetPollerTest {
     private var listingFails = false
     private val subscribed = mutableListOf<Collection<String>>()
     private var refuse = emptySet<String>()
+    private val released = mutableListOf<String>()
 
     private val catalog =
         object : SetCatalog {
@@ -52,6 +53,7 @@ class LiveSetPollerTest {
                 subscribed += symbols
                 symbols.filterTo(HashSet()) { it !in refuse }
             },
+            unsubscribe = { released += it },
         )
 
     private fun membersAt(minute: Int): List<String> {
@@ -75,6 +77,8 @@ class LiveSetPollerTest {
     fun `a candidate that cannot be subscribed never joins and is journalled at the next tick`() {
         refuse = setOf("BACKTEST:C")
         poller.poll(T0)
+        poller.poll(T0 + MINUTE)
+        assertThat(subscribed.last()).containsExactly("BACKTEST:C")
         assertThat(membersAt(4)).containsExactly("B", "A")
         val hub = CandleHub()
         for (k in host.declaredStreams.values.toSet() + host.retentionByKey.keys) {
@@ -87,6 +91,41 @@ class LiveSetPollerTest {
         assertThat(journal.first().member).isEqualTo("BACKTEST:C")
         assertThat(journal.first().strategyId).isEqualTo("rotation")
         assertThat(journal.first().windowEndMs).isEqualTo(T0)
+        assertThat(journal.count { it.change == MembershipChange.UNAVAILABLE }).isEqualTo(1)
+        refuse = emptySet()
+        poller.poll(T0 + 2 * MINUTE)
+        assertThat(membersAt(4)).containsExactly("C", "B")
+    }
+
+    @Test
+    fun `a contract that expired or left the listing is let go, unless the set still has it active`() {
+        poller.poll(T0)
+        host.hosted
+            .single()
+            .membership
+            .at(T0 + 4 * MINUTE) { emptySet() }
+        listed = DynamicSetFixtures.rows.filterNot { it.qktSymbol == "BACKTEST:B" }
+        poller.poll(T0 + 1_441 * MINUTE)
+        assertThat(released).containsExactly("BACKTEST:A")
+        poller.poll(T0 + 1_442 * MINUTE)
+        assertThat(released).hasSize(1)
+    }
+
+    @Test
+    fun `a contract subscribed after the start is ranked on the market figures it has traded since`() {
+        val seen = mutableListOf<SetMembershipChanged>()
+        val plan = DynamicSetFixtures.plan(DynamicSetFixtures.marketSource, minutes = 1)
+        val market = plan.strategy(emptyMap(), live = true) { seen += it } as DynamicSetHost
+        assertThat(market.declaredMembers("s")).containsExactly("A")
+        LiveSetPoller(market, catalog, subscribe = { it.toSet() }).poll(T0)
+        val hub = CandleHub()
+        for (k in market.declaredStreams.values.toSet() + market.retentionByKey.keys) {
+            hub.register(k, market.retentionByKey[k] ?: 1, "rotation")
+        }
+        market.bindToHub(hub, ctx) {}
+        DynamicSetFixtures.marketTape().forEach { market.onTick(it, ctx) {} }
+        assertThat(seen.filter { it.change == MembershipChange.JOIN }.map { it.member to it.windowEndMs })
+            .containsExactly("BACKTEST:A" to T0 + MINUTE, "BACKTEST:B" to T0 + 3 * MINUTE)
     }
 
     @Test
@@ -96,6 +135,11 @@ class LiveSetPollerTest {
         assertThat(subscribed).isEmpty()
         assertThat(membersAt(2)).containsExactly("A")
         listingFails = false
+        listed = emptyList()
+        poller.poll(T0)
+        assertThat(subscribed).isEmpty()
+        assertThat(membersAt(2)).containsExactly("A")
+        listed = DynamicSetFixtures.rows
         val running = poller.start(5, FixedClock(T0))
         val deadline = System.nanoTime() + 5_000_000_000L
         while (subscribed.isEmpty() && System.nanoTime() < deadline) Thread.sleep(5)

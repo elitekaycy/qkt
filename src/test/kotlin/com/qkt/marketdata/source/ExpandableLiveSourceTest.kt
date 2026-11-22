@@ -11,20 +11,31 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class ExpandableLiveSourceTest {
-    /** A feed fed by the test: [push] a tick, [end] it. */
+    /** A feed fed by the test: [push] a tick, [end] it, or make it [fail]. */
     private class Pushed(
         val symbols: List<String>,
+        override val expectsContinuousDelivery: Boolean,
+        private val reason: String?,
     ) : TickFeed,
         MarketDataLifecycleFeed {
         private val queue = LinkedBlockingQueue<Any>()
-        var closed = false
-        var disconnects = 0
+        val down = mutableListOf<(MarketDataFeedScope) -> Unit>()
+        val up = mutableListOf<(MarketDataFeedScope) -> Unit>()
+
+        @Volatile var closed = false
 
         fun push(tick: Tick) = queue.offer(tick)
 
         fun end() = queue.offer(Unit)
 
-        override fun next(): Tick? = queue.poll(5, TimeUnit.SECONDS) as? Tick
+        fun fail() = queue.offer(IllegalStateException("socket reset"))
+
+        override fun next(): Tick? =
+            when (val item = queue.poll(5, TimeUnit.SECONDS)) {
+                is Tick -> item
+                is Exception -> throw item
+                else -> null
+            }
 
         override fun close() {
             closed = true
@@ -32,15 +43,19 @@ class ExpandableLiveSourceTest {
         }
 
         override fun onDisconnect(handler: (MarketDataFeedScope) -> Unit) {
-            disconnects++
+            down += handler
         }
 
-        override fun onReconnect(handler: (MarketDataFeedScope) -> Unit) = Unit
+        override fun onReconnect(handler: (MarketDataFeedScope) -> Unit) {
+            up += handler
+        }
 
-        override fun terminalFailureReason(): String? = "venue said no"
+        override fun terminalFailureReason(): String? = reason
     }
 
     private val opened = mutableListOf<Pushed>()
+    private var continuous = true
+    private var reason: String? = null
 
     private val venue =
         object : MarketSource {
@@ -51,7 +66,7 @@ class ExpandableLiveSourceTest {
 
             override fun liveTicks(symbols: List<String>): TickFeed {
                 require("BAD" !in symbols) { "no such market" }
-                return Pushed(symbols).also { opened += it }
+                return Pushed(symbols, continuous, reason).also { opened += it }
             }
         }
 
@@ -61,11 +76,14 @@ class ExpandableLiveSourceTest {
     ) = Tick(symbol, BigDecimal.ONE, atMs)
 
     @Test
-    fun `a running feed takes more symbols, serves their ticks and refuses what cannot be opened`() {
-        var closedHook = 0
-        val source = ExpandableLiveSource(venue) { closedHook++ }
+    fun `a running feed serves added symbols from one more feed and refuses what cannot be opened`() {
+        var opens = 0
+        var closes = 0
+        val source = ExpandableLiveSource(venue, { opens++ }) { closes++ }
         assertThat(source.subscribe(listOf("B"))).isEmpty()
+        source.unsubscribe(listOf("B"))
         val feed = source.liveTicks(listOf("A"))
+        assertThat(opens).isEqualTo(1)
         opened.single().push(tick("A", 1))
         assertThat(feed.next()?.symbol).isEqualTo("A")
         assertThat(source.subscribe(listOf("A", "B"))).containsExactly("A", "B")
@@ -75,22 +93,86 @@ class ExpandableLiveSourceTest {
         assertThat(source.subscribe(listOf("BAD"))).isEmpty()
         assertThat(source.subscribe(listOf("B"))).containsExactly("B")
         assertThat(opened).hasSize(2)
+        assertThat(source.subscribe(listOf("C"))).containsExactly("C")
+        assertThat(opened.last().symbols).containsExactly("B", "C")
+        assertThat(opened[1].closed).isTrue()
+        opened.last().push(tick("C", 3))
+        assertThat(feed.next()?.symbol).isEqualTo("C")
+        opened.first().push(tick("A", 4))
+        assertThat(feed.next()?.timestamp).isEqualTo(4L)
+        feed.close()
+        assertThat(feed.next()).isNull()
+        assertThat(opened.filterNot { it.closed }).isEmpty()
+        assertThat(closes).isEqualTo(1)
+        assertThat(source.subscribe(listOf("D"))).isEmpty()
+    }
+
+    @Test
+    fun `a dropped symbol is not asked for again and a tick the replaced feed delivered is not repeated`() {
+        val source = ExpandableLiveSource(venue)
+        val feed = source.liveTicks(listOf("A"))
+        source.subscribe(listOf("B"))
+        opened.last().push(tick("B", 10))
+        assertThat(feed.next()?.timestamp).isEqualTo(10L)
+        source.unsubscribe(listOf("A", "B"))
+        assertThat(source.subscribe(listOf("B"))).containsExactly("B")
+        assertThat(opened).hasSize(2)
+        source.subscribe(listOf("C"))
+        assertThat(opened.last().symbols).containsExactly("B", "C")
+        opened.last().push(tick("B", 10))
+        opened.last().push(tick("B", 11))
+        assertThat(feed.next()?.timestamp).isEqualTo(11L)
+        source.unsubscribe(listOf("B"))
+        source.subscribe(listOf("D"))
+        assertThat(opened.last().symbols).containsExactly("C", "D")
+        feed.close()
+    }
+
+    /** The merged feed's failure after its added feed of B went through [stop]. */
+    private fun stopped(stop: (Pushed) -> Unit): String? {
+        val feed = ExpandableLiveSource(venue).liveTicks(listOf("A"))
+        (feed as ExpandableTickFeed).add(listOf("B"))
+        stop(opened.last())
+        assertThat(feed.next()).isNull()
+        assertThat((feed as MarketDataLifecycleFeed).expectsContinuousDelivery).isTrue()
+        return feed.terminalFailureReason()
+    }
+
+    @Test
+    fun `an added feed that fails or stops ends the merged feed, naming its symbols and the reason`() {
+        assertThat(stopped { it.fail() }).isEqualTo("live feed of [B] stopped: socket reset")
+        assertThat(stopped { it.end() }).isEqualTo("live feed of [B] stopped: it ended")
+        reason = "venue said no"
+        assertThat(stopped { it.end() }).isEqualTo("live feed of [B] stopped: venue said no")
+    }
+
+    @Test
+    fun `a finite added feed that runs out only stops serving its symbols`() {
+        continuous = false
+        val feed = ExpandableLiveSource(venue).liveTicks(listOf("A"))
+        (feed as ExpandableTickFeed).add(listOf("B"))
         opened.last().end()
         opened.first().push(tick("A", 3))
         assertThat(feed.next()?.timestamp).isEqualTo(3L)
-        val lifecycle = feed as MarketDataLifecycleFeed
-        lifecycle.onDisconnect {}
-        lifecycle.onReconnect {}
-        assertThat(opened.first().disconnects).isEqualTo(1)
-        assertThat(lifecycle.terminalFailureReason()).isEqualTo("venue said no")
-        assertThat(lifecycle.expectsContinuousDelivery).isTrue()
+        assertThat((feed as MarketDataLifecycleFeed).terminalFailureReason()).isNull()
+        assertThat(feed.expectsContinuousDelivery).isFalse()
         opened.first().end()
         assertThat(feed.next()).isNull()
-        assertThat(feed.next()).isNull()
+    }
+
+    @Test
+    fun `outages of either feed reach the handlers, an added feed's naming its symbols`() {
+        val feed = ExpandableLiveSource(venue).liveTicks(listOf("A")) as MarketDataLifecycleFeed
+        val seen = mutableListOf<Pair<String, List<String>?>>()
+        feed.onDisconnect { seen += "down" to it.symbols }
+        feed.onReconnect { seen += "up" to it.symbols }
+        (feed as ExpandableTickFeed).add(listOf("B"))
+        for (source in opened) {
+            source.down.forEach { it(MarketDataFeedScope()) }
+            source.up.forEach { it(MarketDataFeedScope()) }
+        }
+        assertThat(seen).containsExactly("down" to null, "up" to null, "down" to listOf("B"), "up" to listOf("B"))
         feed.close()
-        assertThat(opened.all { it.closed }).isTrue()
-        assertThat(closedHook).isEqualTo(1)
-        assertThat(source.subscribe(listOf("C"))).isEmpty()
     }
 
     @Test
@@ -109,6 +191,7 @@ class ExpandableLiveSourceTest {
             )
         assertThat(source.liveTicks(listOf("A"))).isSameAs(native)
         assertThat(source.subscribe(listOf("Z"))).containsExactly("Z")
+        source.unsubscribe(listOf("Z"))
         native.close()
     }
 

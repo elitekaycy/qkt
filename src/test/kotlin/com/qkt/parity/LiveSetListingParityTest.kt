@@ -20,10 +20,7 @@ import com.qkt.instrument.EventContracts
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.universe.VenueCatalog
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.TickFeed
-import com.qkt.marketdata.source.ExpandableTickFeed
-import com.qkt.marketdata.source.MarketSource
-import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.marketdata.source.ExpandableLiveSource
 import com.qkt.parity.DslParityState.TradeState
 import com.qkt.parity.DslParityState.tradeState
 import java.math.BigDecimal
@@ -94,46 +91,11 @@ class LiveSetListingParityTest {
         return Run(journal, result.trades.map { tradeState(it.strategyId, it.trade, it.realized) })
     }
 
-    /** The venue's live feed: the tape, but only the symbols subscribed so far; it polls at 24h and 26h. */
-    private class Venue(
-        private val ticks: List<Tick>,
-        private val polls: Map<Long, () -> Unit>,
-    ) : MarketSource {
-        val feed =
-            object : ExpandableTickFeed {
-                private val served = HashSet<String>()
-                private var next = 0
-                private val due = polls.toSortedMap()
+    /** The symbols of each feed the merged venue opened in the last [live] run through it. */
+    private var feedsOpened: List<List<String>> = emptyList()
 
-                @Synchronized
-                override fun add(symbols: Collection<String>): Set<String> {
-                    served += symbols
-                    return symbols.toSet()
-                }
-
-                override fun next(): Tick? {
-                    while (next < ticks.size) {
-                        val tick = ticks[next++]
-                        while (due.isNotEmpty() && due.firstKey() <= tick.timestamp) {
-                            due.remove(due.firstKey())?.invoke()
-                        }
-                        if (tick.symbol in served) return tick
-                    }
-                    return null
-                }
-
-                override fun close() = Unit
-            }
-
-        override val name = "Venue"
-        override val capabilities = setOf(MarketSourceCapability.LIVE_TICKS)
-
-        override fun supports(symbol: String) = true
-
-        override fun liveTicks(symbols: List<String>): TickFeed = feed.also { it.add(symbols) }
-    }
-
-    private fun live(): Run {
+    /** The live run; [merged] reads a venue whose feeds cannot take symbols, through the production merged feed. */
+    private fun live(merged: Boolean = false): Run {
         val listed = atStart.toMutableList()
         val catalog =
             object : SetCatalog {
@@ -147,19 +109,21 @@ class LiveSetListingParityTest {
             }
         val start = plan(atStart, t0 + 24 * hour)
         val host = start.strategy(emptyMap(), live = true) as DynamicSetHost
-        lateinit var venue: Venue
-        val poller = LiveSetPoller(host, catalog, subscribe = { venue.feed.add(it) })
-        venue =
-            Venue(
-                ticks,
-                mapOf(
-                    t0 + 24 * hour to { poller.poll(t0 + 24 * hour) },
-                    t0 + 26 * hour to {
-                        listed += late
-                        poller.poll(t0 + 26 * hour)
-                    },
-                ),
+        lateinit var subscribe: (Collection<String>) -> Set<String>
+        val poller = LiveSetPoller(host, catalog, subscribe = { subscribe(it) })
+        val polls =
+            mapOf(
+                t0 + 24 * hour to { poller.poll(t0 + 24 * hour) },
+                t0 + 26 * hour to {
+                    listed += late
+                    poller.poll(t0 + 26 * hour)
+                },
             )
+        val plain = LiveSetVenue(ticks, polls)
+        val split = LiveSetMergedVenue(ticks, polls)
+        val expandable = ExpandableLiveSource(split)
+        subscribe = if (merged) expandable::subscribe else plain.feed::add
+        val venue = if (merged) split.reading(expandable) else plain
         val clock = FixedClock(t0)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val journal = mutableListOf<Line>()
@@ -180,6 +144,7 @@ class LiveSetListingParityTest {
                 busOverride = bus,
             ).start()
         check(handle.awaitTermination(Duration.ofSeconds(20))) { "live session did not terminate" }
+        feedsOpened = split.opened
         return Run(journal.toList(), trades.toList())
     }
 
@@ -200,5 +165,18 @@ class LiveSetListingParityTest {
         assertThat(live.trades).containsExactlyElementsOf(backtest.trades)
         assertThat(backtest.trades.map { it.symbol })
             .containsExactly("BACKTEST:A", "BACKTEST:B", "BACKTEST:C", "BACKTEST:D")
+    }
+
+    @Test
+    fun `a live set read through the merged feed joins and trades as the backtest does, on one added feed`() {
+        val (backtest, live) = BacktestLiveParityFixtures.withQuietParityLogs { backtest() to live(merged = true) }
+
+        assertThat(live.journal).containsExactlyElementsOf(backtest.journal)
+        assertThat(live.trades).containsExactlyElementsOf(backtest.trades)
+        assertThat(feedsOpened).containsExactly(
+            listOf("BACKTEST:A", "BACKTEST:B"),
+            listOf("BACKTEST:C"),
+            listOf("BACKTEST:C", "BACKTEST:D"),
+        )
     }
 }

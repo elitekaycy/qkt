@@ -160,8 +160,16 @@ class DynamicSetMembership(
             atMs: Long,
         ): Boolean {
             val opened = (meta.derivative as? EventTerms)?.let { it.openAtMs <= atMs } ?: true
+            return opened && !expired(meta, atMs)
+        }
+
+        /** Whether [meta] has an expiry at or before [atMs]; a row without one never expires. */
+        fun expired(
+            meta: InstrumentMeta,
+            atMs: Long,
+        ): Boolean {
             val expiry = (CatalogField.EXPIRY_AT.read(meta, atMs) as? CatalogValue.Num)?.value?.toLong()
-            return opened && (expiry == null || atMs < expiry)
+            return expiry != null && atMs >= expiry
         }
     }
 }

@@ -643,8 +643,15 @@ at that close (an event contract once it opens, any contract until it expires) a
   symbol that is still a candidate keeps the start; one that no close picks any more refuses it. Every five minutes
   the session reads the listing again and subscribes the candidates of the next 24 hours it does not feed yet, before
   they can join: a set only ever ranks contracts whose market data the session serves. A candidate whose subscription
-  fails never joins; the session logs it and journals an `UNAVAILABLE` membership change. Live sessions do not run
-  slot universes yet. Restoring membership across a restart comes with the next slice.
+  fails never joins; the session logs it and journals an `UNAVAILABLE` membership change once, and tries again at
+  every read. A listing that cannot be read, or that reads empty, changes nothing. Live sessions do not run slot
+  universes yet. Restoring membership across a restart comes with the next slice.
+- **Live market data for later members.** Contracts subscribed after the start arrive over one extra connection,
+  which the session re-opens with the contracts it still needs whenever that list grows; a contract that expired or
+  left the listing, and that the set no longer has active, is not asked for again. If that connection fails for good
+  the session stops with the reason, exactly as it does when its main feed gives up, so a held member never sits on
+  stale data unnoticed. A set that ranks on market fields watches every symbol of its venue the session receives, so
+  a contract subscribed later is ranked on what it has traded since. Strike neighbours follow the same listing.
 - **Limits, for now.** A dynamic set cannot be part of a union, and a cross-member function in a loop over a moving
   set ranges over that set only.
 
