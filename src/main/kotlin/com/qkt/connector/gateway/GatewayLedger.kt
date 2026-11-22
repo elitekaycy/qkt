@@ -66,9 +66,10 @@ internal class GatewayLedger(
         orders: List<RecoveredOrder>,
         sender: GatewayRouting.Attached,
     ): Set<String> {
-        orders.forEach { own(it.clientOrderId, it.strategyId, it.quantity, sender, it.alreadyFilled) }
+        val held = orders.map { it.asHeld(client) }
+        held.forEach { own(it.clientOrderId, it.strategyId, it.quantity, sender, it.alreadyFilled) }
         return GatewayRecovery
-            .recover(client, orders, ::received, ::replayed, ::onFill, ::onOrder)
+            .recover(client, held, ::received, ::replayed, ::onFill, ::onOrder)
             .mapTo(HashSet(), GatewayClientIds::engineId)
     }
 

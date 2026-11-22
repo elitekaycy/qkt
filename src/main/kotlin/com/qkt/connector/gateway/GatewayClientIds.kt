@@ -41,6 +41,12 @@ internal object GatewayClientIds {
     fun of(request: OrderRequest): String = "${remember(request.id)}.${request.timestamp.toString(36)}"
 
     /**
+     * [request]'s client order id with its engine id whole, however long: the id a gateway holds an order by
+     * when the session that placed it sent engine ids unshortened (`dsl-soak_o13_deribit_fund--0-exit-close-r945.5`).
+     */
+    fun whole(request: OrderRequest): String = "${request.id}.${request.timestamp.toString(36)}"
+
+    /**
      * What of engine id [id] the gateway sees: [id] itself when it fits, else its head, `-` and a 10-digit base-36
      * hash of it (`dsl-soak_o13_bybit_fund--0-exit-close-r945` is `dsl-soak_o13_bybit_fund---` and the hash).
      */
