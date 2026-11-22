@@ -45,9 +45,10 @@ internal fun handleLogs(
     ex.responseHeaders.add("Cache-Control", "no-cache")
     ex.sendResponseHeaders(200, 0)
     val out = ex.responseBody
-    // Taken before the tail is read, so a line written while the tail is sent is streamed to a follower, not skipped.
-    val startSize = Files.size(logFile)
-    val all = Files.readAllLines(logFile)
+    // One read serves the tail and the follow's start offset, so a line appended while the tail is still being
+    // written goes out with the follow instead of being counted as already sent.
+    val read = Files.readAllBytes(logFile)
+    val all = read.inputStream().bufferedReader(Charsets.UTF_8).readLines()
     val filtered =
         if (since != null) {
             all.filter { line -> parseTimestamp(line)?.isAfter(since.minusSeconds(1)) ?: true }
@@ -60,7 +61,7 @@ internal fun handleLogs(
             out.write((line + "\n").toByteArray(Charsets.UTF_8))
         }
         out.flush()
-        if (follow) followLog(logFile, out, startSize)
+        if (follow) followLog(logFile, out, read.size.toLong())
     } catch (_: java.io.IOException) {
         // client disconnected
     } finally {
@@ -77,8 +78,8 @@ private fun parseTimestamp(line: String): Instant? {
 
 /**
  * Streams what [logFile] grows by to [out] until the reader goes away: a blank line when nothing was added, so a
- * dead connection is noticed, and a restart from the top when the file shrinks. It follows from [startSize], the size
- * the caller saw before it sent the tail; [pause] is the wait between looks.
+ * dead connection is noticed, and a restart from the top when the file shrinks. It follows from [startSize], the length
+ * of the read the caller sent the tail from; [pause] is the wait between looks.
  */
 internal fun followLog(
     logFile: Path,

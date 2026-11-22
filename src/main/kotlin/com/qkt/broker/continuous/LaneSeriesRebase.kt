@@ -26,6 +26,9 @@ import org.slf4j.LoggerFactory
  * rests at, and maps by the chain's shift from then on. The venue's orders are left alone: they rest where the strategy
  * put them against the market it saw, and their fills now map into the series the engine marks in.
  *
+ * The lane is saved at the new shift ([save]) before the engine hears of the costs, as a roll's closes are: a restart
+ * that finds the move saved books nothing, so a running session's booking is never booked again by the next start.
+ *
  * Only panama streams take orders ([orderRefusal]), so a position or an order only ever stands on an additive shift.
  */
 internal class LaneSeriesRebase(
@@ -34,6 +37,7 @@ internal class LaneSeriesRebase(
     private val positions: Map<String, BigDecimal>,
     private val orders: ContinuousOrderMap,
     private var active: Boolean,
+    private val save: () -> Unit,
     private val moved: () -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(LaneSeriesRebase::class.java)
@@ -100,6 +104,7 @@ internal class LaneSeriesRebase(
         basis = index to now
         orders.on(index).forEach { orders.add(it.copy(request = it.request.shifted(delta))) }
         moved()
+        save()
         val reason = "series rebased $contract ${old.toPlainString()}->${now.toPlainString()}"
         positions
             .filterValues { it.signum() != 0 }

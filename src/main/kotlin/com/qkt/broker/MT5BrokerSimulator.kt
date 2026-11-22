@@ -86,7 +86,8 @@ class MT5BrokerSimulator(
     // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
     // Shareable because the simulator is single-threaded and fill callbacks never re-enter onTick.
     private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
-    private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
+    private val deadlines = PaperDeadlines(bus, clock) { "GTD expired" }
+    private val sequence = TriggerSequence(fillAtTriggerPrice)
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
     private val pendingStopFills: MutableList<PendingStopFill> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
@@ -143,6 +144,7 @@ class MT5BrokerSimulator(
             reject(sized, it)
             return SubmitAck(sized.id, sized.id, accepted = false, rejectReason = it)
         }
+        if (sized !is OrderRequest.Market) sequence.admit(sized)
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = sized.id,
@@ -166,6 +168,7 @@ class MT5BrokerSimulator(
             working.firstOrNull { it.id == orderId }
                 ?: pendingStopFills.firstOrNull { it.request.id == orderId }?.request
         val removedWorking = working.removeAll { it.id == orderId }
+        sequence.forget(orderId)
         val removedPending = pendingStopFills.removeAll { it.request.id == orderId }
         val removed = removedWorking || removedPending
         if (removed) {
@@ -185,10 +188,11 @@ class MT5BrokerSimulator(
         // Releases before this tick fill at the quote prevailing then, still the previous one.
         drainDelayedSubmissions(clock.now() - 1)
         val previous = lastTickBySymbol.put(tick.symbol, tick)
+        sequence.observe(tick, previous)
         drainDelayedSubmissions(clock.now())
         drainPendingStopFills(tick)
         if (working.isEmpty()) return
-        expireGtd(tick)
+        deadlines.expire(working, tick) { sequence.forget(it.id) }
         if (working.isEmpty()) return
         // As PaperBroker: a synthetic bar Close (the only synthetic tick with volume) to the next Open is a gap.
         val from = previous?.takeIf { fillAtTriggerPrice(tick.symbol) && it.volume == null }?.price
@@ -199,11 +203,13 @@ class MT5BrokerSimulator(
         }
         // A venue fills nothing out of session: a touched order keeps resting for the first in-session price.
         if (toFillScratch.isNotEmpty() && !session(tick.symbol, tick.timestamp)) return
+        sequence.order(toFillScratch, tick, previous)
         for (i in toFillScratch.indices) {
             val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue
+            sequence.forget(wo.id)
             if (stopLatencyMs > 0L && isProtectiveStop(wo)) {
                 pendingStopFills.add(PendingStopFill(wo, fillAt = clock.now() + stopLatencyMs))
             } else {
@@ -226,29 +232,6 @@ class MT5BrokerSimulator(
     private fun isProtectiveStop(req: OrderRequest): Boolean =
         req.legIntent is LegIntent.Close &&
             (req is OrderRequest.Stop || (req is OrderRequest.IfTouched && req.onTrigger == TriggerType.MARKET))
-
-    private fun expireGtd(tick: Tick) {
-        gtdExpiredScratch.clear()
-        for (i in working.indices) {
-            val request = working[i]
-            if (request.symbol != tick.symbol) continue
-            val expiresAt = request.expiresAt ?: continue
-            if (tick.timestamp >= expiresAt) gtdExpiredScratch.add(request)
-        }
-        for (i in gtdExpiredScratch.indices) {
-            val request = gtdExpiredScratch[i]
-            if (!working.remove(request)) continue
-            bus.publish(
-                BrokerEvent.OrderCancelled(
-                    clientOrderId = request.id,
-                    brokerOrderId = request.id,
-                    reason = "GTD expired",
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-        }
-    }
 
     private fun fillMarket(
         req: OrderRequest.Market,

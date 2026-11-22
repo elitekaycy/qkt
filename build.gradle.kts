@@ -43,7 +43,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testImplementation(libs.okhttp.mockwebserver)
-    testRuntimeOnly(libs.junit.platform.launcher)
+    // Compile scope for com.qkt.testing.ForkIsolation, a launcher session listener.
+    testImplementation(libs.junit.platform.launcher)
 }
 
 application {

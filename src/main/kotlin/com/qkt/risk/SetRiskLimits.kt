@@ -21,14 +21,22 @@ data class SetCaps(
  * Per-strategy caps over one symbol set's [members] (qkt symbols), design §3.6: at most [maxOpenPositions] of them
  * held or entering at once ([com.qkt.risk.rules.MaxSetOpenPositions]), and no member's net position past
  * [maxPositionSize] ([com.qkt.risk.rules.MaxSetPositionSize]). Orders on symbols outside the set are untouched.
+ *
+ * A set whose membership moves during the run (#1714) gives [active]: the members at this instant, sticky-held ones
+ * included, so a cap counts every member that still holds and is never escaped by one leaving the ranking.
+ * [members] is then the set as it stood at start, and may be empty.
  */
 data class SetRiskLimits(
     val members: Set<String>,
     val maxOpenPositions: Int? = null,
     val maxPositionSize: BigDecimal? = null,
+    val active: (() -> Set<String>)? = null,
 ) {
+    /** The members the caps count right now: [active] when the set moves, else [members]. */
+    fun current(): Set<String> = active?.invoke() ?: members
+
     init {
-        require(members.isNotEmpty()) { "SetRiskLimits needs at least one member symbol" }
+        require(members.isNotEmpty() || active != null) { "SetRiskLimits needs at least one member symbol" }
         require(maxOpenPositions == null || maxOpenPositions > 0) {
             "SetRiskLimits.maxOpenPositions must be > 0: $maxOpenPositions"
         }
