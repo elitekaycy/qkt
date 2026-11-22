@@ -16,7 +16,8 @@ import org.slf4j.LoggerFactory
  *
  * - There is never more than one added feed. Adding symbols opens one feed for every added symbol still wanted
  *   (those not [drop]ped), then closes the feed it replaces: e.g. added `[B]`, then add `[C]` after `B` was dropped
- *   → one feed of `[C]`. A tick the replaced feed already delivered is not delivered again.
+ *   → one feed of `[C]`. A tick the replaced feed already delivered is not delivered again. A symbol the venue
+ *   refuses is left out of that feed ([DegradingOpen]), so it never blocks the others.
  * - The feed ends when the primary does. It also ends, with a [terminalFailureReason], when the added feed fails or
  *   stops although it should deliver without end: its symbols would otherwise look fed while no tick arrives, so
  *   the session stops instead, as it does when its only feed gives up. A finite added feed that runs out just stops.
@@ -26,7 +27,7 @@ import org.slf4j.LoggerFactory
 internal class MergedTickFeed(
     private val primary: TickFeed,
     symbols: Collection<String>,
-    private val open: (List<String>) -> TickFeed,
+    open: (List<String>) -> TickFeed,
     private val onClose: () -> Unit = {},
 ) : ExpandableTickFeed,
     MarketDataLifecycleFeed {
@@ -39,6 +40,7 @@ internal class MergedTickFeed(
     }
 
     private val log = LoggerFactory.getLogger(MergedTickFeed::class.java)
+    private val opener = DegradingOpen(open)
     private val queue = LinkedBlockingQueue<Any>()
     private val first = symbols.toSet()
     private val extra = LinkedHashSet<String>()
@@ -86,11 +88,8 @@ internal class MergedTickFeed(
         dropped -= symbols.toSet()
         val fresh = symbols.filter { it !in first && it !in extra }.distinct()
         if (fresh.isNotEmpty() && !closed) {
-            val wanted = extra.filter { it !in dropped } + fresh
-            runCatching { open(wanted) }
-                .onFailure { log.warn("cannot subscribe {}: {}", wanted, it.message) }
-                .getOrNull()
-                ?.let { replace(Added(it, wanted)) }
+            val kept = extra.filter { it !in dropped }
+            opener.open(kept, fresh)?.let { (feed, served) -> replace(Added(feed, served)) }
         }
         return symbols.filterTo(LinkedHashSet()) { it in first || it in extra }
     }

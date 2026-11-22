@@ -3,6 +3,7 @@ package com.qkt.cli.daemon
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.DynamicSetRuns
 import com.qkt.cli.SymbolSetResolution
+import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StrategyAst
@@ -44,7 +45,7 @@ internal const val LIVE_SET_POLL_MS: Long = 5L * 60 * 1000
 
 /**
  * [source] as a live session with moving sets reads it: a feed that takes more symbols while it runs, and a
- * [LiveSetPoller] over [catalog] every [LIVE_SET_POLL_MS] that subscribes new candidates before they can join. The
+ * [LiveSetPoller] over [catalog] every [pollMs] of [clock] that subscribes new candidates before they can join. The
  * poller starts when the session opens its feed and stops when that feed closes, so a session that never starts
  * leaves no poller behind.
  */
@@ -52,13 +53,15 @@ internal fun liveSetSource(
     host: DynamicSetHost,
     catalog: SetCatalog,
     source: MarketSource,
+    pollMs: Long = LIVE_SET_POLL_MS,
+    clock: Clock = SystemClock(),
 ): MarketSource {
     lateinit var expandable: ExpandableLiveSource
     val poller = LiveSetPoller(host, catalog, { expandable.subscribe(it) }, { expandable.unsubscribe(it) })
     var stop = AutoCloseable {}
     val start = {
         stop.close()
-        stop = poller.start(LIVE_SET_POLL_MS, SystemClock())
+        stop = poller.start(pollMs, clock)
     }
     expandable = ExpandableLiveSource(source, start) { stop.close() }
     return expandable

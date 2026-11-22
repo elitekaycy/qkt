@@ -1,5 +1,6 @@
 package com.qkt.marketdata.source
 
+import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.TickFeed
 
 /**
@@ -18,14 +19,25 @@ interface ExpandableTickFeed : TickFeed {
  * more and [unsubscribe] lets go of those no longer needed. A [delegate] whose feed can add symbols itself
  * ([ExpandableTickFeed]) does; any other is served by a [MergedTickFeed] that keeps one more feed of the delegate for
  * everything added and runs [onClose] when it closes. [onOpen] runs each time a feed is opened, so whatever feeds
- * it (a listing poller) only runs while there is a feed. Every other read goes to [delegate].
+ * it (a listing poller) only runs while there is a feed. Every other read goes to [delegate], and so does a re-read
+ * of lagging history when the delegate can do one ([RefreshableBars]).
  */
 class ExpandableLiveSource(
     private val delegate: MarketSource,
     private val onOpen: () -> Unit = {},
     private val onClose: () -> Unit = {},
-) : MarketSource by delegate {
+) : MarketSource by delegate,
+    RefreshableBars {
     @Volatile private var feed: ExpandableTickFeed? = null
+
+    override fun canRefresh(symbol: String): Boolean = (delegate as? RefreshableBars)?.canRefresh(symbol) ?: false
+
+    override fun forgetBars(
+        symbol: String,
+        window: TimeWindow,
+    ) {
+        (delegate as? RefreshableBars)?.forgetBars(symbol, window)
+    }
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         val opened = delegate.liveTicks(symbols)
