@@ -13,6 +13,7 @@ import com.qkt.instrument.universe.MembershipChange.UNAVAILABLE
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
@@ -45,6 +46,7 @@ internal class DynamicSetHost(
     private val changes = MembershipJournal(journal)
     private val started = HashSet<HostedSet>()
     private var usedIds: Collection<String> = emptyList()
+    private var persistor: StatePersistor? = null
     private var running: List<Pair<HostedSet, SetMemberInstances>> = emptyList()
 
     private val streams = CandidateStreams(outer, sets, seedCandidates)
@@ -88,7 +90,7 @@ internal class DynamicSetHost(
         outer.bindToHub(hub, ctx, emit)
         val history = warmup(ctx.source)
         running =
-            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, { usedIds }, it::ladder, history) }
+            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, { usedIds }, persistor, it::ladder, history) }
     }
 
     override fun onTick(
@@ -108,6 +110,14 @@ internal class DynamicSetHost(
             watch?.onTick(tick)
         }
         for ((_, instances) in running) instances.compiled.forEach { it.onTick(tick, ctx, emit) }
+    }
+
+    override fun bindStatePersistor(
+        strategyId: String,
+        persistor: StatePersistor,
+    ) {
+        this.persistor = persistor
+        outer.bindStatePersistor(strategyId, persistor)
     }
 
     override fun resumeOrderIds(usedIds: Collection<String>) {

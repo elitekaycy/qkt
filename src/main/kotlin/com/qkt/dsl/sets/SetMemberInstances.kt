@@ -7,6 +7,7 @@ import com.qkt.dsl.compile.HubKey
 import com.qkt.instrument.universe.MembershipChange
 import com.qkt.instrument.universe.MembershipStep
 import com.qkt.marketdata.Candle
+import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
@@ -23,6 +24,8 @@ import com.qkt.strategy.WarmupStream
  *   never at the close it joined.
  * - A joining member's order ids continue past [resumedIds] (the ids a restarted session restored), so a member that
  *   traded before a restart never sends an id it already sent.
+ * - A member's rule edges persist under its own id ([persistor]), so a restart over a member ranked again does not
+ *   fire an edge it already fired; a member that leaves clears them, so a rejoin starts fresh as in a backtest.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
  * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out;
@@ -36,6 +39,7 @@ internal class SetMemberInstances(
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
     private val resumedIds: () -> Collection<String> = { emptyList() },
+    private val persistor: StatePersistor? = null,
     private val ladder: () -> StrikeLadder? = { null },
     private val warmup: (HubKey, Int, Long) -> List<Candle>,
 ) {
@@ -98,6 +102,7 @@ internal class SetMemberInstances(
     ) {
         val instance = template.compile(member, sections)
         instance.resumeOrderIds(resumedIds())
+        persistor?.let { instance.bindStatePersistor(stateId(member), it) }
         instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
@@ -132,6 +137,7 @@ internal class SetMemberInstances(
             ?: if (closeMs == Long.MIN_VALUE) Long.MAX_VALUE else closeMs - TimeWindow.parse(key.timeframe).durationMs
 
     private fun leave(member: String) {
+        instances[member]?.clearRuleEdges()
         hub.unregister(owner(member))
         instances.remove(member)
         sticky -= member
@@ -158,6 +164,9 @@ internal class SetMemberInstances(
         instance.onOrderSubmitted(signal, id)
         instance.onOrderRejected(id)
     }
+
+    /** Where [member]'s rule edges persist: its own id under the strategy's, so a restart restores them. */
+    private fun stateId(member: String): String = "${ctx.strategyId}.${template.set}.$member"
 
     private fun owner(member: String): String = "${ctx.strategyId}/${template.set}/$member"
 }
