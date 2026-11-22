@@ -137,14 +137,17 @@ class StrategyHandleMovingSetTest {
     }
 
     @Test
-    fun `a held candidate keeps the start, a held symbol no close picks refuses it`() {
+    fun `a restart declares every position the set's venue holds, picked or not, as a candidate`() {
         val persistor = FileStatePersistor(tmp.resolve("persist"))
         persistor.saveLegBook("rolling", "GW:A", held("GW:A"))
         assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
             .containsExactly("GW:A", "GW:B")
         persistor.saveLegBook("rolling", "GW:LATE", held("GW:LATE"))
-        assertThatThrownBy { liveStrategyAst(strategy(), listing, now, persistor) }
-            .hasMessageContaining("strategy 'rolling' holds GW:LATE")
+        assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
+            .containsExactly("GW:A", "GW:B", "GW:LATE")
+        persistor.saveLegBook("rolling", "OTHER:X", held("OTHER:X"))
+        assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
+            .doesNotContain("OTHER:X")
     }
 
     @Test

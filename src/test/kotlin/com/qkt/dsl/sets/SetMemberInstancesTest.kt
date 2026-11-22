@@ -192,4 +192,16 @@ class SetMemberInstancesTest {
         instances.apply(MembershipStep(emptyList(), listOf(unfed)))
         assertThat(instances.members).isEmpty()
     }
+
+    @Test
+    fun `a joining member's order ids continue past those a restart restored`() {
+        val ctx = testStrategyContext(strategyId = "movers")
+        val none: (HubKey, Int, Long) -> List<Candle> = { _, _, _ -> emptyList() }
+        val resumed =
+            SetMemberInstances(SetMemberTemplate(ast, "movers"), hub, ctx, {}, none) {
+                listOf("dsl-movers.movers.AAA--5", "ORD-x-9")
+            }
+        resumed.apply(membership.step(listOf("AAA"), emptySet()))
+        assertThat(resumed.compiled.single().orderIds?.next()).isEqualTo("dsl-movers.movers.AAA--6")
+    }
 }
