@@ -49,7 +49,7 @@ internal class CandidateStreams(
      * same venue, so what one asks of the session (volume, marks, a book, stacked legs) every member asks: the
      * session's start checks read these beside [outer], which holds none of the member rules.
      */
-    val samples: List<CompiledStrategy> =
+    private val samples: List<CompiledStrategy> =
         sets.mapNotNull { set -> keysOf(set).firstOrNull()?.let { set.template.compile(it.symbol) } }
 
     val volumeRequiringSymbols: Set<String> =
