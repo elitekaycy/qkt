@@ -528,6 +528,7 @@ SYMBOLS
     <set>   = <VENUE>:{<symbol>, <symbol>, ...} EVERY <timeframe> [WARMUP <n> BARS]      -- picked
     <set>   = <VENUE>:* WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC] EVERY <timeframe>   -- filtered
     <set>   = <VENUE>:*@<event>.<strike> WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- slot universe
+    <set>   = <VENUE>:<*|FAMILY>@<front|next|each>.* WHERE <filter> TOP <n> BY <field> [ASC|DESC] EVERY <timeframe>   -- event ladder
     <union> = <set> + <set> [+ <set> ...]                                                 -- union
 ```
 
@@ -613,6 +614,11 @@ at that close (an event contract once it opens, any contract until it expires) a
   expiry, then symbol); a member is the family's slot (`KXINXU@front.p70`), followed and traded exactly as a slot
   declared by hand ([event slots](#event-slots-kalshikxinxufrontp70)). A family is a candidate while a contract of
   it is listed and unexpired. A slot universe always moves, and cannot read market fields yet.
+- **Event ladders.** `KALSHI:KXINXU@front.* WHERE kind = event TOP 10 BY symbol ASC EVERY 1m` takes every contract of
+  the family's front open event (the one closing first), filters and ranks them, and rolls to the next event's
+  contracts when it closes; `@next.*` takes the event after it and `@each.*` every open event. `KALSHI:*@front.*`
+  does the same for every family. An event is open from its contracts' listing until their `close_at`; the members
+  are the contracts themselves, traded as declared streams.
 - **Warmup.** A joining member reads the history the run already holds for its stream: a backtest declares every
   member some close of the run picks (printed as `symbol set 'm': DYNAMIC over 4 candidate(s): ...`) and keeps each
   one's last bars, as many as the member's indicators or `WARMUP` need, so a member that joins late is warm at once.

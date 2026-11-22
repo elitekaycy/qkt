@@ -33,7 +33,9 @@ sealed interface SymbolSetSpec {
     /**
      * `VENUE:*[@<event>.<strike>] WHERE <filter> TOP <n> BY <field> [ASC|DESC] [DYNAMIC]`: the venue's catalog,
      * filtered and ranked. With a [slot] (`front.p70`) it is a slot universe: the filter and ranking run over the
-     * venue's event families (each read through its front contract) and each member is that family's slot.
+     * venue's event families (each read through its front contract) and each member is that family's slot. With a
+     * ladder selector (`front.*`, `next.*`, `each.*`) the members are the contracts of each family's selected open
+     * events (every open one for `each`), or only [family]'s (`KALSHI:KXINXU@front.* WHERE ...`).
      * Resolved once at start, unless it [moves]: then re-evaluated at each close of the set's `EVERY` window as of
      * that close, members joining and leaving during the run (runtime membership plan, steps 4-5).
      */
@@ -45,10 +47,15 @@ sealed interface SymbolSetSpec {
         val descending: Boolean,
         val dynamic: Boolean,
         val slot: String? = null,
+        val family: String? = null,
     ) : SymbolSetSpec {
         init {
             require(top > 0) { "TOP must be a positive count: $top" }
+            require(family == null || ladder) { "a family's set takes every contract of an event: $family@$slot" }
         }
+
+        /** True for an event ladder (`@front.*`, `@each.*`): the members are contracts of the selected events. */
+        val ladder: Boolean get() = slot?.endsWith(".*") == true
 
         /** True when the set reads an as-of market field (`close`, `volume`, `spread`) to filter or rank. */
         val readsMarket: Boolean get() = filter.readsMarket || by.market
@@ -61,8 +68,8 @@ sealed interface SymbolSetSpec {
 
         override val canonical: String
             get() =
-                "$venue:*${slot?.let { "@$it" }.orEmpty()} WHERE ${filter.canonical} TOP $top BY ${by.token} " +
-                    (if (descending) "DESC" else "ASC") + if (dynamic) " DYNAMIC" else ""
+                "$venue:${family ?: "*"}${slot?.let { "@$it" }.orEmpty()} WHERE ${filter.canonical} " +
+                    "TOP $top BY ${by.token} " + (if (descending) "DESC" else "ASC") + if (dynamic) " DYNAMIC" else ""
     }
 
     /** `a + b`: the members of sets declared above, each keeping its own venue. */
