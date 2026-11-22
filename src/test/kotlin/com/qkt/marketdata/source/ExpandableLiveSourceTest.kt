@@ -181,6 +181,8 @@ class ExpandableLiveSourceTest {
             object : ExpandableTickFeed {
                 override fun add(symbols: Collection<String>) = symbols.toSet()
 
+                override fun drop(symbols: Collection<String>) = Unit
+
                 override fun next(): Tick? = null
             }
         val source =

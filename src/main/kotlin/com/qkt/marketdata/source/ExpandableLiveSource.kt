@@ -9,7 +9,7 @@ import com.qkt.marketdata.TickFeed
 interface ExpandableTickFeed : TickFeed {
     fun add(symbols: Collection<String>): Set<String>
 
-    fun drop(symbols: Collection<String>) {}
+    fun drop(symbols: Collection<String>)
 }
 
 /**

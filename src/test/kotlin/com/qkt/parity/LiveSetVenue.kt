@@ -37,6 +37,8 @@ internal class LiveSetVenue(
                 return null
             }
 
+            override fun drop(symbols: Collection<String>) = Unit
+
             override fun close() = Unit
         }
 
