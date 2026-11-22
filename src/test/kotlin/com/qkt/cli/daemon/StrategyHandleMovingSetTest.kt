@@ -161,4 +161,19 @@ class StrategyHandleMovingSetTest {
         assertThat(strategy).isNotInstanceOf(DynamicSetHost::class.java)
         assertThat(AstCompiler().compile(ast)::class).isEqualTo(strategy::class)
     }
+
+    @Test
+    fun `a slot universe is refused live, before anything trades`() {
+        val file =
+            tmp.resolve("slots.qkt").also {
+                Files.writeString(
+                    it,
+                    "STRATEGY slots VERSION 1\nSYMBOLS\n" +
+                        "    m = GW:*@front.p70 WHERE kind = event TOP 1 BY symbol EVERY 1h\n" +
+                        "RULES\n    FOR EACH s IN m DO\n      WHEN s.close > 0.5 THEN BUY s SIZING 1",
+                )
+            }
+        assertThatThrownBy { liveStrategy(file, listing, now, FileStatePersistor(tmp.resolve("p3"))) }
+            .hasMessage("symbol set 'm' is a slot universe, which live sessions do not run yet; backtest it")
+    }
 }

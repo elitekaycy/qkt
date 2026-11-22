@@ -6,6 +6,9 @@ import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.instrument.universe.MemberChange
+import com.qkt.instrument.universe.MembershipChange
+import com.qkt.instrument.universe.MembershipStep
 import com.qkt.instrument.universe.SetMembership
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -181,5 +184,12 @@ class SetMemberInstancesTest {
     fun `a member with no history reads bars ending before the bar of the close it joined at`() {
         instances.apply(membership.step(listOf("AAA"), emptySet()), t0 + minute)
         assertThat(warmupEnds.single()).isEqualTo(t0)
+    }
+
+    @Test
+    fun `a candidate the session could not subscribe starts no instance`() {
+        val unfed = MemberChange("AAA", MembershipChange.UNAVAILABLE, null)
+        instances.apply(MembershipStep(emptyList(), listOf(unfed)))
+        assertThat(instances.members).isEmpty()
     }
 }
