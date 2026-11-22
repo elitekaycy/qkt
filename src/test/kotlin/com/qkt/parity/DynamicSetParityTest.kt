@@ -10,6 +10,7 @@ import com.qkt.common.TradingCalendar
 import com.qkt.dsl.sets.DynamicSetFixtures
 import com.qkt.dsl.sets.DynamicSetFixtures.Line
 import com.qkt.events.SetMembershipChanged
+import com.qkt.instrument.universe.MembershipChange
 import com.qkt.marketdata.Tick
 import com.qkt.parity.DslParityState.TradeState
 import com.qkt.parity.DslParityState.tradeState
@@ -104,6 +105,25 @@ class DynamicSetParityTest {
             "BACKTEST:A" to "SELL",
             "BACKTEST:B" to "BUY",
         )
+    }
+
+    @Test
+    fun `a cross-member function reads the members of each close, alike in a backtest and live`() {
+        val (backtest, live) = both(DynamicSetFixtures.summedSource, DynamicSetFixtures.summedTape())
+
+        assertThat(live.journal).containsExactlyElementsOf(backtest.journal)
+        assertThat(live.trades).containsExactlyElementsOf(backtest.trades)
+        // SUM_OF(m.close, s): A alone reads 1; once B joins, A and B read 1 + 2; once C pushes A out of the ranking,
+        // B and C read 2 + 4. A holds, so it sticks, but a sticky member is no longer a member: it never counts.
+        assertThat(backtest.journal.map { it.member to it.change }).containsExactly(
+            "BACKTEST:A" to MembershipChange.JOIN,
+            "BACKTEST:B" to MembershipChange.JOIN,
+            "BACKTEST:A" to MembershipChange.STICK,
+            "BACKTEST:C" to MembershipChange.JOIN,
+        )
+        val minute = { ts: Long -> ((ts - DynamicSetFixtures.T0) / 60_000L).toInt() }
+        assertThat(backtest.trades.map { Triple(it.symbol, it.quantity.toBigDecimal().toInt(), minute(it.timestamp)) })
+            .containsExactly(Triple("BACKTEST:A", 1, 1), Triple("BACKTEST:B", 3, 3), Triple("BACKTEST:C", 6, 5))
     }
 
     private fun both(
