@@ -29,12 +29,13 @@ internal object TapeFetch {
         kind: FlowKind,
         args: Args,
         clock: Clock,
+        sourceOverride: PrintHistorySource? = null,
     ): Int {
         val (from, to) =
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last")) ?: return ExitCodes.ARG_ERROR
         val venue = target.substringBefore(':')
         val source =
-            sourceFor(venue, args.option("config")) ?: run {
+            sourceOverride ?: sourceFor(venue, args.option("config")) ?: run {
                 System.err.println(
                     "qkt: no ${kind.capability} for '$venue' (a type: gateway account of that name in --config)",
                 )

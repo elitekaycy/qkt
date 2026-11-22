@@ -1,6 +1,7 @@
 package com.qkt.cli.audit
 
 import com.qkt.cli.ExitCodes
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.connector.mt5.MT5Client
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
@@ -15,6 +16,7 @@ private val MC = MathContext(8, RoundingMode.HALF_EVEN)
  * Samples the latest TradingView tick against the MT5 mid every [pollMs] for [durationSeconds] and
  * reports the absolute price drift distribution (mean, median, p95, max).
  */
+@ExcludeFromCoverage("connects to the live TradingView feed and polls a real MT5 gateway for a wall-clock duration")
 internal fun runTradingViewDriftAudit(
     client: MT5Client,
     symbol: String,

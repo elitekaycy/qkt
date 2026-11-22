@@ -31,6 +31,31 @@ class ResearchGovernanceTest {
             .contains("unstable-neighborhood")
     }
 
+    @Test
+    fun `neighbours holding at least half the winner's metric are not a warning`() {
+        val runs =
+            listOf(
+                run("fast=3", "3", "100"),
+                run("fast=2", "2", "60"),
+                run("fast=4", "4", "55"),
+            )
+
+        val warning =
+            ResearchGovernance.unstableNeighborhoodWarning(
+                ranked = runs,
+                axes = mapOf("fast" to listOf("2", "3", "4")),
+                rank = RankMetric.TOTAL_PNL,
+            )
+
+        assertThat(warning).isNull()
+    }
+
+    @Test
+    fun `a search of more than the default threshold of configurations is flagged`() {
+        assertThat(ResearchGovernance.largeSearchWarnings(100)).isEmpty()
+        assertThat(ResearchGovernance.largeSearchWarnings(101).single()).startsWith("101 configurations were evaluated")
+    }
+
     private fun run(
         label: String,
         fast: String,

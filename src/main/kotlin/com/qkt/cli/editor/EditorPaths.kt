@@ -25,29 +25,32 @@ object EditorPaths {
      * The command that started this qkt: `qkt.exe` itself in the Windows build, otherwise the
      * script in `bin/`, since the running process is then `java`.
      */
-    fun launcher(): Path? {
-        val command =
+    fun launcher(
+        command: Path? =
             ProcessHandle
                 .current()
                 .info()
                 .command()
                 .orElse(null)
-                ?.let { Path.of(it) }
+                ?.let { Path.of(it) },
+        appHome: Path? = appHomeFromJar(),
+        windows: Boolean = System.getProperty("os.name", "").lowercase().contains("win"),
+    ): Path? {
         if (command?.fileName?.toString()?.startsWith("qkt") == true) return command
-        val bin = appHomeFromJar()?.resolve("bin") ?: return null
-        val windows = System.getProperty("os.name", "").lowercase().contains("win")
+        val bin = appHome?.resolve("bin") ?: return null
         return bin.resolve(if (windows) "qkt.bat" else "qkt").takeIf { Files.isRegularFile(it) }
     }
 
     fun bundledEditorRoot(
         env: Map<String, String> = System.getenv(),
         cwd: Path = Path.of(".").toAbsolutePath().normalize(),
+        appHome: Path? = appHomeFromJar(),
     ): Path? {
         env["QKT_HOME"]?.let {
             val p = Path.of(it).resolve("share/editor")
             if (Files.isDirectory(p)) return p
         }
-        appHomeFromJar()?.let {
+        appHome?.let {
             val p = it.resolve("share/editor")
             if (Files.isDirectory(p)) return p
         }
@@ -56,12 +59,17 @@ object EditorPaths {
         return null
     }
 
-    private fun appHomeFromJar(): Path? {
-        val cs = EditorPaths::class.java.protectionDomain?.codeSource ?: return null
-        val url = cs.location ?: return null
+    private fun appHomeFromJar(): Path? =
+        EditorPaths::class.java.protectionDomain
+            ?.codeSource
+            ?.location
+            ?.let(::appHomeOf)
+
+    /** The install root for a runtime jar at [location]: the directory above `lib/`, or null elsewhere. */
+    internal fun appHomeOf(location: java.net.URL): Path? {
         val jar =
             try {
-                Path.of(url.toURI())
+                Path.of(location.toURI())
             } catch (_: Exception) {
                 return null
             }

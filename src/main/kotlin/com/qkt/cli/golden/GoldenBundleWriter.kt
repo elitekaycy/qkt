@@ -1,9 +1,9 @@
 package com.qkt.cli.golden
 
 import com.qkt.cli.daemon.StateDir
+import com.qkt.cli.moveAtomically
 import com.qkt.connectivity.transport.TransportJournalDirs
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -80,11 +80,7 @@ internal fun writeGoldenBundle(
                 renderCaptureManifest(session, audit, transport, venueExchanges, createdAt, entries, readOnly),
             )
         }
-        try {
-            Files.move(temp, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING)
-        }
+        moveAtomically(temp, absolute, StandardCopyOption.REPLACE_EXISTING)
     } finally {
         Files.deleteIfExists(temp)
     }

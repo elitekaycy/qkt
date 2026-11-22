@@ -15,13 +15,17 @@ import com.qkt.cli.daemon.StartupDeploys
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
-import com.qkt.cli.daemon.deployLoadDirFile
+import com.qkt.cli.daemon.dailySummaryOf
+import com.qkt.cli.daemon.deployedStrategyNames
+import com.qkt.cli.daemon.insightsJournalDir
+import com.qkt.cli.daemon.loadDirDeployer
+import com.qkt.cli.daemon.strategiesOnAccount
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailySummaryScheduler
 import com.qkt.notify.NotificationEvent
 import com.qkt.notify.NotifyEventKind
-import com.qkt.notify.aggregateDailySummary
 import com.qkt.observe.insights.SharedDealFetch
 import com.qkt.persistence.StatePersistor
 import java.nio.file.Files
@@ -114,18 +118,6 @@ class DaemonCommand(
         val insightsSink: com.qkt.observe.insights.InsightsSink? =
             if (cfg.insights.enabled && cfg.insights.url.isNotBlank()) {
                 val insightsInstanceId = cfg.insights.instanceId.ifBlank { "qkt" }
-                val insightsJournalDir =
-                    if (cfg.insights.journalEnabled) {
-                        cfg.insights.journalDir
-                            .takeIf { it.isNotBlank() }
-                            ?.let {
-                                java.nio.file.Path
-                                    .of(it)
-                            }
-                            ?: stateDir.stateRoot.resolve("insights-journal")
-                    } else {
-                        null
-                    }
                 com.qkt.observe.insights.InsightsSink(
                     url = cfg.insights.url,
                     token = cfg.insights.token,
@@ -133,7 +125,7 @@ class DaemonCommand(
                     batchSize = cfg.insights.batchSize,
                     flushIntervalMs = cfg.insights.flushIntervalMs,
                     queueCapacity = cfg.insights.queueCapacity,
-                    journalDir = insightsJournalDir,
+                    journalDir = insightsJournalDir(cfg.insights, stateDir.stateRoot),
                 )
             } else {
                 null
@@ -161,18 +153,8 @@ class DaemonCommand(
                     stateDir.stateRoot,
                     daemonInstrumentRegistry,
                     startupDeploys::underway,
-                ) { accountName ->
-                    registryRef
-                        .get()
-                        ?.list()
-                        .orEmpty()
-                        .filter { handle ->
-                            handle.live
-                                .streamBrokers()
-                                .values
-                                .any { it.equals(accountName, ignoreCase = true) }
-                        }.map { it.name }
-                }
+                    strategiesOnAccount(registryRef),
+                )
             } catch (e: Exception) {
                 DaemonLog.line("[ERROR] qkt: broker account load failed: ${e.message}")
                 runCatching { insightsSink?.close() }
@@ -189,12 +171,7 @@ class DaemonCommand(
         val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar =
             CalendarResolver.live(accounts, daemonInstrumentRegistry)::calendarFor
         val liveAccounts = verifiedAccounts.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
-        if (!cfg.runtimeMode.production && liveAccounts.isNotEmpty()) {
-            System.err.println(
-                "[WARN] live-money account(s) ${liveAccounts.joinToString { it.first.config.name }} detected while " +
-                    "runtime.mode=${cfg.runtimeMode.name.lowercase()}; production governance checks are not active",
-            )
-        }
+        liveMoneyWarning(cfg.runtimeMode, liveAccounts.map { it.first.config.name })?.let { System.err.println(it) }
         val journalRetention =
             com.qkt.observe
                 .JournalRetention(
@@ -234,13 +211,7 @@ class DaemonCommand(
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
                 ?: cfg.statePersistor(stateDir.stateRoot)
-        val deployedIds = {
-            registryRef
-                .get()
-                ?.list()
-                ?.map { it.ast.name }
-                .orEmpty()
-        }
+        val deployedIds = { deployedStrategyNames(registryRef.get()) }
         val daemonRisk = com.qkt.risk.DaemonRiskScope(persistor = statePersistor, hardDailyLoss = cfg.hardDailyLoss)
         daemonRisk.restore()
         val registry =
@@ -322,7 +293,7 @@ class DaemonCommand(
                 )
         val autoDeployRetrier =
             AutoDeployRetrier(
-                deploy = { name, file -> deployLoadDirFile(name, file, registry, portfolioDeployer) },
+                deploy = loadDirDeployer(registry, portfolioDeployer),
                 alreadyDeployed = { name -> registry.get(name) != null || registry.getPortfolio(name) != null },
             )
         val plane =
@@ -396,12 +367,7 @@ class DaemonCommand(
         // One daily-summary scheduler per channel that opts in, each pointed at that channel's own
         // notifier so the summary reaches only the channels that asked for it. The producer
         // aggregates every live session's rows into one message.
-        val dailySummaryProducer = {
-            aggregateDailySummary(
-                rowsPerSession = registry.list().map { it.live.dailySummaryRows() },
-                nowMs = Instant.now().toEpochMilli(),
-            )
-        }
+        val dailySummaryProducer = { dailySummaryOf(registry) }
         val dailySummarySchedulers: List<DailySummaryScheduler> =
             channelNotifiers.mapNotNull { (ch, channelNotifier) ->
                 ch.dailySummaryUtc
@@ -503,6 +469,7 @@ class DaemonCommand(
 
     companion object {
         @Suppress("UNUSED_PARAMETER")
+        @ExcludeFromCoverage("opens the live TradingView websocket; only a running process reaches it")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
 }

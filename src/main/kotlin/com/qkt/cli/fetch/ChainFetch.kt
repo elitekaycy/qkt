@@ -4,6 +4,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
 import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.derivatives.options.chain.OptionTrade
 import com.qkt.derivatives.options.chain.TradeChainBuilder
@@ -102,9 +103,7 @@ internal object ChainFetch {
         dataRoot: Path,
         window: Window,
         nowMs: Long,
-        history: (OptionRoot, Long, Long) -> List<OptionTrade> = { root, from, to ->
-            DeribitTradeHistory(DeribitClient()).trades(root, from, to)
-        },
+        history: (OptionRoot, Long, Long) -> List<OptionTrade> = ::deribitTrades,
     ): Int {
         if (window.from.isAfter(window.to) || window.everyMs < MIN_EVERY_MS || DAY_MS % window.everyMs != 0L) {
             System.err.println(
@@ -180,3 +179,10 @@ internal object ChainFetch {
         return ExitCodes.USER_ERROR
     }
 }
+
+@ExcludeFromCoverage("reads Deribit's public trade history over the network; only a networked run reaches it")
+private fun deribitTrades(
+    root: OptionRoot,
+    fromMs: Long,
+    toMs: Long,
+): List<OptionTrade> = DeribitTradeHistory(DeribitClient()).trades(root, fromMs, toMs)

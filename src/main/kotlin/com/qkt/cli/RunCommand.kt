@@ -1,31 +1,21 @@
 package com.qkt.cli
 
 import com.qkt.app.LiveSession
-import com.qkt.app.SessionPnl
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
-import com.qkt.cli.observe.PendingStackLayer
-import com.qkt.cli.observe.PersistenceHealthDto
 import com.qkt.cli.observe.PortPrinter
-import com.qkt.cli.observe.PositionDto
-import com.qkt.cli.observe.StatusSnapshot
-import com.qkt.cli.observe.TradeDto
+import com.qkt.common.coverage.ExcludeFromCoverage
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.execution.Trade
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
-import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * `qkt run <strategy.qkt>` — foreground paper-trading of a single strategy.
@@ -139,14 +129,7 @@ class RunCommand(
                 runawayMaxRoundTrips = runawayMaxRoundTrips,
                 runawayMaxRejections = runawayMaxRejections,
                 candleCloseGraceMs = candleCloseGraceMs,
-                onTrade = { trade, realized, _ ->
-                    val ts = Instant.ofEpochMilli(trade.timestamp)
-                    println(
-                        "[INFO] $ts ${trade.side} ${trade.symbol} qty=${trade.quantity.toPlainString()} " +
-                            "px=${trade.price.toPlainString()} realized=${realized.toPlainString()}",
-                    )
-                    ring.append("trade", tradeToJson(trade, realized))
-                },
+                onTrade = tradeRecorder(ring),
                 onSignal = { sig ->
                     ring.append("signal", signalToJson(sig))
                 },
@@ -157,16 +140,7 @@ class RunCommand(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        val layers =
-                            session.pendingStackLayerInfos().map {
-                                PendingStackLayer(
-                                    stackId = it.stackId,
-                                    layer = it.layer,
-                                    triggerPrice = it.triggerPrice,
-                                    side = it.side,
-                                    quantity = it.quantity,
-                                )
-                            }
+                        val layers = pendingStackLayers(session.pendingStackLayerInfos())
                         buildSnapshot(
                             ast.name,
                             ast.version,
@@ -196,16 +170,7 @@ class RunCommand(
         server?.let { PortPrinter.announce(bind, it.boundPort, portFile) }
 
         val shutdownHook =
-            Thread {
-                System.err.println("[INFO] graceful shutdown initiated")
-                session.stop()
-                session.awaitTermination(Duration.ofMillis(shutdownTimeoutMs))
-                if (flattenOnStop) {
-                    System.err.println("[INFO] flatten-on-stop requested (no-op in 12b paper mode)")
-                }
-                runCatching { server?.close() }
-                System.err.println("[INFO] terminated; ${session.recentTrades().size} trades")
-            }
+            Thread { gracefulShutdown(session, server, shutdownTimeoutMs, flattenOnStop) }
         Runtime.getRuntime().addShutdownHook(shutdownHook)
 
         return try {
@@ -220,68 +185,9 @@ class RunCommand(
         }
     }
 
-    private fun tradeToJson(
-        trade: Trade,
-        realized: BigDecimal,
-    ) = buildJsonObject {
-        put("timestamp", JsonPrimitive(Instant.ofEpochMilli(trade.timestamp).toString()))
-        put("side", JsonPrimitive(trade.side.name))
-        put("symbol", JsonPrimitive(trade.symbol))
-        put("qty", JsonPrimitive(trade.quantity.toPlainString()))
-        put("price", JsonPrimitive(trade.price.toPlainString()))
-        put("realized", JsonPrimitive(realized.toPlainString()))
-    }
-
-    private fun buildSnapshot(
-        strategyName: String,
-        strategyVersion: Int,
-        startMs: Long,
-        startedAt: String,
-        trades: List<Trade>,
-        pendingStackLayers: List<PendingStackLayer> = emptyList(),
-        pnl: SessionPnl = SessionPnl.ZERO,
-        persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
-    ): StatusSnapshot {
-        val now = System.currentTimeMillis()
-        val last = trades.lastOrNull()
-        return StatusSnapshot(
-            strategy = strategyName,
-            version = strategyVersion,
-            uptimeMs = now - startMs,
-            startedAt = startedAt,
-            equity = pnl.equity,
-            balance = pnl.balance,
-            realized = pnl.realized,
-            unrealized = pnl.unrealized,
-            positions = emptyList<PositionDto>(),
-            lastTrade =
-                last?.let {
-                    TradeDto(
-                        timestamp = Instant.ofEpochMilli(it.timestamp).toString(),
-                        side = it.side.name,
-                        symbol = it.symbol,
-                        qty = it.quantity,
-                        price = it.price,
-                        realized = BigDecimal.ZERO,
-                    )
-                },
-            pendingStackLayers = pendingStackLayers,
-            persistence =
-                PersistenceHealthDto(
-                    enabled = persistenceHealth.enabled,
-                    totalWrites = persistenceHealth.totalWrites,
-                    slowWrites = persistenceHealth.slowWrites,
-                    failedWrites = persistenceHealth.failedWrites,
-                    consecutiveFailures = persistenceHealth.consecutiveFailures,
-                    failureEpisodes = persistenceHealth.failureEpisodes,
-                    queueSize = persistenceHealth.queueSize,
-                    callerRunsTotal = persistenceHealth.callerRunsTotal,
-                ),
-        )
-    }
-
     companion object {
         @Suppress("UNUSED_PARAMETER")
+        @ExcludeFromCoverage("opens the live TradingView websocket; only a running process reaches it")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
 }

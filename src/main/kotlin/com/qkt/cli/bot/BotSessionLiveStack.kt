@@ -8,6 +8,7 @@ import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.liveFactory
+import com.qkt.cli.liveMoneyWarning
 import com.qkt.cli.openAccounts
 import com.qkt.connectivity.AccountDirectory
 import java.nio.file.Path
@@ -47,12 +48,7 @@ internal class LiveSessionStack(
                     .fromEnv()
                     .verifyAll(accounts)
             val live = verified.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
-            if (!cfg.runtimeMode.production && live.isNotEmpty()) {
-                System.err.println(
-                    "[WARN] live-money account(s) ${live.joinToString { it.first.config.name }} detected while " +
-                        "runtime.mode=${cfg.runtimeMode.name.lowercase()}; production governance checks are not active",
-                )
-            }
+            liveMoneyWarning(cfg.runtimeMode, live.map { it.first.config.name })?.let { System.err.println(it) }
             val (_, notifier, notifyEvents) = configNotifier(cfg)
             factory =
                 liveFactory(
