@@ -14,9 +14,12 @@ import com.qkt.strategy.WarmupStream
  * Compiles a parsed [StrategyAst] into a runnable [Strategy] (a [DslCompiledStrategy]). It
  * expands hub fields and params, builds the stream table, runs the compile-time checks
  * (read-only orders, baskets, brackets, RESIZE protection, chained comparisons), then compiles
- * snapshots, rules, sequences and schedules in a fixed order that fixes indicator binding order.
+ * snapshots, rules, sequences and schedules in a fixed order that fixes indicator binding order. A symbol-set member
+ * instance compiles with its set's [crossSections] when the set's members move.
  */
-class AstCompiler {
+class AstCompiler(
+    private val crossSections: CrossSections? = null,
+) {
     /**
      * Compiles [rawAst], substituting [overrides] into its `PARAM`s. Every failure surfaces as a
      * [CompileError]; one that arose while compiling a rule carries that rule's line.
@@ -62,6 +65,7 @@ class AstCompiler {
                 basketConstituents,
                 structures = StructureSupport(structureAliases(ast)),
                 hubRecordGates = HubFieldExpansion.recordGates(ast),
+                crossSections = crossSections,
             )
         val exitExprCompiler = exprCompiler.forExitHooks()
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
@@ -126,15 +130,10 @@ class AstCompiler {
                 plan,
                 letCompiledRhs,
             )
-        val maxRolling = plan.rollingMaxN.values.maxOrNull() ?: 0
-        val retention = maxOf(1, maxRolling + 1)
-        val retentionByKey: Map<HubKey, Int> =
-            streams.values.associateWith { retention }
+        val retention = maxOf(1, (plan.rollingMaxN.values.maxOrNull() ?: 0) + 1)
+        val retentionByKey: Map<HubKey, Int> = streams.values.associateWith { retention }
 
-        val stackAtSymbols: Set<String> =
-            whenThens
-                .flatMap { collectStackAtSymbols(it.action, streams) }
-                .toSet()
+        val stackAtSymbols: Set<String> = whenThens.flatMap { collectStackAtSymbols(it.action, streams) }.toSet()
         val sequenceRuntime = SequenceCompiler.compile(ast.sequences, streams, exprCompiler, resolver)
         sequenceRuntime.bindRuleEdges(rules)
 

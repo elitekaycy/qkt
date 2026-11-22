@@ -40,7 +40,7 @@ import com.qkt.dsl.ast.UnaryOp
  */
 class ExprCompiler(
     private val bindings: IndicatorBinding.Bag = IndicatorBinding.Bag(),
-    private val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
+    internal val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
     private val baskets: Map<String, List<String>> = emptyMap(),
     private val allowExitAccess: Boolean = false,
     /** The strategy's option structures, read by `POSITION.<structure>` fields. */
@@ -49,6 +49,8 @@ class ExprCompiler(
     private val hubRecordGates: Map<String, String> = emptyMap(),
     /** The contracts the strategy's event slots opened, read by `POSITION.<slot>` and traded by slot orders. */
     val slots: SlotBooks = SlotBooks(),
+    /** The cross-sections of the moving symbol set a member instance belongs to; null outside one. */
+    internal val crossSections: CrossSections? = null,
 ) {
     private val structureFields = StructureFieldCompiler(structures)
     private val indicatorCalls = IndicatorCallCompiler(bindings, this, hubRecordGates)
@@ -57,7 +59,7 @@ class ExprCompiler(
         if (allowExitAccess) {
             this
         } else {
-            ExprCompiler(bindings, aggregates, baskets, true, structures, hubRecordGates, slots)
+            ExprCompiler(bindings, aggregates, baskets, true, structures, hubRecordGates, slots, crossSections)
         }
 
     fun compile(
