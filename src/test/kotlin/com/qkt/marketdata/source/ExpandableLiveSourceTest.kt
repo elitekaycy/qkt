@@ -100,8 +100,6 @@ class ExpandableLiveSourceTest {
                 override fun add(symbols: Collection<String>) = symbols.toSet()
 
                 override fun next(): Tick? = null
-
-                override fun close() = Unit
             }
         val source =
             ExpandableLiveSource(
@@ -111,5 +109,21 @@ class ExpandableLiveSourceTest {
             )
         assertThat(source.liveTicks(listOf("A"))).isSameAs(native)
         assertThat(source.subscribe(listOf("Z"))).containsExactly("Z")
+        native.close()
+    }
+
+    @Test
+    fun `a primary feed that fails ends the merged feed`() {
+        val failing =
+            object : MarketSource by venue {
+                override fun liveTicks(symbols: List<String>): TickFeed =
+                    object : TickFeed {
+                        override fun next(): Tick? = error("socket reset")
+                    }
+            }
+        val feed = ExpandableLiveSource(failing).liveTicks(listOf("A"))
+        assertThat(feed.next()).isNull()
+        assertThat((feed as MarketDataLifecycleFeed).expectsContinuousDelivery).isFalse()
+        assertThat(feed.terminalFailureReason()).isNull()
     }
 }
