@@ -603,6 +603,10 @@ at that close (an event contract once it opens, any contract until it expires) a
 | release | a stuck member is now flat | dropped at that close |
 | stay | a stuck member is ranked again | a normal member again, without a new warmup |
 
+- **Event catalogs.** In a backtest a moving set also ranks the contracts of the instruments file's `events:`
+  families, read from their event catalogs (`contracts/<VENUE>/<FAMILY>.events.json`): a contract is a row from its
+  listing (`openAtMs`) until its expiry, so `KALSHI:* WHERE family = KXINXU TOP 8 BY expiry_at ASC DYNAMIC EVERY 1h`
+  rolls from one hourly event's contracts to the next as they list and expire.
 - **Warmup.** A joining member reads the history the run already holds for its stream: a backtest declares every
   member some close of the run picks (printed as `symbol set 'm': DYNAMIC over 4 candidate(s): ...`) and keeps each
   one's last bars, as many as the member's indicators or `WARMUP` need, so a member that joins late is warm at once.
