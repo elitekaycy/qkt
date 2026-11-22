@@ -109,7 +109,8 @@ internal object DynamicSetRuns {
 
     /**
      * The plan for [ast]'s `DYNAMIC` sets over `[fromMs, toMs]`, null when it has none. A set's candidates are the
-     * members of every close of its window in that span, in symbol order; a set no close gives a member is refused.
+     * members of every close of its window in that span, plus the symbols of its venue in [held] (a live restart's
+     * positions, which stay as sticky members), in symbol order; a set no close gives a member is refused.
      */
     fun plan(
         ast: StrategyAst,
@@ -117,6 +118,7 @@ internal object DynamicSetRuns {
         fromMs: Long,
         toMs: Long,
         survivorshipAccepted: Boolean,
+        held: Set<String> = emptySet(),
         note: (String) -> Unit = { System.err.println("qkt: note: $it") },
     ): Plan? {
         val dynamic =
@@ -142,7 +144,11 @@ internal object DynamicSetRuns {
                 Triple(decl, spec, SymbolSetResolution.rows(decl.alias, spec, catalog, survivorshipAccepted).rows)
             }
         val candidates =
-            sets.associate { (decl, spec, rows) -> decl.alias to candidates(decl, spec, rows, fromMs, toMs) }
+            sets.associate { (decl, spec, rows) ->
+                val holding =
+                    held.filter { it.substringBefore(':').equals(spec.venue, true) }.map { it.substringAfter(':') }
+                decl.alias to (candidates(decl, spec, rows, fromMs, toMs) + holding).distinct().sorted()
+            }
         for ((alias, members) in candidates) {
             note("symbol set '$alias': DYNAMIC over ${members.size} candidate(s): ${members.joinToString()}")
         }

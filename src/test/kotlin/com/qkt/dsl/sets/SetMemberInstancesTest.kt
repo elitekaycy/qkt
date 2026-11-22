@@ -198,10 +198,16 @@ class SetMemberInstancesTest {
         val ctx = testStrategyContext(strategyId = "movers")
         val none: (HubKey, Int, Long) -> List<Candle> = { _, _, _ -> emptyList() }
         val resumed =
-            SetMemberInstances(SetMemberTemplate(ast, "movers"), hub, ctx, {}, none) {
-                listOf("dsl-movers.movers.AAA--5", "ORD-x-9")
-            }
+            SetMemberInstances(
+                SetMemberTemplate(ast, "movers"),
+                hub,
+                ctx,
+                emit = {},
+                resumedIds = { listOf("dsl-movers.movers.AAA--5", "ORD-x-9") },
+                warmup = none,
+            )
         resumed.apply(membership.step(listOf("AAA"), emptySet()))
-        assertThat(resumed.compiled.single().orderIds?.next()).isEqualTo("dsl-movers.movers.AAA--6")
+        val ids = resumed.compiled.single().orderIds
+        assertThat(ids?.next()).isEqualTo("dsl-movers.movers.AAA--6")
     }
 }

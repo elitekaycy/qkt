@@ -99,16 +99,21 @@ class DynamicSetMembership(
     /**
      * The step of the window close at or before [nowMs], with the market figures [facts] gives for that close and the
      * members [held] then reports holding, the first time an instant reaches that close; null until the next close.
+     * With [restore] the run's first evaluation rebuilds membership instead ([SetMembership.restore]): a restart over
+     * held positions reports each member as restored, the held ones outside the ranking sticky.
      */
     fun at(
         nowMs: Long,
         facts: (closeMs: Long) -> MarketFacts = { MarketFacts.NONE },
+        restore: Boolean = false,
         held: () -> Set<String>,
     ): Evaluation? {
         if (nowMs < nextCloseMs) return null
+        val first = nextCloseMs == Long.MIN_VALUE
         val closeMs = nowMs - Math.floorMod(nowMs, windowMs)
         nextCloseMs = closeMs + windowMs
-        val step = membership.step(membersAt(closeMs, facts(closeMs)), held())
+        val members = membersAt(closeMs, facts(closeMs))
+        val step = if (first && restore) membership.restore(members, held()) else membership.step(members, held())
         activeSymbols = step.active.mapTo(LinkedHashSet()) { "${spec.venue}:$it" }
         return Evaluation(closeMs, step)
     }

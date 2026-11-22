@@ -1,6 +1,5 @@
 package com.qkt.dsl.sets
 
-import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledStrategy
 import com.qkt.dsl.compile.DecisionOrderLink
@@ -39,40 +38,20 @@ internal class DynamicSetHost(
     private val outer: CompiledStrategy,
     private val sets: List<HostedSet>,
     private val warmup: (MarketSource) -> (HubKey, Int, Long) -> List<Candle> = { { _, _, _ -> emptyList() } },
-    private val seedCandidates: Boolean = true,
+    seedCandidates: Boolean,
     private val journal: (SetMembershipChanged) -> Unit = {},
 ) : DslCompiledStrategy by outer,
     PerStreamWarmable {
     private val changes = MembershipJournal(journal)
+    private val started = HashSet<HostedSet>()
+    private var usedIds: Collection<String> = emptyList()
     private var running: List<Pair<HostedSet, SetMemberInstances>> = emptyList()
 
-    /** Every candidate member's stream, with what a member instance asks of it. */
-    private val candidates: Map<HubKey, SetMemberTemplate.StreamNeeds> =
-        sets
-            .flatMap { set ->
-                val keys = keysOf(set)
-                val needs = keys.firstOrNull()?.let { set.template.streamNeeds(it.symbol) }
-                keys.mapNotNull { key -> needs?.let { key to it } }
-            }.toMap()
+    private val streams = CandidateStreams(outer, sets, seedCandidates)
 
-    /** The watched tier of each set that reads market fields: a record per window for every symbol of its venue. */
-    private val watched: Map<HostedSet, WatchedWindows> =
-        sets
-            .filter { it.membership.readsMarket }
-            .associateWith { set ->
-                WatchedWindows(set.membership.windowMs) { it.substringBefore(':').equals(set.venue, true) }
-            }
+    override val retentionByKey: Map<HubKey, Int> get() = streams.retentionByKey
 
-    override val retentionByKey: Map<HubKey, Int> =
-        outer.retentionByKey +
-            candidates.mapValues { (key, needs) -> maxOf(needs.retention, outer.retentionByKey[key] ?: 1) }
-
-    override val perStreamWarmup: Map<WarmupStream, WarmupSpec> =
-        outer.perStreamWarmup +
-            candidates.entries
-                .filter { seedCandidates }
-                .mapNotNull { (key, needs) -> needs.warmup?.let { stream(key) to it } }
-                .toMap()
+    override val perStreamWarmup: Map<WarmupStream, WarmupSpec> get() = streams.perStreamWarmup
 
     /** The sets this strategy runs, for a live session that keeps their rows to what it can feed. */
     val hosted: List<HostedSet> get() = sets
@@ -86,8 +65,7 @@ internal class DynamicSetHost(
     }
 
     /** The candidate members (bare symbols) of [set] the strategy declared at start. */
-    fun declaredMembers(set: String): Set<String> =
-        keysOf(sets.first { it.template.set == set }).mapTo(HashSet()) { it.symbol }
+    fun declaredMembers(set: String): Set<String> = streams.declaredMembers(set)
 
     /**
      * Journals that [members] of [set] could not be subscribed at [atMs], so they never join: safe from another
@@ -109,7 +87,8 @@ internal class DynamicSetHost(
     ) {
         outer.bindToHub(hub, ctx, emit)
         val history = warmup(ctx.source)
-        running = sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, it::ladder, history) }
+        running =
+            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, { usedIds }, it::ladder, history) }
     }
 
     override fun onTick(
@@ -120,14 +99,31 @@ internal class DynamicSetHost(
         outer.onTick(tick, ctx, emit)
         changes.drain(ctx.strategyId)
         for ((set, instances) in running) {
-            val watch = watched[set]
+            val watch = streams.watched[set]
+            val atStart = if (started.add(set)) heldAtStart(set, ctx) else emptySet()
             set.membership
-                .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }) { held(set.venue, instances, ctx) }
-                ?.let { apply(set, instances, it, ctx) }
+                .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }, atStart.isNotEmpty()) {
+                    atStart.ifEmpty { held(set.venue, instances, ctx) }
+                }?.let { apply(set, instances, it, ctx) }
             watch?.onTick(tick)
         }
         for ((_, instances) in running) instances.compiled.forEach { it.onTick(tick, ctx, emit) }
     }
+
+    override fun resumeOrderIds(usedIds: Collection<String>) {
+        this.usedIds = usedIds
+        outer.resumeOrderIds(usedIds)
+    }
+
+    /** The declared members of [set] the strategy holds when it starts: a restart's positions, restored sticky. */
+    private fun heldAtStart(
+        set: HostedSet,
+        ctx: StrategyContext,
+    ): Set<String> =
+        declaredMembers(set.template.set).filterTo(HashSet()) {
+            val position = ctx.positions.positionFor("${set.venue}:$it")
+            (position?.quantity?.signum() ?: 0) != 0
+        }
 
     override fun onOrderSubmitted(
         signal: Signal,
@@ -164,9 +160,6 @@ internal class DynamicSetHost(
         }
     }
 
-    private fun keysOf(set: HostedSet): Collection<HubKey> =
-        outer.declaredStreams.filterKeys { SetMemberAlias.setOf(it) == set.template.set }.values
-
     /** The strategy's own rules first, then every running member instance. */
     private fun all(): Sequence<CompiledStrategy> =
         sequenceOf(outer) + running.asSequence().flatMap { (_, instances) -> instances.compiled }
@@ -184,6 +177,4 @@ internal class DynamicSetHost(
                 ctx.openOrders.entryCountFor(symbol) > 0 ||
                 instances.holdsThroughSlot(member, ctx.clock.now())
         }
-
-    private fun stream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 }

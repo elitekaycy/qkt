@@ -116,9 +116,11 @@ private fun liveSets(
             "symbol set '${slots.alias}' is a slot universe, which live sessions do not run yet; backtest it",
         )
     }
-    val plan = DynamicSetRuns.plan(resolved, catalog, nowMs, nowMs + LIVE_CANDIDATE_HORIZON_MS, false)
+    // A restart keeps every position a moving set held: it is declared as a candidate and restored as a sticky member.
+    val held = heldSymbols(persistor, ast.name)
+    val plan = DynamicSetRuns.plan(resolved, catalog, nowMs, nowMs + LIVE_CANDIDATE_HORIZON_MS, false, held = held)
     val declared = plan?.ast ?: resolved
-    requireHeldMembersKept(ast, declared, heldSymbols(persistor, ast.name))
+    requireHeldMembersKept(ast, declared, held)
     return DynamicSetRuns.Sets(declared, plan)
 }
 

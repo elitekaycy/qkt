@@ -21,6 +21,8 @@ import com.qkt.strategy.WarmupStream
  *   what the hub holds, and when that is short the older bars [warmup] (key, bar count, latest bar end) reads, then
  *   replayed through its indicators exactly as a declared stream's warmup is. It evaluates from the next close on,
  *   never at the close it joined.
+ * - A joining member's order ids continue past [resumedIds] (the ids a restarted session restored), so a member that
+ *   traded before a restart never sends an id it already sent.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
  * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out;
@@ -33,6 +35,7 @@ internal class SetMemberInstances(
     private val hub: CandleHub,
     private val ctx: StrategyContext,
     private val emit: (Signal) -> Unit,
+    private val resumedIds: () -> Collection<String> = { emptyList() },
     private val ladder: () -> StrikeLadder? = { null },
     private val warmup: (HubKey, Int, Long) -> List<Candle>,
 ) {
@@ -94,6 +97,7 @@ internal class SetMemberInstances(
         closeMs: Long,
     ) {
         val instance = template.compile(member, sections)
+        instance.resumeOrderIds(resumedIds())
         instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
