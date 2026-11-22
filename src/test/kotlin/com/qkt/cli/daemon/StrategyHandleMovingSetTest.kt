@@ -1,21 +1,13 @@
 package com.qkt.cli.daemon
 
-import com.qkt.common.Side
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.sets.DynamicSetHost
 import com.qkt.dsl.sets.SetCatalog
-import com.qkt.dsl.sets.SymbolSetSpec
-import com.qkt.instrument.EventContracts
 import com.qkt.instrument.InstrumentMeta
-import com.qkt.instrument.universe.VenueCatalog
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.persistence.FileStatePersistor
-import com.qkt.positions.LegBook
-import com.qkt.positions.LegRole
-import com.qkt.positions.PositionLeg
-import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -32,8 +24,7 @@ class StrategyHandleMovingSetTest {
     @TempDir
     lateinit var tmp: Path
 
-    private val hour = 3_600_000L
-    private val now = 1_794_002_400_000L
+    private val now = MovingSetListing.NOW
 
     private object Silent : MarketSource {
         override val name = "Silent"
@@ -49,66 +40,20 @@ class StrategyHandleMovingSetTest {
             }
     }
 
-    /** Contract [code] of the gateway's listing, open from [open] hours after now until [expiry] hours. */
     private fun contract(
         code: String,
         open: Int,
         expiry: Int,
-    ) = EventContracts.meta(
-        "GW:$code",
-        EventContracts.terms().copy(
-            openAtMs = now + open * hour,
-            closeAtMs = now + expiry * hour,
-            expiryMs = now + expiry * hour,
-        ),
-    )
+    ): InstrumentMeta = MovingSetListing.contract(code, open, expiry)
 
-    private fun listing(vararg rows: InstrumentMeta) =
-        object : SetCatalog {
-            override val source = "the venue listing"
-            override val survivorsOnly = false
+    private fun listing(vararg rows: InstrumentMeta): SetCatalog = MovingSetListing.listing(*rows)
 
-            override fun venue(
-                alias: String,
-                spec: SymbolSetSpec.Filtered,
-            ) = VenueCatalog(rows.toList())
-        }
-
-    private val listing = listing(contract("A", 0, 2), contract("B", 1, 3), contract("LATE", 30, 40))
+    private val listing: SetCatalog = listing(contract("A", 0, 2), contract("B", 1, 3), contract("LATE", 30, 40))
 
     /** Contracts listed long before and expiring long after any wall-clock start the factory takes. */
-    private val standing = listing(contract("A", -100_000, 1_000_000), contract("B", -100_000, 1_000_000))
+    private val standing: SetCatalog = listing(contract("A", -100_000, 1_000_000), contract("B", -100_000, 1_000_000))
 
-    private fun strategy(): Path =
-        tmp.resolve("rolling.qkt").also {
-            Files.writeString(
-                it,
-                """
-                STRATEGY rolling VERSION 1
-                SYMBOLS
-                    m = GW:* WHERE kind = event TOP 1 BY symbol DESC DYNAMIC EVERY 1h
-                RULES
-                    FOR EACH s IN m DO
-                      WHEN s.close > 0.5 THEN BUY s SIZING 1
-                """.trimIndent(),
-            )
-        }
-
-    private fun held(symbol: String) =
-        LegBook(symbol).also {
-            it.add(
-                PositionLeg(
-                    legId = "l-$symbol",
-                    parentLegId = null,
-                    role = LegRole.PRIMARY,
-                    side = Side.BUY,
-                    symbol = symbol,
-                    quantity = BigDecimal.ONE,
-                    entryPrice = BigDecimal.ONE,
-                    openedAt = 0L,
-                ),
-            )
-        }
+    private fun strategy(): Path = MovingSetListing.strategy(tmp)
 
     @Test
     fun `a live deploy subscribes the next day's candidates and runs the set's membership`() {
@@ -137,20 +82,6 @@ class StrategyHandleMovingSetTest {
     }
 
     @Test
-    fun `a restart declares every position the set's venue holds, picked or not, as a candidate`() {
-        val persistor = FileStatePersistor(tmp.resolve("persist"))
-        persistor.saveLegBook("rolling", "GW:A", held("GW:A"))
-        assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
-            .containsExactly("GW:A", "GW:B")
-        persistor.saveLegBook("rolling", "GW:LATE", held("GW:LATE"))
-        assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
-            .containsExactly("GW:A", "GW:B", "GW:LATE")
-        persistor.saveLegBook("rolling", "OTHER:X", held("OTHER:X"))
-        assertThat(liveStrategyAst(strategy(), listing, now, persistor).streams.map { it.qktSymbol })
-            .doesNotContain("OTHER:X")
-    }
-
-    @Test
     fun `a strategy without a moving set compiles as before`() {
         val file =
             tmp.resolve("plain.qkt").also {
@@ -163,6 +94,18 @@ class StrategyHandleMovingSetTest {
         val (ast, strategy) = liveStrategy(file, listing, now, FileStatePersistor(tmp.resolve("p2")))
         assertThat(strategy).isNotInstanceOf(DynamicSetHost::class.java)
         assertThat(AstCompiler().compile(ast)::class).isEqualTo(strategy::class)
+    }
+
+    @Test
+    fun `a moving set whose member rule stacks entries is refused live, before anything trades`() {
+        val file =
+            tmp.resolve("stacked.qkt").also {
+                val rule = "BUY s SIZING 1"
+                val text = strategy().toFile().readText()
+                Files.writeString(it, text.replace(rule, "$rule\n        STACK_AT MFE >= 50 WITHIN 30m SIZING 1"))
+            }
+        assertThatThrownBy { liveStrategy(file, listing, now, FileStatePersistor(tmp.resolve("p4"))) }
+            .hasMessageContaining("a rule over a symbol set whose members move uses STACK_AT")
     }
 
     @Test

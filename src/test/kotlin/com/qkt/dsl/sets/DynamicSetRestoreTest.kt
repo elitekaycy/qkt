@@ -7,12 +7,16 @@ import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.universe.MemberChange
 import com.qkt.instrument.universe.MembershipChange
 import com.qkt.marketdata.Tick
+import com.qkt.persistence.FileStatePersistor
 import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionView
+import com.qkt.strategy.OpenOrderView
 import com.qkt.strategy.testStrategyContext
 import java.math.BigDecimal
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 /** A session that starts over held positions rebuilds its sets' membership instead of joining them afresh. */
 class DynamicSetRestoreTest {
@@ -32,27 +36,54 @@ class DynamicSetRestoreTest {
         assertThat(next?.step?.changes).containsExactly(MemberChange("A", MembershipChange.RELEASE, null))
     }
 
-    @Test
-    fun `a host that starts holding a member restores it sticky and the ranked ones as members`() {
+    @TempDir
+    lateinit var tmp: Path
+
+    /** A host restarted over [owned] (what its set held before), with A held now, or only [working] an entry. */
+    private fun restarted(
+        owned: List<String>,
+        working: Boolean = false,
+    ): List<Triple<String, MembershipChange, Int?>> {
         val journal = mutableListOf<SetMembershipChanged>()
         val host = DynamicSetFixtures.plan().strategy(emptyMap(), live = true) { journal += it } as DynamicSetHost
+        val persistor = FileStatePersistor(tmp)
+        SetOwnership.save(persistor, "rotation", "s", owned)
+        host.bindStatePersistor("rotation", persistor)
         val positions =
             object : StrategyPositionView {
                 override fun positionFor(symbol: String): Position? =
-                    if (symbol == "BACKTEST:A") Position(symbol, BigDecimal.ONE, BigDecimal.ONE) else null
+                    Position(symbol, BigDecimal.ONE, BigDecimal.ONE).takeIf { symbol == "BACKTEST:A" && !working }
 
                 override fun allPositions(): Map<String, Position> = emptyMap()
             }
-        val ctx = testStrategyContext(strategyId = "rotation", positions = positions)
+        val orders = OpenOrderView { symbol -> if (working && symbol == "BACKTEST:A") 1 else 0 }
+        val ctx = testStrategyContext(strategyId = "rotation", positions = positions, openOrders = orders)
         val hub = CandleHub()
         for (k in host.declaredStreams.values.toSet() + host.retentionByKey.keys) hub.register(k, 1, "rotation")
         host.bindToHub(hub, ctx) {}
         host.onTick(Tick("BACKTEST:C", BigDecimal("99"), T0 + 4 * MINUTE), ctx) {}
-        assertThat(journal.map { Triple(it.member, it.change, it.rank) }).containsExactly(
+        return journal.map { Triple(it.member, it.change, it.rank) }
+    }
+
+    @Test
+    fun `a host that starts holding a member it owned restores it sticky and the ranked ones as members`() {
+        assertThat(restarted(owned = listOf("A"))).containsExactly(
             Triple("BACKTEST:C", MembershipChange.RESTORE, 1),
             Triple("BACKTEST:B", MembershipChange.RESTORE, 2),
             Triple("BACKTEST:A", MembershipChange.RESTORE, null),
         )
+        assertThat(SetOwnership.load(FileStatePersistor(tmp), "rotation", "s")).containsExactly("C", "B", "A")
+    }
+
+    @Test
+    fun `a member with only an entry order working is restored, so its fill has an instance`() {
+        assertThat(restarted(owned = listOf("A"), working = true).last())
+            .isEqualTo(Triple("BACKTEST:A", MembershipChange.RESTORE, null))
+    }
+
+    @Test
+    fun `a position the set never owned is not restored into it`() {
+        assertThat(restarted(owned = emptyList()).map { it.second }).containsOnly(MembershipChange.JOIN)
     }
 
     @Test
