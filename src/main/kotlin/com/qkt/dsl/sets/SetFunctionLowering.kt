@@ -3,17 +3,21 @@ package com.qkt.dsl.sets
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.FuncCall
+import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.Ref
+import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.WhenThen
 import com.qkt.dsl.compile.ExprTransform
 import com.qkt.dsl.compile.rejectNonBooleanCondition
 import com.qkt.dsl.parse.subst
+import java.math.BigDecimal
 
 /**
  * Lowers the cross-member functions ([SetFunction]) of a `FOR EACH m IN <set>` template over sets whose members are
  * fixed for the run: `SUM_OF(m.close, fx)` in the instance for member `fx.EURUSD` becomes
  * `SUM_OF.SET(fx.EURUSD.close, fx.XAUUSD.close, ...)`, the expression once per member with the loop variable bound
- * to it, like a lambda parameter. `RANK_OF` also takes this instance's own value first.
+ * to it, like a lambda parameter. `RANK_OF` also takes this instance's own value first. Over a set whose members
+ * move, [lowerMoving] keeps the expression once and leaves the cross-section to run time.
  */
 internal object SetFunctionLowering {
     /** The sets among [sets] that a set function in [template] ranges over. */
@@ -43,6 +47,26 @@ internal object SetFunctionLowering {
             if (target == null) call else lowerCall(loop, call, target.first, target.second, self, members)
         }
 
+    /**
+     * [loop]'s template for its member [self] (its alias) when [loop]'s set moves: each set function over that set
+     * becomes its moving form, `SUM_OF.MOVING(expr, "<self>", <site>)`, which reads the set's shared cross-section at
+     * run time. [site] numbers the calls in the order met, so every member numbers them alike.
+     */
+    fun lowerMoving(
+        loop: ForEachSet,
+        self: String,
+        site: () -> Int,
+    ): WhenThen =
+        walk(loop.template) { call ->
+            val target = setCall(call)?.takeIf { it.second == loop.set }
+            if (target == null) {
+                call
+            } else {
+                val expr = checkedExpr(loop, call, target.first, target.second)
+                FuncCall(target.first.moving, listOf(expr, StringLit(self), NumLit(BigDecimal(site()))))
+            }
+        }
+
     private fun lowerCall(
         loop: ForEachSet,
         call: FuncCall,
@@ -51,6 +75,18 @@ internal object SetFunctionLowering {
         self: String,
         members: Map<String, List<String>>,
     ): FuncCall {
+        val expr = checkedExpr(loop, call, fn, set)
+        val terms = members.getValue(set).map { subst(expr, loop.iterVar, it) }
+        return FuncCall(fn.lowered, if (fn.selfFirst) listOf(subst(expr, loop.iterVar, self)) + terms else terms)
+    }
+
+    /** [call]'s expression, or why it cannot mean anything per member. */
+    private fun checkedExpr(
+        loop: ForEachSet,
+        call: FuncCall,
+        fn: SetFunction,
+        set: String,
+    ): ExprAst {
         val v = loop.iterVar
 
         fun refuse(why: String): Nothing = throw SymbolSetError(loop.line, "${fn.name}(…, $set): $why")
@@ -62,8 +98,7 @@ internal object SetFunctionLowering {
             runCatching { rejectNonBooleanCondition(expr) }
                 .onFailure { refuse("COUNT_OF counts the members where a test holds: compare the value") }
         }
-        val terms = members.getValue(set).map { subst(expr, v, it) }
-        return FuncCall(fn.lowered, if (fn.selfFirst) listOf(subst(expr, v, self)) + terms else terms)
+        return expr
     }
 
     /** A call to a set function and the name its last argument gives, or null for any other call. */
@@ -75,7 +110,9 @@ internal object SetFunctionLowering {
 
     private fun containsLowered(expr: ExprAst): Boolean {
         var found = false
-        transform { call -> call.also { found = found || SetFunction.lowered(it.name) != null } }.expr(expr)
+        transform { call ->
+            call.also { found = found || SetFunction.lowered(it.name) != null || SetFunction.moving(it.name) != null }
+        }.expr(expr)
         return found
     }
 

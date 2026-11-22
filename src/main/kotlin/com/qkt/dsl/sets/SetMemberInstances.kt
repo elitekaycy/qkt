@@ -22,6 +22,7 @@ import com.qkt.strategy.WarmupStream
  *   declared stream's warmup is. It evaluates from the next close on, never at the close it joined.
  * - A member that leaves or is released is unregistered and its instance and state are dropped; joining again starts
  *   from a fresh warmup.
+ * - Cross-member functions over the set read the current members' values ([SetCrossSections]), sticky ones left out.
  * - A sticky member (it holds but left the ranking) keeps running, but an order that would open or add on it is
  *   refused, re-arming the rule that sent it as a rejection does: only reducing and closing orders pass.
  */
@@ -34,6 +35,7 @@ internal class SetMemberInstances(
 ) {
     private val instances = LinkedHashMap<String, CompiledStrategy>()
     private val sticky = HashSet<String>()
+    private val sections = SetCrossSections { instances.keys.filterNot { it in sticky }.map(template::alias) }
     private var refused = 0L
 
     /** The members with a running instance, in the order they joined. */
@@ -83,7 +85,7 @@ internal class SetMemberInstances(
         member: String,
         closeMs: Long,
     ) {
-        val instance = template.compile(member)
+        val instance = template.compile(member, sections)
         instance.evaluateAfter(closeMs)
         val owner = owner(member)
         val key = instance.declaredStreams.getValue(template.alias(member))
@@ -107,6 +109,7 @@ internal class SetMemberInstances(
         hub.unregister(owner(member))
         instances.remove(member)
         sticky -= member
+        sections.forget(template.alias(member))
     }
 
     private fun passes(

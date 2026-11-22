@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.CompiledStrategy
+import com.qkt.dsl.compile.CrossSections
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
 
@@ -16,7 +17,8 @@ import com.qkt.strategy.WarmupStream
  * and the loop rules with the loop variable bound to the member. Its rules, indicators and state are the member's
  * alone; schedules, sequences and the strategy's other rules stay with the strategy itself. Each instance compiles
  * with the run's `PARAM` [overrides] and under its own name (`<strategy>.<set>.<symbol>`), so the order ids it mints
- * never collide with another member's or the strategy's.
+ * never collide with another member's or the strategy's. Its cross-member functions over the set read the
+ * cross-section the set's running members share ([SetCrossSections]).
  */
 internal class SetMemberTemplate(
     private val ast: StrategyAst,
@@ -32,10 +34,11 @@ internal class SetMemberTemplate(
             "symbol set '$set' is a union; a union's members cannot change during a run"
         }
         require(loops.isNotEmpty()) { "symbol set '$set' has no FOR EACH rule to run per member" }
-        val aggregated = loops.firstOrNull { SetFunctionLowering.setsNamed(it.template, setOf(set)).isNotEmpty() }
-        require(aggregated == null) {
-            "FOR EACH ${aggregated?.iterVar} IN $set: cross-member functions over a set whose members change are " +
-                "not supported yet"
+        val others = ast.streams.filter { it.broker == SET_BROKER && it.alias != set }.mapTo(HashSet()) { it.alias }
+        val across = loops.firstNotNullOfOrNull { SetFunctionLowering.setsNamed(it.template, others).firstOrNull() }
+        require(across == null) {
+            "FOR EACH ${loops.first().iterVar} IN $set: a cross-member function in a loop over a set whose members " +
+                "move ranges over that set only, not '$across'"
         }
     }
 
@@ -45,7 +48,13 @@ internal class SetMemberTemplate(
     /** The strategy that runs [symbol]'s instance: its stream, the plain streams, and the loop rules bound to it. */
     fun ast(symbol: String): StrategyAst {
         val streams = ast.streams.filter { it.broker != SET_BROKER || it.alias == set }
-        val expanded = SymbolSetExpansion.expand(streams, loops) { _, _ -> listOf(symbol) }
+        var site = 0
+        val lowered =
+            loops.map { loop ->
+                val template = SetFunctionLowering.lowerMoving(loop, alias(symbol)) { site++ }
+                ForEachSet(loop.iterVar, loop.set, template, loop.line)
+            }
+        val expanded = SymbolSetExpansion.expand(streams, lowered) { _, _ -> listOf(symbol) }
         return ast.copy(
             streams = expanded.streams,
             rules = expanded.rules,
@@ -54,9 +63,13 @@ internal class SetMemberTemplate(
         )
     }
 
-    /** [symbol]'s instance, compiled. */
-    fun compile(symbol: String): CompiledStrategy =
-        AstCompiler().compile(ast(symbol).copy(name = "${ast.name}.$set.$symbol"), overrides) as CompiledStrategy
+    /** [symbol]'s instance, compiled, its cross-member functions reading the set's shared [sections]. */
+    fun compile(
+        symbol: String,
+        sections: CrossSections = SetCrossSections { emptyList() },
+    ): CompiledStrategy =
+        AstCompiler(sections).compile(ast(symbol).copy(name = "${ast.name}.$set.$symbol"), overrides)
+            as CompiledStrategy
 
     /**
      * What [symbol]'s instance asks of its own stream: the closed bars it keeps (its indicators' retention, or its

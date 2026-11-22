@@ -630,8 +630,12 @@ at that close (an event contract once it opens, any contract until it expires) a
   set reads the window that ended at or before it, so it sees every tick before the close and none after.
 - **The journal.** Each change is published as a `SetMembershipChanged` event (set, member, change, rank, window
   close), which the engine audit journal records.
-- **Limits, for now.** Live sessions refuse moving sets (`DYNAMIC`, or reading market fields). A dynamic set cannot be part of a union, and cross-member
-  functions (`RANK_OF(expr, set)`, `SUM_OF`, ...) over it are refused.
+- **Cross-member functions.** `RANK_OF(expr, set)`, `SUM_OF`, `AVG_OF`, `MAX_OF`, `MIN_OF` and `COUNT_OF` over a
+  moving set range over its current members, the ones ranked at the latest close: a sticky member is not one, so it
+  never counts (its own rules still read the cross-section). See
+  [over a set whose members move](foreach.md#over-a-set-whose-members-move).
+- **Limits, for now.** Live sessions refuse moving sets (`DYNAMIC`, or reading market fields). A dynamic set cannot
+  be part of a union, and a cross-member function in a loop over a moving set ranges over that set only.
 
 ### The filter vocabulary
 

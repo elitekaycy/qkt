@@ -125,4 +125,27 @@ internal object DynamicSetFixtures {
             Line("s", "BACKTEST:B", MembershipChange.JOIN, 1, T0 + 3 * MINUTE),
             Line("s", "BACKTEST:A", MembershipChange.RELEASE, null, T0 + 5 * MINUTE),
         )
+
+    /**
+     * Each member buys once, as many contracts as `SUM_OF(m.close, s)` reads, once that sum is above 1, and holds: the
+     * order sizes are the members' values at that close, a member that joins there counted from its history.
+     */
+    val summedSource: String =
+        """
+        STRATEGY summed VERSION 1
+        SYMBOLS
+            s = BACKTEST:* WHERE kind = event TOP 2 BY symbol DESC DYNAMIC EVERY 1m
+        RULES
+            FOR EACH m IN s DO
+              WHEN POSITION.m = 0 AND SUM_OF(m.close, s) > 1 THEN BUY m SIZING SUM_OF(m.close, s)
+        """.trimIndent()
+
+    /** Ticks every 10s over [minutes] minutes, each contract at its own price: A at 1, B at 2, C at 4. */
+    fun summedTape(minutes: Int = 7): List<Tick> =
+        (0 until minutes * 6).flatMap { i ->
+            val ts = T0 + i * 10_000L
+            listOf("A" to "1", "B" to "2", "C" to "4").map { (code, price) ->
+                Tick("BACKTEST:$code", BigDecimal(price), ts)
+            }
+        }
 }
