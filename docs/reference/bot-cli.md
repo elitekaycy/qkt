@@ -147,7 +147,7 @@ catalog is the instruments file a backtest reads (`--instruments`, else `instrum
 `--as-of` dates `dte` (default: now). A picked list is checked name by name; a union is refused (resolve each set).
 A set whose members move (`DYNAMIC`, an event ladder `KALSHI:KXINXU@front.* WHERE ...`) lists its members at `--at
 <instant>` (default: now), with the event catalogs: the same point-in-time membership a backtest and a live session
-step. A set ranked on market fields, and a slot universe, are refused (only a running session can rank the first; the
+step. `--at` and `--as-of` name the same instant, so giving both is refused. A set ranked on market fields, and a slot universe, are refused (only a running session can rank the first; the
 second names slots, not contracts).
 JSON: `{ok,spec,asOf,count,members:[{qktSymbol,symbol,kind,category,currency,contract_size,tick_size,trade_mode,family,underlying,expiry_at,dte}]}`,
 a field the instrument lacks being `null`.

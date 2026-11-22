@@ -39,7 +39,9 @@ class BotUniverseCommand(
         val spec = SymbolSetSpec.parse(text)
         val dataRoot = args.option("data-root")?.let(Path::of) ?: CliDataRoot.resolve(args).path
         val catalog = SymbolSetResolution.catalog(args, dataRoot)
-        val asOf = args.option("at") ?: args.option("as-of")
+        val instants = listOfNotNull(args.option("at"), args.option("as-of"))
+        if (instants.size > 1) throw BacktestContext.Companion.SetupError("give --at or --as-of, not both")
+        val asOf = instants.firstOrNull()
         val nowMs = asOf?.let { BacktestContext.parseInstant(it).toEpochMilli() } ?: SystemClock().now()
         val members: List<InstrumentMeta> =
             when (spec) {
