@@ -75,12 +75,24 @@ class LiveSetHoldingsTest {
     }
 
     @Test
-    fun `a held contract that expired or left the listing does not stop the restart and is not declared`() {
+    fun `a held contract that is proven expired does not stop the restart and is not declared`() {
         val catalog = listing(contract("A", 0, 2), contract("B", 1, 3), contract("OLD", -5, -1))
         persistor.saveLegBook("rolling", "GW:OLD", held("GW:OLD"))
         persistor.saveLegBook("rolling", "GW:GONE", held("GW:GONE"))
-        SetOwnership.save(persistor, "rolling", "m", listOf("OLD", "GONE"))
+        SetOwnership.save(persistor, "rolling", "m", listOf("OLD", "GONE"), mapOf("GONE" to NOW - 1))
+        assertThat(SetOwnership.expiries(persistor, "rolling", "m")).containsExactlyEntriesOf(mapOf("GONE" to NOW - 1))
         assertThat(declared(catalog = catalog)).containsExactly("GW:A", "GW:B")
+    }
+
+    @Test
+    fun `a held contract the listing does not show, with no proof it expired, refuses the start`() {
+        persistor.saveLegBook("rolling", "GW:GONE", held("GW:GONE"))
+        SetOwnership.save(persistor, "rolling", "m", listOf("GONE"))
+        assertThatThrownBy { declared() }
+            .hasMessageContaining("strategy 'rolling' holds GW:GONE in a symbol set")
+            .hasMessageContaining("nothing proves it expired")
+        SetOwnership.save(persistor, "rolling", "m", listOf("GONE"), mapOf("GONE" to NOW + 1))
+        assertThatThrownBy { declared() }.hasMessageContaining("nothing proves it expired")
     }
 
     @Test

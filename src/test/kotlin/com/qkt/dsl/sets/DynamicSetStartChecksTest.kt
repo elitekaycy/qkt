@@ -36,7 +36,7 @@ class DynamicSetStartChecksTest {
     }
 
     @Test
-    fun `stacked entries and exit hooks in a member rule are named as not run live`() {
+    fun `stacked entries, exit hooks and latches in a member rule are named as not run live`() {
         val stacked =
             host(
                 "WHEN m.close > 0 THEN BUY m SIZING 0.1\n        STACK_AT MFE >= 50 WITHIN 30m SIZING 0.05\n" +
@@ -49,5 +49,11 @@ class DynamicSetStartChecksTest {
                     "ON_STOP { SELL m SIZING 0.1 }",
             )
         assertThat(hooked.unsupportedLive()).isEqualTo("an exit hook")
+        val latched =
+            host(
+                "WHEN m.close > 0 THEN LATCH m OFFSET 1 ARM 5m { ENTER LIMIT RETRACE 2 " +
+                    "BRACKET { STOP LOSS AGAINST 5, TAKE PROFIT WITH 5 } SIZING 1 EXPIRE 2h }",
+            )
+        assertThat(latched.unsupportedLive()).isEqualTo("LATCH")
     }
 }

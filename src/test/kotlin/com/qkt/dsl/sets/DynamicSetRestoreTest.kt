@@ -73,6 +73,9 @@ class DynamicSetRestoreTest {
             Triple("BACKTEST:A", MembershipChange.RESTORE, null),
         )
         assertThat(SetOwnership.load(FileStatePersistor(tmp), "rotation", "s")).containsExactly("C", "B", "A")
+        assertThat(SetOwnership.expiries(FileStatePersistor(tmp), "rotation", "s"))
+            .containsOnlyKeys("A", "B", "C")
+            .containsValue(T0 + 1_440 * MINUTE)
     }
 
     @Test

@@ -181,9 +181,12 @@ class SetMemberInstancesTest {
     }
 
     @Test
-    fun `a member with no history reads bars ending before the bar of the close it joined at`() {
+    fun `a member reads through the close it joined at, unless the hub was forming that bar`() {
+        hub.register(HubKey("BACKTEST", "BBB", "1m"), 50, "someone-else")
         instances.apply(membership.step(listOf("AAA"), emptySet()), t0 + minute)
-        assertThat(warmupEnds.single()).isEqualTo(t0)
+        assertThat(warmupEnds.single()).isEqualTo(t0 + minute)
+        instances.apply(membership.step(listOf("AAA", "BBB", "CCC"), emptySet()), t0 + 2 * minute)
+        assertThat(warmupEnds.drop(1)).containsExactly(t0 + minute, t0 + 2 * minute)
     }
 
     @Test
