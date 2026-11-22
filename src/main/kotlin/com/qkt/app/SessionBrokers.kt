@@ -16,6 +16,7 @@ import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.BASKET_BROKER
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.dsl.sets.DynamicSetHost
 import com.qkt.instrument.EventTerms
 import com.qkt.instrument.SlotSymbol
 import com.qkt.marketdata.MarketPriceTracker
@@ -92,6 +93,12 @@ internal class SessionBrokers(
             }
         }
         for (label in fedRoots.keys) brokerSymbols.getOrPut(label) { mutableSetOf() }
+        // A moving symbol set trades members it subscribes while it runs: its whole venue routes to the account.
+        val moving =
+            strategies
+                .flatMap { (_, s) -> (s as? DynamicSetHost)?.hosted.orEmpty() }
+                .map { it.venue.lowercase() }
+        for (label in moving) brokerSymbols.getOrPut(label) { mutableSetOf() }
         if (brokerSymbols.isEmpty()) return paperBroker
         // Fail fast if a strategy declares a broker prefix that has no configured factory.
         // Without this check, the old code path silently fell through to `paperBroker` for
@@ -124,9 +131,12 @@ internal class SessionBrokers(
                 val families = listed.mapNotNull { SlotSymbol.parse(it)?.root }.toSet()
                 val familyOf = { s: String -> (instrumentRegistry?.lookup(s)?.derivative as? EventTerms)?.root }
                 val inFamily = { s: String -> families.isNotEmpty() && familyOf(s) in families }
+                val venueWide = label in moving
+                val onVenue = { s: String -> venueWide && s.substringBefore(':').lowercase() == label }
                 val account =
-                    SymbolPattern { s -> s in listed || roots.any { it.covers(s) && catalogued(s) } || inFamily(s) } to
-                        instance
+                    SymbolPattern { s ->
+                        s in listed || roots.any { it.covers(s) && catalogued(s) } || inFamily(s) || onVenue(s)
+                    } to instance
                 if (streams.isEmpty()) return@flatMap listOf(account)
                 val lanes =
                     ContinuousContractBroker(
