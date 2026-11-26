@@ -32,8 +32,7 @@ class ExecutionVerificationTest {
             .filterNot { it.name in ExecutionVerificationKnownBugsTest.KNOWN_BUGS }
             .map { scenario ->
                 dynamicTest(scenario.name) {
-                    val levels = !ExecutionVerificationKnownBugsTest.levelsUnreported(scenario)
-                    verify(scenario, Files.createDirectories(tmp.resolve(scenario.name)), levels)
+                    verify(scenario, Files.createDirectories(tmp.resolve(scenario.name)))
                 }
             }
 
