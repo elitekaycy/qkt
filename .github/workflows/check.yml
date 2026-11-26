@@ -192,6 +192,9 @@ jobs:
       - name: Test release tag gate
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/verify-version-tag-test.sh
+      - name: Market-bracket deal count
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/bracket-deals-test.sh
       - name: Test unattended attestation runner
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/run-attestation-test.sh

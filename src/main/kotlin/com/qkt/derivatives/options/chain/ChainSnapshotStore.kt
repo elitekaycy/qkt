@@ -76,6 +76,7 @@ class ChainSnapshotStore(
     /**
      * Adds [snapshot] to its day, keeping the day's other snapshots and replacing one taken at the
      * same instant. Concurrent appends to one root wait for each other instead of losing a snapshot.
+     * A snapshot later than the whole day is added as one more gzip member without decoding the day.
      */
     fun append(
         root: String,
@@ -86,7 +87,12 @@ class ChainSnapshotStore(
         FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
             channel.lock().use {
                 val day = dayOf(snapshot.atMs)
-                write(root, readDay(root, day).filter { it.atMs != snapshot.atMs } + snapshot)
+                val last = ChainDayFile.lastInstant(path(root, day))
+                if (last != null && snapshot.atMs > last && snapshot.quotes.all { it.source == source }) {
+                    ChainDayFile.append(path(root, day), snapshot)
+                } else {
+                    write(root, readDay(root, day).filter { it.atMs != snapshot.atMs } + snapshot)
+                }
             }
         }
     }

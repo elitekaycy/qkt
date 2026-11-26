@@ -34,6 +34,12 @@ enum class InsightsEventFamily(
      * collector that does not know the type rejects the whole batch carrying it.
      */
     STRUCTURE("structure", onByDefault = false),
+
+    /**
+     * `set.membership` (a member of a moving symbol set joined, left, went sticky, was restored or could not be
+     * subscribed). Off unless listed: a collector before qkt-insights contract 1.7.0 quarantines the type.
+     */
+    SETS("sets", onByDefault = false),
     ;
 
     companion object {
