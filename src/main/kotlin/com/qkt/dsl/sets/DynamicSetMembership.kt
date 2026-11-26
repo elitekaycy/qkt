@@ -17,11 +17,30 @@ import com.qkt.instrument.universe.UniverseResolver
  * members, so a backtest replays it exactly and a live run steps alike.
  */
 class DynamicSetMembership(
-    private val spec: SymbolSetSpec.Filtered,
-    /** The catalog rows the set ranks; the event contracts among them also give its strike ladders. */
-    val rows: List<InstrumentMeta>,
+    val spec: SymbolSetSpec.Filtered,
+    listed: List<InstrumentMeta>,
     val windowMs: Long,
 ) {
+    /**
+     * The catalog rows the set ranks; the event contracts among them also give its strike ladders. A live session
+     * replaces them as it subscribes more ([list]).
+     */
+    @Volatile
+    var rows: List<InstrumentMeta> = listed
+        private set
+
+    /**
+     * Ranks only [next] from now on: a live session lists the venue rows whose market data it serves, so a member is
+     * never picked that the session cannot feed. Safe from another thread; the next evaluation reads the new rows.
+     */
+    fun list(next: List<InstrumentMeta>) {
+        rows = next
+    }
+
+    /** The expiry (UTC ms) of [member] (a bare symbol) in the rows the set ranks now, or null when it has none. */
+    fun expiryOf(member: String): Long? =
+        rows.firstOrNull { it.qktSymbol.substringAfter(':') == member }?.let(::expiryMs)
+
     private val membership = SetMembership()
     private var nextCloseMs = Long.MIN_VALUE
 
@@ -84,16 +103,21 @@ class DynamicSetMembership(
     /**
      * The step of the window close at or before [nowMs], with the market figures [facts] gives for that close and the
      * members [held] then reports holding, the first time an instant reaches that close; null until the next close.
+     * With [restore] the run's first evaluation rebuilds membership instead ([SetMembership.restore]): a restart over
+     * held positions reports each member as restored, the held ones outside the ranking sticky.
      */
     fun at(
         nowMs: Long,
         facts: (closeMs: Long) -> MarketFacts = { MarketFacts.NONE },
+        restore: Boolean = false,
         held: () -> Set<String>,
     ): Evaluation? {
         if (nowMs < nextCloseMs) return null
+        val first = nextCloseMs == Long.MIN_VALUE
         val closeMs = nowMs - Math.floorMod(nowMs, windowMs)
         nextCloseMs = closeMs + windowMs
-        val step = membership.step(membersAt(closeMs, facts(closeMs)), held())
+        val members = membersAt(closeMs, facts(closeMs))
+        val step = if (first && restore) membership.restore(members, held()) else membership.step(members, held())
         activeSymbols = step.active.mapTo(LinkedHashSet()) { "${spec.venue}:$it" }
         return Evaluation(closeMs, step)
     }
@@ -106,6 +130,37 @@ class DynamicSetMembership(
 
     companion object {
         /**
+         * Every member some close of a [windowMs] window in [fromMs]..[toMs] picks from [rows] for [spec], in symbol
+         * order: for a set reading market fields, every row listed then whose catalog part may pass ([watchable]),
+         * since which rank depends on figures only the run sees.
+         */
+        fun candidatesOver(
+            spec: SymbolSetSpec.Filtered,
+            rows: List<InstrumentMeta>,
+            windowMs: Long,
+            fromMs: Long,
+            toMs: Long,
+        ): List<String> {
+            val membership = DynamicSetMembership(spec, rows, windowMs)
+            val picked = sortedSetOf<String>()
+            var closeMs = fromMs - Math.floorMod(fromMs, windowMs)
+            while (closeMs <= toMs) {
+                picked += if (spec.readsMarket) watchable(spec, rows, closeMs) else membership.membersAt(closeMs)
+                closeMs += windowMs
+            }
+            return picked.toList()
+        }
+
+        private fun watchable(
+            spec: SymbolSetSpec.Filtered,
+            rows: List<InstrumentMeta>,
+            closeMs: Long,
+        ): List<String> =
+            rows
+                .filter { alive(it, closeMs) && spec.filter.mayMatch(it, closeMs) }
+                .map { it.qktSymbol.substringAfter(':') }
+
+        /**
          * Whether [meta] is listed at [atMs]: an event contract once it opened, any contract until it expires (a row
          * without an expiry never does). The catalog's own rows are what was listed; nothing else is inferred.
          */
@@ -114,8 +169,17 @@ class DynamicSetMembership(
             atMs: Long,
         ): Boolean {
             val opened = (meta.derivative as? EventTerms)?.let { it.openAtMs <= atMs } ?: true
-            val expiry = (CatalogField.EXPIRY_AT.read(meta, atMs) as? CatalogValue.Num)?.value?.toLong()
-            return opened && (expiry == null || atMs < expiry)
+            return opened && !expired(meta, atMs)
         }
+
+        /** Whether [meta] has an expiry at or before [atMs]; a row without one never expires. */
+        fun expired(
+            meta: InstrumentMeta,
+            atMs: Long,
+        ): Boolean = expiryMs(meta)?.let { atMs >= it } ?: false
+
+        /** [meta]'s expiry (UTC ms), or null when it has none. */
+        fun expiryMs(meta: InstrumentMeta): Long? =
+            (CatalogField.EXPIRY_AT.read(meta, 0L) as? CatalogValue.Num)?.value?.toLong()
     }
 }

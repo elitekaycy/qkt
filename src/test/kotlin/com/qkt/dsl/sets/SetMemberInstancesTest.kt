@@ -6,6 +6,9 @@ import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.instrument.universe.MemberChange
+import com.qkt.instrument.universe.MembershipChange
+import com.qkt.instrument.universe.MembershipStep
 import com.qkt.instrument.universe.SetMembership
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -50,6 +53,7 @@ class SetMemberInstancesTest {
     private val hub = CandleHub()
     private val signals = mutableListOf<Signal>()
     private val warmups = mutableListOf<Pair<HubKey, Int>>()
+    private val warmupEnds = mutableListOf<Long>()
     private var warmupEnabled = true
     private val membership = SetMembership()
     private val instances =
@@ -58,9 +62,10 @@ class SetMemberInstancesTest {
             hub,
             testStrategyContext(strategyId = "movers", positions = positions),
             { signals += it },
-        ) { k, n ->
+        ) { k, n, endMs ->
             warmups += k to n
-            if (warmupEnabled) flat(n, k.qktSymbol) else emptyList()
+            warmupEnds += endMs
+            if (warmupEnabled) flat(n, k.qktSymbol).filter { it.endTime <= endMs } else emptyList()
         }
 
     private fun flat(
@@ -161,5 +166,33 @@ class SetMemberInstancesTest {
         assertThat(sides()).containsExactly(Side.BUY)
         step()
         assertThat(hub.keys()).contains(key)
+    }
+
+    @Test
+    fun `a member the hub holds too little history for reads only the older bars it lacks`() {
+        hub.register(key, 50, "someone-else")
+        hub.seed(key, flat(1))
+        step("AAA")
+        assertThat(warmups.single().second).isGreaterThanOrEqualTo(2)
+        assertThat(warmupEnds.single()).isEqualTo(t0 - minute)
+        assertThat(hub.seededHistory(key).first().endTime).isLessThan(t0 - minute + 1)
+        bar("BACKTEST:AAA", 0, "5")
+        assertThat(sides()).containsExactly(Side.BUY)
+    }
+
+    @Test
+    fun `a member reads through the close it joined at, unless the hub was forming that bar`() {
+        hub.register(HubKey("BACKTEST", "BBB", "1m"), 50, "someone-else")
+        instances.apply(membership.step(listOf("AAA"), emptySet()), t0 + minute)
+        assertThat(warmupEnds.single()).isEqualTo(t0 + minute)
+        instances.apply(membership.step(listOf("AAA", "BBB", "CCC"), emptySet()), t0 + 2 * minute)
+        assertThat(warmupEnds.drop(1)).containsExactly(t0 + minute, t0 + 2 * minute)
+    }
+
+    @Test
+    fun `a candidate the session could not subscribe starts no instance`() {
+        val unfed = MemberChange("AAA", MembershipChange.UNAVAILABLE, null)
+        instances.apply(MembershipStep(emptyList(), listOf(unfed)))
+        assertThat(instances.members).isEmpty()
     }
 }

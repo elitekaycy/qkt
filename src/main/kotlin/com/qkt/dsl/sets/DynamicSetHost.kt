@@ -1,32 +1,25 @@
 package com.qkt.dsl.sets
 
-import com.qkt.candles.TimeWindow
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledStrategy
 import com.qkt.dsl.compile.DecisionOrderLink
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.ExitRetry
 import com.qkt.dsl.compile.HubKey
+import com.qkt.dsl.compile.OrderIdMarks
 import com.qkt.events.Event
 import com.qkt.events.SetMembershipChanged
 import com.qkt.instrument.universe.MarketFacts
+import com.qkt.instrument.universe.MembershipChange.UNAVAILABLE
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.source.MarketSource
+import com.qkt.persistence.StatePersistor
 import com.qkt.strategy.PerStreamWarmable
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.WarmupStream
-
-/**
- * One `DYNAMIC` symbol set a [DynamicSetHost] runs: its member [template], its point-in-time [membership] and the
- * [venue] its bare member symbols belong to.
- */
-internal class HostedSet(
-    val template: SetMemberTemplate,
-    val membership: DynamicSetMembership,
-    val venue: String,
-)
 
 /**
  * A strategy whose `DYNAMIC` symbol sets gain and lose members during the run (runtime membership plan, step 4):
@@ -37,49 +30,66 @@ internal class HostedSet(
  * [DynamicSetMembership] steps with the members that hold a position or a working entry order; the instances apply
  * the step, a joining member firing its rules from the next close on, and every change is published as a
  * [SetMembershipChanged] (and handed to [journal]). A joining member warms from the history the hub already holds
- * for its stream, else from [warmup]. A backtest and a live session drive it through the same tick path, so
- * membership, warmup and trades replay alike. Order callbacks reach whichever rule set sent the order.
+ * for its stream, and when that is short from [warmup] over the session's market source (older bars only). With
+ * [seedCandidates] the run also seeds every candidate's history at start, as a backtest's declared streams are; a live
+ * session leaves that to the joins, so a candidate with short history never fails its start. A backtest and a live
+ * session drive it through the same tick path, so membership, warmup and trades replay alike. Order callbacks reach
+ * whichever rule set sent the order.
  */
 internal class DynamicSetHost(
     private val outer: CompiledStrategy,
     private val sets: List<HostedSet>,
-    private val warmup: (HubKey, Int) -> List<Candle> = { _, _ -> emptyList() },
+    private val warmup: (MarketSource) -> (HubKey, Int, Long) -> List<Candle> = { { _, _, _ -> emptyList() } },
+    seedCandidates: Boolean,
     private val journal: (SetMembershipChanged) -> Unit = {},
 ) : DslCompiledStrategy by outer,
-    PerStreamWarmable {
-    private var publish: (Event) -> Unit = {}
+    PerStreamWarmable,
+    OrderIdMarks {
+    private val changes = MembershipJournal(journal)
+    private val started = HashSet<HostedSet>()
+    private val restore = MemberRestore()
     private var running: List<Pair<HostedSet, SetMemberInstances>> = emptyList()
 
-    /** Every candidate member's stream, with what a member instance asks of it. */
-    private val candidates: Map<HubKey, SetMemberTemplate.StreamNeeds> =
-        sets
-            .flatMap { set ->
-                val keys = keysOf(set)
-                val needs = keys.firstOrNull()?.let { set.template.streamNeeds(it.symbol) }
-                keys.mapNotNull { key -> needs?.let { key to it } }
-            }.toMap()
+    private val streams = CandidateStreams(outer, sets, seedCandidates)
 
-    /** The watched tier of each set that reads market fields: its candidates' records per window. */
-    private val watched: Map<HostedSet, WatchedWindows> =
-        sets
-            .filter { it.membership.readsMarket }
-            .associateWith { set ->
-                WatchedWindows(set.membership.windowMs, keysOf(set).mapTo(HashSet()) { it.qktSymbol })
-            }
+    override val retentionByKey: Map<HubKey, Int> get() = streams.retentionByKey
 
-    override val retentionByKey: Map<HubKey, Int> =
-        outer.retentionByKey +
-            candidates.mapValues { (key, needs) -> maxOf(needs.retention, outer.retentionByKey[key] ?: 1) }
+    override val perStreamWarmup: Map<WarmupStream, WarmupSpec> get() = streams.perStreamWarmup
 
-    override val perStreamWarmup: Map<WarmupStream, WarmupSpec> =
-        outer.perStreamWarmup +
-            candidates.entries
-                .mapNotNull { (key, needs) -> needs.warmup?.let { stream(key) to it } }
-                .toMap()
+    override val volumeRequiringSymbols: Set<String> get() = streams.volumeRequiringSymbols
+
+    override val markSymbols: Set<String> get() = streams.markSymbols
+
+    override val usesBookSizing: Boolean get() = streams.usesBookSizing
+
+    /** What a member rule uses that a live session cannot run for a moving set yet, or null. */
+    fun unsupportedLive(): String? = streams.unsupportedLive()
+
+    /** The sets this strategy runs, for a live session that keeps their rows to what it can feed. */
+    val hosted: List<HostedSet> get() = sets
+
+    /** Wraps the session's market source when the strategy needs more of it (a live set's subscriptions); or none. */
+    var sourceDecorator: ((MarketSource) -> MarketSource)? = null
 
     /** Publish each membership change through [publish] (the pipeline's bus) from now on. */
     fun journalTo(publish: (Event) -> Unit) {
-        this.publish = publish
+        changes.publish = publish
+    }
+
+    /** The candidate members (bare symbols) of [set] the strategy declared at start. */
+    fun declaredMembers(set: String): Set<String> = streams.declaredMembers(set)
+
+    /**
+     * Journals that [members] of [set] could not be subscribed at [atMs], so they never join: safe from another
+     * thread, published at the next tick with the run's other membership changes.
+     */
+    fun unavailable(
+        set: String,
+        members: Collection<String>,
+        atMs: Long,
+    ) {
+        val venue = sets.first { it.template.set == set }.venue
+        members.forEach { changes.later(SetMembershipChanged("", set, "$venue:$it", UNAVAILABLE, null, atMs)) }
     }
 
     override fun bindToHub(
@@ -88,8 +98,8 @@ internal class DynamicSetHost(
         emit: (Signal) -> Unit,
     ) {
         outer.bindToHub(hub, ctx, emit)
-        running =
-            sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, StrikeLadder(it.membership.rows), warmup) }
+        val history = warmup(ctx.source)
+        running = sets.map { it to SetMemberInstances(it.template, hub, ctx, emit, restore, it::ladder, history) }
     }
 
     override fun onTick(
@@ -98,15 +108,41 @@ internal class DynamicSetHost(
         emit: (Signal) -> Unit,
     ) {
         outer.onTick(tick, ctx, emit)
+        changes.drain(ctx.strategyId)
         for ((set, instances) in running) {
-            val watch = watched[set]
+            val watch = streams.watched[set]
+            val declared = declaredMembers(set.template.set)
+            val atStart = if (started.add(set)) restore.heldAtStart(set, declared, ctx) else emptySet()
             set.membership
-                .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }) { held(set.venue, instances, ctx) }
-                ?.let { apply(set, instances, it, ctx) }
+                .at(tick.timestamp, { watch?.asOf(it) ?: MarketFacts.NONE }, atStart.isNotEmpty()) {
+                    atStart.ifEmpty { instances.held(set.venue) }
+                }?.let { apply(set, instances, it, ctx) }
             watch?.onTick(tick)
         }
         for ((_, instances) in running) instances.compiled.forEach { it.onTick(tick, ctx, emit) }
     }
+
+    override fun bindStatePersistor(
+        strategyId: String,
+        persistor: StatePersistor,
+    ) {
+        restore.persistor = persistor
+        val names = sets.map { it.template.set }
+        restore.owned = names.associateWith { SetOwnership.load(persistor, strategyId, it).toSet() }
+        outer.bindStatePersistor(strategyId, persistor)
+    }
+
+    override fun resumeOrderIds(usedIds: Collection<String>) {
+        restore.usedIds = usedIds
+        outer.resumeOrderIds(usedIds)
+    }
+
+    override fun resumeOrderIdMarks(marks: Map<String, Long>) {
+        restore.marks = marks
+    }
+
+    override fun orderIdMarks(): Map<String, Long> =
+        running.fold(emptyMap()) { marks, (_, instances) -> marks + instances.idMarks() }
 
     override fun onOrderSubmitted(
         signal: Signal,
@@ -128,7 +164,10 @@ internal class DynamicSetHost(
         atMs: Long,
     ) = all().forEach { it.onPositionStateChanged(symbol, nowHeld, atMs) }
 
-    override fun clearRuleEdges() = all().forEach { it.clearRuleEdges() }
+    override fun clearRuleEdges() {
+        restore.clearEdges = true
+        all().forEach { it.clearRuleEdges() }
+    }
 
     /** Applies [evaluation] to [instances] and journals each change under the member's qkt symbol. */
     private fun apply(
@@ -138,33 +177,13 @@ internal class DynamicSetHost(
         ctx: StrategyContext,
     ) {
         instances.apply(evaluation.step, evaluation.closeMs)
+        restore.own(ctx.strategyId, set, evaluation.step)
         for (change in SetMembershipChanged.of(ctx.strategyId, set.template.set, evaluation.closeMs, evaluation.step)) {
-            val event = change.copy(member = "${set.venue}:${change.member}")
-            publish(event)
-            journal(event)
+            changes.record(change.copy(member = "${set.venue}:${change.member}"))
         }
     }
-
-    private fun keysOf(set: HostedSet): Collection<HubKey> =
-        outer.declaredStreams.filterKeys { SetMemberAlias.setOf(it) == set.template.set }.values
 
     /** The strategy's own rules first, then every running member instance. */
     private fun all(): Sequence<CompiledStrategy> =
         sequenceOf(outer) + running.asSequence().flatMap { (_, instances) -> instances.compiled }
-
-    /** The running members of a set that hold a position or a working entry order. */
-    private fun held(
-        venue: String,
-        instances: SetMemberInstances,
-        ctx: StrategyContext,
-    ): Set<String> =
-        instances.members.filterTo(HashSet()) { member ->
-            val symbol = "$venue:$member"
-            val position = ctx.positions.positionFor(symbol)
-            (position?.quantity?.signum() ?: 0) != 0 ||
-                ctx.openOrders.entryCountFor(symbol) > 0 ||
-                instances.holdsThroughSlot(member, ctx.clock.now())
-        }
-
-    private fun stream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 }

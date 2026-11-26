@@ -61,7 +61,7 @@ class DynamicSetParityTest {
         val trades = mutableListOf<TradeState>()
         val handle =
             LiveSession(
-                strategies = listOf(id to DynamicSetFixtures.plan(source).strategy(emptyMap())),
+                strategies = listOf(id to DynamicSetFixtures.plan(source).strategy(emptyMap(), live = true)),
                 haltRules = emptyList(),
                 source = TapeSource(ticks, emptyList(), emptyMap()),
                 symbols = ticks.map { it.symbol }.distinct(),

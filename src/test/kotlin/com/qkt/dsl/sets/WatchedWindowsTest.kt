@@ -11,7 +11,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class WatchedWindowsTest {
-    private val watched = WatchedWindows(MINUTE, setOf("BACKTEST:A", "BACKTEST:B"))
+    private val watched = WatchedWindows(MINUTE, setOf("BACKTEST:A", "BACKTEST:B")::contains)
 
     private fun tick(
         symbol: String,

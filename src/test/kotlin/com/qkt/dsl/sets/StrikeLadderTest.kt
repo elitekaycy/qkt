@@ -1,5 +1,7 @@
 package com.qkt.dsl.sets
 
+import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseResult
 import com.qkt.instrument.EventContracts
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.StrikePredicate
@@ -77,5 +79,21 @@ class StrikeLadderTest {
         assertThat(StrikeLadder(listOf(below, capped)).neighbour("BELOW73", 1, t0)).isEqualTo("UNDER74")
         assertThat(StrikeLadder(listOf(above, contract("UP", StrikeType.GREATER, "75"))).neighbour("UP", 1, t0))
             .isNull()
+    }
+
+    @Test
+    fun `a set's ladder follows the rows a live session lists, so a contract listed later is a neighbour`() {
+        val text =
+            "STRATEGY e VERSION 1\nSYMBOLS\n    s = KALSHI:* WHERE kind = event TOP 2 BY symbol DYNAMIC EVERY 1h\n" +
+                "RULES\n    FOR EACH m IN s DO\n      WHEN m.close > 0.5 THEN BUY m SIZING 1"
+        val ast = (Dsl.parse(text) as ParseResult.Success).value
+        val spec = SymbolSetSpec.of(ast.streams.single()) as SymbolSetSpec.Filtered
+        val membership = DynamicSetMembership(spec, listOf(b73), 3_600_000L)
+        val hosted = HostedSet(SetMemberTemplate(ast, "s"), membership, "KALSHI")
+        val first = hosted.ladder()
+        assertThat(first.neighbour("B73", 1, t0)).isNull()
+        assertThat(hosted.ladder()).isSameAs(first)
+        hosted.membership.list(listOf(b73, b74))
+        assertThat(hosted.ladder().neighbour("B73", 1, t0)).isEqualTo("B74")
     }
 }

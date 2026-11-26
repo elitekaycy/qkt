@@ -2,6 +2,7 @@ package com.qkt.dsl.sets
 
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.ast.ForEachSet
+import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.SET_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
@@ -41,6 +42,9 @@ internal class SetMemberTemplate(
                 "move ranges over that set only, not '$across'"
         }
     }
+
+    /** Whether a rule over the set arms a `LATCH`, whose candles the session wires per stream at its start. */
+    val usesLatch: Boolean get() = loops.any { it.template.action is Latch }
 
     /** The alias the member [symbol] (the venue's bare symbol) trades under. */
     fun alias(symbol: String): String = SetMemberAlias.of(set, symbol)
