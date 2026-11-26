@@ -760,6 +760,19 @@ carries it. List `marketdata` only once the collector runs that release:
 Both use envelope ids `marketdata-<state>-<source>-<ts>`, like `marketdata.connected`,
 `marketdata.disconnected` and `marketdata.reconnected`.
 
+Membership of a moving symbol set ships as `set.membership` in the opt-in `sets` family, one envelope
+per member whose place changed at a close. A collector before qkt-insights contract 1.7.0 quarantines
+the type, so list `sets` only once the collector runs that contract:
+
+- `set.membership`: `{"strategyId", "set", "member", "change", "rank", "closeTs"}`, e.g.
+  `{"strategyId": "rotator", "set": "movers", "member": "BINANCE:BTCUSDT", "change": "join", "rank": 2,
+  "closeTs": 3600000}`. `change` is one of `join`, `leave`, `stick` (left the ranking while held),
+  `release` (a held member that left the ranking is now flat), `stay` (a held member is back in the
+  ranking), `restore` (active again after a restart) and `unavailable` (its market data could not be
+  subscribed, so it never joined). `rank` is the member's place in the ranking and is left out when it
+  is not ranked. `closeTs` is the close of the window whose evaluation made the change, in UTC
+  milliseconds. No `reason` is sent.
+
 ### Venue envelopes
 
 Every connector (`type: mt5`, `type: gateway`, paper) reports venue truth through the same reads and the
@@ -885,7 +898,7 @@ retrying for up to 20 s, so the deals of its last fills (its `stop --flatten` cl
 | `insights.url` | URL | empty | Collector ingest URL. |
 | `insights.instance_id` | string | `qkt` fallback at daemon wire time | Instance label sent with events. |
 | `insights.token` | string | empty | Bearer or collector token as expected by the sink. |
-| `insights.events` | list | every family except `marketdata` when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`, `marketdata`. `snapshot` is retained for old configs and wires nothing. `marketdata` (feed recovery events) is opt-in and needs a qkt-insights collector with #106. |
+| `insights.events` | list | every family except `marketdata` and `sets` when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`, `marketdata`, `sets`. `snapshot` is retained for old configs and wires nothing. `marketdata` (feed recovery events) is opt-in and needs a qkt-insights collector with #106. `sets` (moving symbol set membership) is opt-in and needs a collector on contract 1.7.0. |
 | `insights.flush_interval_ms` | long | `250` | Batch flush cadence. |
 | `insights.batch_size` | int | `200` | Max events per HTTP batch. |
 | `insights.queue_capacity` | int | `10000` | In-memory queue bound before the sink worker drains events. |

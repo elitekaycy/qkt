@@ -22,4 +22,5 @@ object InsightsTranslate :
     VenueStateInsights,
     SessionInsights,
     PortfolioInsights,
-    EquityInsights
+    EquityInsights,
+    SetInsights
