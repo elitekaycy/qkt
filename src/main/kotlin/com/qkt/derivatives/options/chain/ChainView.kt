@@ -11,17 +11,21 @@ import java.time.ZoneOffset
 
 /**
  * A strategy's look-back view of its option roots' chains: the latest stored snapshot at or before an
- * instant, from the root's declared series, searching that UTC day and the one before. Decoded days
- * are kept per root (the instant's day and its neighbours), so a replay moving forward reads each day
- * file about once; a day file that changed since it was read (a live recorder appends to today's) is
- * read again, parsing only the snapshots added since ([ChainSnapshotStore.readDayAfter]).
+ * instant, from the root's declared series, searching that UTC day and the one before.
+ *
+ * Readers ask at instants that only move forward (a live clock, a replay's clock), so a day keeps only
+ * the snapshots a later question can still need: the latest at or before the newest instant asked and
+ * every later one. A live view therefore holds about one snapshot per root however long the daemon
+ * runs (#1782). A day file that changed since it was read (a live recorder appends to today's) is
+ * streamed again, and so is one asked about an instant before what it kept.
  */
 class ChainView(
     private val instruments: InstrumentRegistry,
 ) {
     private class Day(
         val stamp: List<Any?>,
-        val snapshots: List<ChainSnapshot>,
+        var snapshots: List<ChainSnapshot>,
+        var askedMs: Long,
     )
 
     private val days = HashMap<Pair<String, LocalDate>, Day>()
@@ -32,25 +36,31 @@ class ChainView(
         atMs: Long,
     ): ChainSnapshot? {
         val day = Instant.ofEpochMilli(atMs).atZone(ZoneOffset.UTC).toLocalDate()
-        return snapshots(root, day)?.lastOrNull { it.atMs <= atMs } ?: snapshots(root, day.minusDays(1))?.lastOrNull()
+        return latestOf(root, day, atMs) ?: latestOf(root, day.minusDays(1), Long.MAX_VALUE)
     }
 
-    private fun snapshots(
+    /** How many snapshots the view holds across its roots and days. */
+    internal fun heldSnapshots(): Int = days.values.sumOf { it.snapshots.size }
+
+    private fun latestOf(
         root: String,
         day: LocalDate,
-    ): List<ChainSnapshot>? {
+        atMs: Long,
+    ): ChainSnapshot? {
         val options = instruments.options() ?: return null
         val series = options.root(root)?.chains ?: return null
         val dataRoot = options.dataRoot ?: return null
         days.keys.removeIf { (r, d) -> r == root && d != day && d != day.plusDays(1) && d != day.minusDays(1) }
-        val store = ChainSnapshotStore(dataRoot, series)
-        val stamp = stamp(store.path(root, day))
-        val held = days[root to day]
-        if (held != null && held.stamp == stamp) return held.snapshots
-        // A changed file is mostly the same day with later snapshots: re-read only those.
-        return Day(stamp, store.readDayAfter(root, day, held?.snapshots.orEmpty()))
-            .also { days[root to day] = it }
-            .snapshots
+        val file = ChainSnapshotStore(dataRoot, series).path(root, day)
+        val stamp = stamp(file)
+        val held =
+            days[root to day]?.takeIf { it.stamp == stamp && atMs >= it.askedMs }
+                ?: Day(stamp, ChainDayFile.tail(file, root, series, atMs), atMs).also { days[root to day] = it }
+        val at = held.snapshots.indexOfLast { it.atMs <= atMs }
+        if (at < 0) return null
+        if (at > 0) held.snapshots = held.snapshots.drop(at)
+        held.askedMs = maxOf(held.askedMs, atMs)
+        return held.snapshots.first()
     }
 
     /** What identifies one version of [file]: a replaced file has a new key, an appended one a new time and size. */
