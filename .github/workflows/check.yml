@@ -210,6 +210,9 @@ jobs:
       - name: Test attestation catalog concurrency and retry
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/run-attestation-catalog-retry-test.sh
+      - name: Test attestation holiday holds every session lane
+        if: steps.changes.outputs.full == 'true'
+        run: bash tests/scripts/run-attestation-catalog-holiday-test.sh
       - name: Test attestation derivatives lane
         if: steps.changes.outputs.full == 'true'
         run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh

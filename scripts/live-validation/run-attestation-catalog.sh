@@ -49,6 +49,8 @@ Outside it, every other lane runs now and the session lane waits in this process
 wait logged and recorded in DIR/session-waits.jsonl), up to --session-wait-max-h hours (default 72) from the start;
 past that its cases fail as `session`, by name. Whatever the plan says, no session-bound case starts unless it can
 finish before the close (attest_session.py can-start); one that cannot fails as `session` and a resumed run reruns it.
+Nor does one start while its venue's AAPL quote is stale (the MT5 tick, or the alpaca gateway's last 1m bar): after
+a few minutes' grace, a holiday or an early close fails the lane's session-bound cases as `session` too.
 
 A gateway lane case (derivatives, bybit, alpaca, kalshi, cross) first waits for its venue (lib/venue_health.py: the gateway's
 venue link and, on Deribit, each of its instruments `open` with a fresh ticker on --deribit-public-url, default the
@@ -175,11 +177,48 @@ gateway_case() {  # name command...   (the command takes --out last)
 lanes_yaml="$repo_root/attestation/lanes.yaml"
 session_tool() { python3 "$lib/attest_session.py" "$@"; }
 can_start() { session_tool can-start --lanes "$lanes_yaml" --case-yaml "$1"; }
+session_bound() { session_tool bound --lanes "$lanes_yaml" --case-yaml "$1"; }
 session_closed() {  # name [reason]
     cases_tool record --out "$out" --name "$1" --dir "$out/$1" --log /dev/null --exit 1 --started "$(date -u +%FT%TZ)" \
         --session-closed ${2:+--reason "$2"} > /dev/null
     printf 'session: %s did not run: %s\n' "$1" "${2:-the market closed before this case could run}"
 }
+# A session lane trades US shares, so its share cases run only inside the lane's session window (attestation/lanes.yaml)
+# while its venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses opening
+# orders until 09:40, and only the venue's own last print can say a holiday or an early close.
+# The venue's last AAPL print, epoch seconds: the MT5 tick (stocks), or the end of the VGP gateway's last closed 1m bar
+# (alpaca: VGP quotes are WebSocket only, and its bars are the ones the daemon warms up from).
+venue_quote_time() {  # lane
+    local to
+    case "$1" in
+        stocks) curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" |
+            python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' ;;
+        alpaca) to="$(date +%s)"
+            curl --silent --fail --max-time 10 -H "Authorization: Bearer ${QKT_ALPACA_GATEWAY_KEY:-}" \
+                "$alpaca_gateway_url/v1/bars?symbol=AAPL&window_ms=60000&from=$(((to - 900) * 1000))&to=$((to * 1000))" |
+                python3 -c 'import json,sys; b=json.load(sys.stdin)["bars"]; print(b[-1]["start"] // 1000 + 60 if b else 0)' ;;
+        *) printf 'run-attestation-catalog: no quote source for session lane %s\n' "$1" >&2; return 1 ;;
+    esac
+}
+# A tick is fresh for 2 min; a 1m bar for 10 (a quiet minute on the IEX feed prints no bar).
+session_open() {  # lane
+    local tick limit=120
+    [ "$1" = stocks ] || limit=600
+    session_tool in-window --lanes "$lanes_yaml" --lane "$1" || return 1
+    tick="$(venue_quote_time "$1" 2>/dev/null)" || return 1
+    [ $(($(date +%s) - tick)) -lt "$limit" ]
+}
+# Inside the window the venue's quote can still be stale (a holiday, an early close): a few minutes' grace, then the
+# lane's session-bound cases fail as `session`, named, and a resumed run reruns them in a later window.
+session_quote_fresh() {  # lane
+    local tries="${QKT_ATTEST_STOCK_QUOTE_TRIES:-10}"
+    while [ "$tries" -gt 0 ]; do
+        session_open "$1" && return 0
+        tries=$((tries - 1)); [ "$tries" = 0 ] || sleep 60
+    done
+    return 1
+}
+stale_reason() { echo "the $1 window is open but the venue's AAPL quote is stale (a holiday or an early close)"; }
 # When each session lane runs: `none` or `now` (first, inside its window), `wait START TEXT`, or `fail TEXT`.
 session_deadline="$(session_tool deadline --hours "$session_wait_max_h")"
 lane_plan() { session_tool lane-plan --lanes "$lanes_yaml" --repo-root "$repo_root" --lane "$1" --deadline "$session_deadline" --keep-file "$out/kept-cases"; }
@@ -209,15 +248,20 @@ fi
 # A venue-gateway lane (derivatives: Deribit; bybit, alpaca, kalshi: that adapter) runs its ready cases one after
 # another on its own account; the lanes run beside each other.
 run_gateway_lane() {  # lane url login key guardian
-    local lane="$1" url="$2" login="$3" id code=0
+    local lane="$1" url="$2" login="$3" id code=0 stale=""
     export QKT_DERIV_GATEWAY_KEY="$4" QKT_DERIV_GUARDIAN_KEY="$5"
     for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
         [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] ||
             continue
         id="$(basename "$(dirname "$case_yaml")")"
         [ -z "${kept[$lane-$id]:-}" ] || continue
-        if [ "$lane" = alpaca ] && ! can_start "$case_yaml"; then
-            session_closed "$lane-$id" "not enough of the $lane window was left to start it and finish before the close"; code=1; continue
+        if session_bound "$case_yaml"; then
+            if ! can_start "$case_yaml"; then
+                session_closed "$lane-$id" "not enough of the $lane window was left to start it and finish before the close"; code=1; continue
+            fi
+            # Once stale, stale for the rest of the lane's run: a holiday does not end between cases.
+            [ -n "$stale" ] || session_quote_fresh "$lane" || stale="$(stale_reason "$lane")"
+            if [ -n "$stale" ]; then session_closed "$lane-$id" "$stale"; code=1; continue; fi
         fi
         gateway_case "$lane-$id" with_claims "$repo_root/attestation/cases/$lane/$id" \
             python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
@@ -292,32 +336,12 @@ if [[ ",$lanes," == *,alpaca,* ]]; then
     gateway_lane alpaca "$alpaca_gateway_url" "$alpaca_expected_login" "$QKT_ALPACA_GATEWAY_KEY" \
         "${QKT_ALPACA_GUARDIAN_KEY:-}"
 fi
-# The stocks lane trades US shares, so it runs only inside the lane's session window (attestation/lanes.yaml) while
-# the venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses opening
-# orders until 09:40, and only the venue's own last tick can say a holiday or an early close.
-stocks_session_open() {
-    local tick now
-    session_tool in-window --lanes "$lanes_yaml" --lane stocks || return 1
-    tick="$(curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' 2>/dev/null)" || return 1
-    now="$(date +%s)"
-    [ $((now - tick)) -lt 120 ]
-}
-# Inside the window the venue's quote can still be stale (a holiday, an early close): a few minutes' grace, then the
-# lane's cases fail as `session`, named, and a resumed run reruns them in a later window.
-stocks_quote_fresh() {
-    local tries="${QKT_ATTEST_STOCK_QUOTE_TRIES:-10}"
-    while [ "$tries" -gt 0 ]; do
-        stocks_session_open && return 0
-        tries=$((tries - 1)); [ "$tries" = 0 ] || sleep 60
-    done
-    return 1
-}
 # The stocks cases to run, launched together when their window lets them (now, or after the wait below).
 stocks_cases=()
 launch_stocks() {
     local name reason=""
     [ "${#stocks_cases[@]}" -gt 0 ] || return 0
-    stocks_quote_fresh || reason="the stocks window is open but the venue's AAPL quote is stale (a holiday or an early close)"
+    session_quote_fresh stocks || reason="$(stale_reason stocks)"
     for name in "${stocks_cases[@]}"; do
         if [ -n "$reason" ]; then session_closed "$name" "$reason"
         elif ! can_start "${case_path[$name]}/case.yaml"; then
@@ -432,7 +456,7 @@ drain() {
         printf 'retrying after %ss: %s\n' "$longest" "${again[*]}"
         sleep "$longest"
         for name in "${again[@]}"; do
-            if [ "${name%%-*}" = stocks ] && { ! stocks_session_open || ! can_start "${case_path[$name]}/case.yaml"; }; then
+            if [ "${name%%-*}" = stocks ] && { ! session_open stocks || ! can_start "${case_path[$name]}/case.yaml"; }; then
                 session_closed "$name" "its retry could not finish inside the stocks window"; continue
             fi
             launch_case "$name" "$magic"; magic=$((magic + 1))
