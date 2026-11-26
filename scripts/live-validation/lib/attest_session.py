@@ -13,6 +13,7 @@ before the window instead, so every lane runs together. Whatever the plan says, 
 finish inside its window (`can-start`): the plan only orders and times the lanes.
 
     attest_session.py can-start --lanes FILE --case-yaml FILE [--at ISO]   exits 0 when the case can start and finish in time
+    attest_session.py bound --lanes FILE --case-yaml FILE                  exits 0 when the case is bound by its lane's window
     attest_session.py in-window --lanes FILE --lane LANE                   exits 0 inside the lane's window now
     attest_session.py lane-plan --lanes FILE --repo-root DIR --lane LANE --deadline ISO [--keep-file FILE]
         prints `none`, `now CLOSES TEXT`, `wait START TEXT` or `fail TEXT`
@@ -188,10 +189,15 @@ def summary(items, problems, hold, max_age_h):
     return "; ".join(parts)
 
 
+def session_bound(case, lane_config):
+    """Whether the case trades only inside its lane's window (and so needs the venue's quote fresh to run)."""
+    return bool(lane_config.get("session")) and case.get("session") != "none"
+
+
 def can_start(case, lane_config, at):
-    session = lane_config.get("session")
-    if case.get("session") == "none" or not session:
+    if not session_bound(case, lane_config):
         return True
+    session = lane_config["session"]
     opens, closes = current_or_next_window(session, at)
     return opens <= at and at + dt.timedelta(seconds=budget_of(case, lane_config)) <= closes
 
@@ -224,6 +230,8 @@ def main():
     sub = ap.add_subparsers(dest="command", required=True)
     p = sub.add_parser("can-start")
     p.add_argument("--lanes", required=True); p.add_argument("--case-yaml", required=True); p.add_argument("--at")
+    p = sub.add_parser("bound")
+    p.add_argument("--lanes", required=True); p.add_argument("--case-yaml", required=True)
     p = sub.add_parser("in-window")
     p.add_argument("--lanes", required=True); p.add_argument("--lane", required=True)
     p = sub.add_parser("lane-plan")
@@ -258,7 +266,9 @@ def main():
         return 0
     case = yaml.safe_load(open(a.case_yaml))
     lane = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(a.case_yaml))))
-    config = yaml.safe_load(open(a.lanes))["lanes"][lane]
+    config = (yaml.safe_load(open(a.lanes)).get("lanes") or {}).get(lane) or {}
+    if a.command == "bound":
+        return 0 if session_bound(case, config) else 1
     return 0 if can_start(case, config, parse_utc(a.at) if a.at else now()) else 1
 
 

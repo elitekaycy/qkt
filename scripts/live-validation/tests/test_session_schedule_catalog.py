@@ -29,10 +29,12 @@ class SessionCatalogTest(unittest.TestCase):
         runner = fx.RUNNER.replace("magic={args.get('--magic')}", "magic={args.get('--magic')} at={open(os.environ['QKT_ATTEST_CLOCK_FILE']).read().strip()}")
         for name in ("run-derivatives-lane-case.py", "run-daemon-lane-case.py"):
             open(os.path.join(live, name), "w").write(runner)
-        # The venue's AAPL quote, fresh: the gateway answers with this second.
+        # The venues' AAPL quote, fresh: the MT5 tick at this second, the VGP gateway's last 1m bar two minutes back.
         self.bin = os.path.join(self.tmp.name, "bin"); os.makedirs(self.bin)
         curl = os.path.join(self.bin, "curl")
-        open(curl, "w").write('#!/usr/bin/env bash\nprintf \'{"time": %s}\' "$(date +%s)"\n')
+        open(curl, "w").write('#!/usr/bin/env bash\ncase "${*: -1}" in\n'
+                              '  */v1/bars*) printf \'{"bars": [{"start": %s000}]}\' "$(( $(date +%s) - 120 ))" ;;\n'
+                              '  *) printf \'{"time": %s}\' "$(date +%s)" ;;\nesac\n')
         os.chmod(curl, os.stat(curl).st_mode | stat.S_IEXEC)
         self.clock = os.path.join(self.tmp.name, "clock")
         self.out = os.path.join(self.tmp.name, "catalog")

@@ -106,6 +106,11 @@ class CanStartTest(unittest.TestCase):
     def test_a_24_7_case_is_not_bound_by_its_lane(self):
         self.assertTrue(s.can_start({"session": "none"}, ALPACA, utc("2026-11-07T03:00:00")))
 
+    def test_only_a_share_case_in_a_session_lane_is_bound(self):
+        self.assertTrue(s.session_bound({}, ALPACA))
+        self.assertFalse(s.session_bound({"session": "none"}, ALPACA))
+        self.assertFalse(s.session_bound({}, {"budget_seconds": 300}))
+
     def test_a_case_in_an_unbound_lane_always_may(self):
         self.assertTrue(s.can_start({}, {"budget_seconds": 300}, utc("2026-11-07T03:00:00")))
 
