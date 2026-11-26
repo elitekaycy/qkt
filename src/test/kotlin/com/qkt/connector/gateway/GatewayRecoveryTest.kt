@@ -45,6 +45,25 @@ internal class GatewayRecoveryTest : GatewayHarness() {
     }
 
     @Test
+    fun `a resting order the gateway holds under its whole engine id is taken back and its fill booked`() {
+        val id = "dsl-soak_o13_deribit_fund--0-exit-close-r945"
+        val shortened = "dsl-soak_o13_deribit_fund--1-exit-close-r945"
+        val neverPlaced = "dsl-soak_o13_deribit_fund--2-exit-close-r945"
+        fake.act { place(WireSubmit(wire(id), "BTC", "buy", "limit", "0.1", "650", null, "gtc", false)) }
+        val sent = "${GatewayClientIds.shortened(shortened)}.${5L.toString(36)}"
+        fake.act { place(WireSubmit(sent, "BTC", "buy", "limit", "0.1", "650", null, "gtc", false)) }
+
+        val after = Strategy()
+        val orders = listOf(id, shortened, neverPlaced).map { restored(it, "0.1", "0") }
+        val known = broker(session(), after, "a").recoverPendingOrders(orders, emptySet())
+
+        assertThat(known).containsExactlyInAnyOrder(id, shortened)
+        fake.act { fill(wire(id), "f1", "0.1", "650", FakeGateway.TIME) }
+        await { after.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+        assertThat(after.of<BrokerEvent.OrderFilled>().single().clientOrderId).isEqualTo(id)
+    }
+
+    @Test
     fun `an order that ended while qkt was down ends in the engine, and one never placed is not accounted`() {
         val before = Strategy()
         broker(session(), before, "a").submit(market("a-1", "a"))

@@ -3,6 +3,8 @@ package com.qkt.cli.daemon
 import com.qkt.common.Side
 import com.qkt.dsl.sets.SetCatalog
 import com.qkt.dsl.sets.SymbolSetSpec
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.universe.VenueCatalog
 import com.qkt.marketdata.TickFeed
@@ -154,6 +156,17 @@ class StrategyHandleSymbolSetTest {
             .hasMessageContaining("strategy 'metals' holds GW:XPTUSD")
             .hasMessageContaining("no rule would manage that position")
         assertThat(sourced).isFalse()
+    }
+
+    @Test
+    fun `an order working on a symbol the set dropped does not refuse the start, as before moving sets`() {
+        val persistor = FileStatePersistor(tmp.resolve("persist"))
+        val order = OrderRequest.Market("metals-1", "GW:XPTUSD", Side.BUY, BigDecimal.ONE, TimeInForce.GTC, 0L)
+        persistor.savePendingOrders("metals", mapOf(order.id to order))
+
+        val ast = liveStrategyAst(strategy(), listing, 0L, persistor)
+
+        assertThat(ast.streams.map { it.qktSymbol }).containsExactly("GW:XAGUSD", "GW:XAUUSD")
     }
 
     @Test

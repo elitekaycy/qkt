@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.app.setMemberWarmup
 import com.qkt.candles.TimeWindow
 import com.qkt.dsl.ast.ForEachSet
 import com.qkt.dsl.ast.SET_BROKER
@@ -38,13 +39,17 @@ internal object DynamicSetRuns {
         val ast: StrategyAst,
         private val source: StrategyAst,
         private val sets: List<Triple<StreamDecl, SymbolSetSpec.Filtered, List<InstrumentMeta>>>,
+        private val candidates: Map<String, List<String>>,
     ) {
         /**
          * The strategy for one run with [overrides] substituted into its `PARAM`s, with fresh membership every call;
-         * [journal] observes each membership change beside the run's bus.
+         * [journal] observes each membership change beside the run's bus. A joining member reads the history it lacks
+         * from the run's market source; a [live] run does not seed every candidate at start (the joins do), and ranks
+         * only the candidates its session subscribed, so it never picks a member it cannot feed.
          */
         fun strategy(
             overrides: Map<String, String>,
+            live: Boolean = false,
             journal: (SetMembershipChanged) -> Unit = {},
         ): Strategy =
             DynamicSetHost(
@@ -52,12 +57,29 @@ internal object DynamicSetRuns {
                 sets.map { (decl, spec, rows) ->
                     HostedSet(
                         SetMemberTemplate(source, decl.alias, overrides),
-                        DynamicSetMembership(spec, rows, TimeWindow.parse(decl.timeframe).durationMs),
+                        DynamicSetMembership(
+                            spec,
+                            ranked(decl.alias, rows, live),
+                            TimeWindow.parse(decl.timeframe).durationMs,
+                        ),
                         spec.venue,
                     )
                 },
+                warmup = ::setMemberWarmup,
+                seedCandidates = !live,
                 journal = journal,
             )
+
+        /** The rows a set ranks: all of them in a backtest, live only the candidates its session subscribed. */
+        private fun ranked(
+            alias: String,
+            rows: List<InstrumentMeta>,
+            live: Boolean,
+        ): List<InstrumentMeta> {
+            if (!live) return rows
+            val fed = candidates.getValue(alias).toSet()
+            return rows.filter { it.qktSymbol.substringAfter(':') in fed }
+        }
     }
 
     /** [ast]'s sets for a backtest over [args]: filtered sets as of `--from` from the instruments file. */
@@ -87,7 +109,9 @@ internal object DynamicSetRuns {
 
     /**
      * The plan for [ast]'s `DYNAMIC` sets over `[fromMs, toMs]`, null when it has none. A set's candidates are the
-     * members of every close of its window in that span, in symbol order; a set no close gives a member is refused.
+     * members of every close of its window in that span, plus the members [held] names for it (by set alias, bare
+     * symbols: a live restart's positions the set itself had, which stay as sticky members), in symbol order; a set no
+     * close gives a member, and that holds none, is refused.
      */
     fun plan(
         ast: StrategyAst,
@@ -95,6 +119,7 @@ internal object DynamicSetRuns {
         fromMs: Long,
         toMs: Long,
         survivorshipAccepted: Boolean,
+        held: Map<String, Set<String>> = emptyMap(),
         note: (String) -> Unit = { System.err.println("qkt: note: $it") },
     ): Plan? {
         val dynamic =
@@ -120,27 +145,17 @@ internal object DynamicSetRuns {
                 Triple(decl, spec, SymbolSetResolution.rows(decl.alias, spec, catalog, survivorshipAccepted).rows)
             }
         val candidates =
-            sets.associate { (decl, spec, rows) -> decl.alias to candidates(decl, spec, rows, fromMs, toMs) }
+            sets.associate { (decl, spec, rows) ->
+                val holding = held[decl.alias].orEmpty()
+                decl.alias to (candidates(decl, spec, rows, fromMs, toMs, holding) + holding).distinct().sorted()
+            }
         for ((alias, members) in candidates) {
             note("symbol set '$alias': DYNAMIC over ${members.size} candidate(s): ${members.joinToString()}")
         }
         val expanded = SymbolSetExpansion.expand(ast.streams, emptyList()) { alias, _ -> candidates[alias] }
         val rules = ast.rules.filterNot { it is ForEachSet && it.set in candidates }
-        return Plan(ast.copy(streams = expanded.streams, rules = rules), ast, sets)
+        return Plan(ast.copy(streams = expanded.streams, rules = rules), ast, sets, candidates)
     }
-
-    /**
-     * The rows a set reading market fields must watch at [closeMs]: every row listed then whose catalog part passes
-     * (`mayMatch`), with no `TOP` cut, since which of them rank depends on figures only the run sees.
-     */
-    private fun watchable(
-        spec: SymbolSetSpec.Filtered,
-        rows: List<InstrumentMeta>,
-        closeMs: Long,
-    ): List<String> =
-        rows
-            .filter { DynamicSetMembership.alive(it, closeMs) && spec.filter.mayMatch(it, closeMs) }
-            .map { it.qktSymbol.substringAfter(':') }
 
     private fun candidates(
         decl: StreamDecl,
@@ -148,21 +163,16 @@ internal object DynamicSetRuns {
         rows: List<InstrumentMeta>,
         fromMs: Long,
         toMs: Long,
+        holding: Set<String>,
     ): List<String> {
-        val windowMs = TimeWindow.parse(decl.timeframe).durationMs
-        val membership = DynamicSetMembership(spec, rows, windowMs)
-        val picked = sortedSetOf<String>()
-        var closeMs = fromMs - Math.floorMod(fromMs, windowMs)
-        while (closeMs <= toMs) {
-            picked += if (spec.readsMarket) watchable(spec, rows, closeMs) else membership.membersAt(closeMs)
-            closeMs += windowMs
-        }
-        if (picked.isEmpty()) {
+        val picked =
+            DynamicSetMembership.candidatesOver(spec, rows, TimeWindow.parse(decl.timeframe).durationMs, fromMs, toMs)
+        if (picked.isEmpty() && holding.isEmpty()) {
             throw BacktestContext.Companion.SetupError(
                 "symbol set '${decl.alias}': no ${spec.venue} instrument passes ${spec.filter.canonical} at any " +
                     "close of the run",
             )
         }
-        return picked.toList()
+        return picked
     }
 }

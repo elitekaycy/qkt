@@ -115,18 +115,7 @@ class GatewayBroker internal constructor(
     override fun recoverPendingOrders(
         orders: List<ManagedOrder>,
         bookedTickets: Set<String>,
-    ): Set<String> =
-        session.recover(
-            orders.map {
-                RecoveredOrder(
-                    GatewayClientIds.of(it.request),
-                    it.request.strategyId,
-                    it.request.quantity,
-                    it.cumulativeFilledQuantity,
-                )
-            },
-            attachment,
-        )
+    ): Set<String> = session.recover(orders.map(RecoveredOrder::of), attachment)
 
     /** Called once the session is restored: settles contracts that expired while away and checks the account total. */
     override fun watchBookedLegs(supplier: () -> List<BookedLeg>) = session.ready(attachment)

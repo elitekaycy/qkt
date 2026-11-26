@@ -1,15 +1,41 @@
 package com.qkt.connector.gateway
 
+import com.qkt.execution.ManagedOrder
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
-/** An order a restart restored: [strategyId]'s order for [quantity], of which [alreadyFilled] was booked before. */
+/**
+ * An order a restart restored: [strategyId]'s order for [quantity], of which [alreadyFilled] was booked before.
+ * [wholeId] is its id with the engine id unshortened, which differs from [clientOrderId] only for a long engine id.
+ */
 internal data class RecoveredOrder(
     val clientOrderId: String,
     val strategyId: String,
     val quantity: BigDecimal,
     val alreadyFilled: BigDecimal,
-)
+    val wholeId: String = clientOrderId,
+) {
+    /**
+     * This order under the id [client]'s gateway holds it by: [wholeId] when the gateway knows only that one
+     * (e.g. it rests as `dsl-long-engine-id--0-exit-close-r945.5`, not as the shortened `dsl-long-...-<hash>.5`).
+     */
+    fun asHeld(client: GatewayClient): RecoveredOrder {
+        if (wholeId == clientOrderId || client.order(clientOrderId) != null) return this
+        return if (client.order(wholeId) == null) this else copy(clientOrderId = wholeId)
+    }
+
+    companion object {
+        /** [order] as the gateway is asked for it. */
+        fun of(order: ManagedOrder): RecoveredOrder =
+            RecoveredOrder(
+                GatewayClientIds.of(order.request),
+                order.request.strategyId,
+                order.request.quantity,
+                order.cumulativeFilledQuantity,
+                GatewayClientIds.whole(order.request),
+            )
+    }
+}
 
 /**
  * Resolves restored orders against the gateway by id, never by a time window: each order's current

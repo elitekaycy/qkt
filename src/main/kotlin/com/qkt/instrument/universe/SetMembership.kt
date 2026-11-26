@@ -19,6 +19,9 @@ enum class MembershipChange {
 
     /** Active when a run (re)starts: membership is recomputed, never read back. */
     RESTORE,
+
+    /** A live candidate whose market data could not be subscribed: it never joins until it is. */
+    UNAVAILABLE,
 }
 
 /** One member's [change]; [rank] is its 1-based place in the ranking, null when it is not ranked. */

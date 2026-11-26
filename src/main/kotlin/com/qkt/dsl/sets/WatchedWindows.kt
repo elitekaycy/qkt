@@ -10,11 +10,12 @@ import java.math.BigDecimal
  * record per watched symbol and window of [windowMs] (epoch aligned), folded from its ticks: the last price, the
  * volume traded, the last bid and ask. [asOf] reads, for each symbol, the record of the last window that ended at or
  * before a close, so a set evaluated at a close sees every tick before it and none after, whichever order the
- * close and the next tick arrive in. Only [symbols] are watched.
+ * close and the next tick arrive in. Only symbols [watches] accepts are watched: a set watches its whole venue, so a
+ * contract a live session subscribes after it started has figures by the time it can be ranked.
  */
 internal class WatchedWindows(
     private val windowMs: Long,
-    private val symbols: Set<String>,
+    private val watches: (String) -> Boolean,
 ) {
     private class Window(
         val endMs: Long,
@@ -29,7 +30,7 @@ internal class WatchedWindows(
 
     /** Folds [tick] into its symbol's record of the window it falls in; a tick of an unwatched symbol is ignored. */
     fun onTick(tick: Tick) {
-        if (tick.symbol !in symbols) return
+        if (!watches(tick.symbol)) return
         val endMs = tick.timestamp - Math.floorMod(tick.timestamp, windowMs) + windowMs
         val window = latest[tick.symbol]
         if (window == null || window.endMs != endMs) {

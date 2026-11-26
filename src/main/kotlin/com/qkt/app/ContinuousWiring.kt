@@ -7,6 +7,7 @@ import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.source.ContinuousMarketSource
+import com.qkt.marketdata.source.ExpandableLiveSource
 import com.qkt.marketdata.source.LiveContinuousStreams
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.persistence.StreamLanePersistence
@@ -72,6 +73,12 @@ internal class ContinuousWiring(
             chains = null
             this.source = source
         } else {
+            // Each roll opens the next contract's feed through the session's source. A moving set's source keeps
+            // one feed to subscribe later members on: a roll would replace it and stop the set's listing poller.
+            require(source !is ExpandableLiveSource) {
+                "a session cannot run a symbol set whose members move beside a continuous futures stream yet " +
+                    "($streams): a roll would cut the set off from new members; run them as two strategies"
+            }
             val store =
                 requireNotNull(directory.historyStore()) {
                     "continuous futures streams $streams need their roll histories on disk; build them with qkt fetch <ROOT> --rolls"
