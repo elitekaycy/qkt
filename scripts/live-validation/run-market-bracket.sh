@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=scripts/live-validation/lib/attached-protection.sh
 source "$repo_root/scripts/live-validation/lib/attached-protection.sh"
+# shellcheck source=scripts/live-validation/lib/bracket-deals.sh
+source "$repo_root/scripts/live-validation/lib/bracket-deals.sh"
 readonly_runner="$repo_root/scripts/live-validation/run-readonly.sh"
 # shellcheck source=scripts/live-validation/lib/catalog-startup-window.sh
 source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
@@ -884,8 +886,8 @@ for attempt in $(seq 1 30); do
         sleep 1
         continue
     fi
-    entry_count="$(jq --arg venueSymbol "$venue_symbol" '[.[] | select(.symbol == $venueSymbol and .entry == "IN" and .lots == 0.01)] | length' "$evidence/history-during-run.json")"
-    exit_count="$(jq --arg venueSymbol "$venue_symbol" '[.[] | select(.symbol == $venueSymbol and .entry == "OUT" and .lots == 0.01)] | length' "$evidence/history-during-run.json")"
+    entry_count="$(count_bracket_deals "$evidence/history-during-run.json" "$venue_symbol" IN)"
+    exit_count="$(count_bracket_deals "$evidence/history-during-run.json" "$venue_symbol" OUT)"
     if [ "$entry_count" -ge "$expected_entries" ] && [ "$exit_count" -ge "$expected_exits" ]; then
         deals_seen=true
         break
